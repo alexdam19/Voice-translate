@@ -12,7 +12,7 @@ import { Backdrop, daylight } from './background';
 import { ChunkCache } from './chunks';
 import { Lighting, type PointLight } from './lighting';
 import { RigRenderer } from './rigArt';
-import { drawCache, drawCheckpoint, drawCrate, drawDrop, drawEnemy, drawHuman, drawProjectile, lookForSuit } from './sprites';
+import { drawCache, drawCheckpoint, drawCrate, drawDrop, drawEnemy, drawHuman, drawProjectile, drawTitan, lookForSuit } from './sprites';
 
 export class Renderer {
   private chunkCaches = new WeakMap<World, ChunkCache>();
@@ -121,7 +121,11 @@ export class Renderer {
     for (const c of s.caches) if (c.x > L - 40 && c.x < Rr + 40 && c.y > T - 40 && c.y < B + 40) drawCache(ctx, c.x, c.y, c.opened, t);
     for (const c of s.crates.values()) drawCrate(ctx, c.x, c.y, c.kind, t);
     for (const d of s.drops) drawDrop(ctx, d.x, d.y, d.stack.id, t);
-    for (const e of s.enemies) if (e.x > L - 60 && e.x < Rr + 60) drawEnemy(ctx, e, t);
+    for (const e of s.enemies) {
+      if (e.kind === 'titan') {
+        if (e.x < Rr + 400 && e.x + e.w > L - 400) drawTitan(ctx, e, t);
+      } else if (e.x > L - 60 && e.x < Rr + 60) drawEnemy(ctx, e, t);
+    }
 
     // Remote players
     ctx.font = '9px "Share Tech Mono", monospace';
@@ -162,6 +166,8 @@ export class Renderer {
     if (!p.dead) lights.push({ x: p.cx, y: p.cy, v: 0.72 });
     for (const r of s.rigs) if (r.x < Rr + 200 && r.x + r.widthPx > L - 200) this.rigArt.lights(r, lights);
     for (const pr of s.projectiles) lights.push({ x: pr.x, y: pr.y, v: pr.explosive ? 0.8 : 0.5 });
+    for (const e of s.enemies) if (e.kind === 'titan' && !e.titan?.burrowed) lights.push({ x: e.cx, y: e.cy, v: 0.75 });
+    for (const a of s.arcs) lights.push({ x: a.x2, y: a.y2, v: 0.9 });
     for (const pa of s.particles.list) if (pa.glow && pa.size > 3) lights.push({ x: pa.x, y: pa.y, v: 0.6 });
     for (const e of s.extracts) lights.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, v: 0.8 });
     this.lighting.compute(world, L, T, Rr, B, sky, lights, false);
@@ -170,7 +176,41 @@ export class Renderer {
     // Additive glow pass
     ctx.globalCompositeOperation = 'lighter';
     s.particles.draw(ctx, true, { left: L, top: T, right: Rr, bottom: B });
-    for (const pr of s.projectiles) this.glow(pr.x, pr.y, pr.kind === 'rail' ? 22 : pr.explosive ? 18 : 10, pr.color, 0.6);
+    for (const pr of s.projectiles) this.glow(pr.x, pr.y, pr.kind === 'rail' ? 22 : pr.kind === 'shell' ? 24 : pr.explosive ? 18 : 10, pr.color, 0.6);
+    for (const a of s.arcs) {
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = a.jag ? 2.5 : 1.5;
+      ctx.globalAlpha = Math.min(1, a.life * 8);
+      ctx.beginPath();
+      ctx.moveTo(a.x1, a.y1);
+      if (a.jag) {
+        const n = 7;
+        for (let i = 1; i < n; i++) {
+          const f = i / n;
+          ctx.lineTo(a.x1 + (a.x2 - a.x1) * f + (Math.random() - 0.5) * 18, a.y1 + (a.y2 - a.y1) * f + (Math.random() - 0.5) * 18);
+        }
+      }
+      ctx.lineTo(a.x2, a.y2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      if (a.jag) this.glow(a.x2, a.y2, 22, a.color, 0.6);
+    }
+    for (const e of s.enemies) {
+      if (e.elite) this.glow(e.cx, e.cy, Math.max(e.w, e.h), '#ffd740', 0.22);
+      if (e.kind === 'titan' && !e.titan!.burrowed) {
+        const d = e.titan!.def;
+        if (d.style === 'walker') {
+          this.glow(e.x + e.w / 2, e.y + e.h * 0.36, e.w * 0.35, d.glow, 0.45 + 0.15 * Math.sin(t * 3));
+          this.glow(e.x + e.w / 2, e.y + e.h * 0.1, e.w * 0.25, d.glow, 0.35);
+        } else if (d.style === 'beast') {
+          const hx = e.facing > 0 ? e.x + e.w * 0.88 : e.x + e.w * 0.12;
+          this.glow(hx, e.y + e.h * 0.38, 26, d.glow, 0.5);
+          this.glow(e.cx, e.y + e.h * 0.12, e.w * 0.4, d.glow, 0.18);
+        } else {
+          this.glow(e.cx, e.cy, e.w, d.glow, 0.35);
+        }
+      }
+    }
     for (const r of rigs) if (r.x < Rr + 200 && r.x + r.widthPx > L - 200) this.rigArt.drawGlow(ctx, r, t, this.glow);
     this.emissiveGlow(world, L, T, Rr, B, t);
     if (!p.dead && !p.driving) {

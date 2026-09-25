@@ -9,6 +9,7 @@ import { iconURL } from '../render/icons';
 import type { Game, Panel } from '../game/game';
 import { DRIVES, TERRAIN_NAMES } from '../game/rigDefs';
 import { respawnPlayer } from '../game/systems/player';
+import { threatAt, threatTier } from '../game/systems/enemies';
 import { WarzoneClient } from '../game/warzone';
 import { button, esc, h, itemTooltip, slotEl } from './dom';
 import { Panels } from './panels';
@@ -36,6 +37,7 @@ export class UI {
   private toasts: HTMLDivElement;
   private pickups: HTMLDivElement;
   private extract: HTMLDivElement;
+  private boss: HTMLDivElement;
   private title: HTMLDivElement;
   readonly tooltip: HTMLDivElement;
   readonly cursorEl: HTMLDivElement;
@@ -68,7 +70,8 @@ export class UI {
     this.toasts = h('div', 'toasts');
     this.pickups = h('div', 'pickups');
     this.extract = h('div', 'extract frame hidden');
-    this.hud.append(this.tl, this.tc, this.tr, this.bc, this.bl, this.prompt, this.toasts, this.pickups, this.extract);
+    this.boss = h('div', 'bossbar hidden');
+    this.hud.append(this.boss, this.tl, this.tc, this.tr, this.bc, this.bl, this.prompt, this.toasts, this.pickups, this.extract);
 
     this.tooltip = h('div', 'tooltip hidden');
     this.cursorEl = h('div', 'cursor-stack hidden');
@@ -241,12 +244,36 @@ export class UI {
         const hours = Math.floor(g.dayTime * 24), mins = Math.floor((g.dayTime * 24 * 60) % 60);
         const night = g.dayTime > 0.78 || g.dayTime < 0.22;
         const wx = g.weather.kind && g.weather.strength > 0.3 ? ` · <span style="color:${g.zone.accent}">${g.weather.kind.toUpperCase()}</span>` : '';
-        this.tc.innerHTML = `<b style="color:${g.zone.accent}">${g.zone.name}</b>${night ? 'NIGHT' : 'DAY'} ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}${wx}`;
+        const threat = threatAt(s.world, Math.floor(p.cx / TILE), Math.floor(p.cy / TILE));
+        const tier = threatTier(threat);
+        const tcol = threat < 1.6 ? '#69f0ae' : threat < 2.2 ? '#ffd740' : threat < 4 ? '#ff9100' : '#ff1744';
+        this.tc.innerHTML = `<b style="color:${g.zone.accent}">${g.zone.name}</b>${night ? 'NIGHT' : 'DAY'} ${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}${wx}<br><span class="threat" style="color:${tcol}">THREAT ${tier.name} · ${threat.toFixed(1)} · ${tier.label.toUpperCase()}</span>`;
       }
     }
 
     // Minimap
     if (this.frame % 3 === 0) this.drawMinimap();
+
+    // Titan boss bar
+    if (this.frame % 5 === 0) {
+      let boss: (typeof s.enemies)[number] | null = null;
+      let bd = 100 * TILE;
+      for (const e of s.enemies) {
+        if (e.kind !== 'titan' || e.dead) continue;
+        const d = Math.abs(e.cx - p.cx);
+        if (d < bd) {
+          bd = d;
+          boss = e;
+        }
+      }
+      if (boss) {
+        this.boss.classList.remove('hidden');
+        this.boss.style.color = boss.titan!.def.glow;
+        this.boss.innerHTML = `${esc(boss.name.toUpperCase())}${boss.titan!.burrowed ? ' · BURROWED' : ''}<div class="bar"><i style="width:${Math.max(0, (boss.hp / boss.maxHp) * 100)}%"></i></div>`;
+      } else {
+        this.boss.classList.add('hidden');
+      }
+    }
 
     // Hotbar
     const hk = JSON.stringify(p.inv.slots.slice(0, 10)) + p.selected;

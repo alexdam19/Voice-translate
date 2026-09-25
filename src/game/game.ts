@@ -10,6 +10,9 @@ import { Minimap } from '../render/minimap';
 import { Renderer } from '../render/renderer';
 import { UI } from '../ui/ui';
 import { Audio } from './audio';
+import { giveXp, hireCost, makeCrew, normalizeCrew, randomRole, ROLES, type CrewMember } from './crew';
+import { canResearch, freeTech, researchCost, TECH_BY_ID } from './tech';
+import { canAfford, payCost } from '../shared/inventory';
 import { Camera } from './camera';
 import { Player, Sim, type Enemy, type ItemDrop, type Projectile } from './entities';
 import { Input } from './input';
@@ -25,7 +28,7 @@ import { respawnPlayer, updatePlayer } from './systems/player';
 import { updateRigs, wreckRig } from './systems/rigs';
 import type { WarzoneClient } from './warzone';
 
-export type Panel = null | 'inventory' | 'craft' | 'build' | 'rig' | 'map' | 'help' | 'pause' | 'loot' | 'confirm' | 'dead';
+export type Panel = null | 'inventory' | 'craft' | 'build' | 'rig' | 'map' | 'help' | 'pause' | 'loot' | 'confirm' | 'dead' | 'crew' | 'tech';
 
 export interface BuildState {
   kind: 'tile' | 'module' | 'bg' | 'erase';
@@ -75,9 +78,13 @@ export class Game {
   warzone: WarzoneClient | null = null;
   returnPos: { x: number; y: number } | null = null;
   interact: Interactable | null = null;
-  stats = { kills: 0, rigs: 0, outposts: 0, extracts: 0, deaths: 0, playtime: 0 };
+  stats = { kills: 0, rigs: 0, outposts: 0, extracts: 0, deaths: 0, playtime: 0, titans: 0 };
+  /** Researched tech tree nodes. */
+  tech = freeTech();
+  /** Candidates on the recruitment board. */
+  recruits: CrewMember[] = [];
   settings: Settings = { name: 'Drifter', server: '', muted: false };
-  timers = { enemy: 4, raider: 70, save: 0, reveal: 0 };
+  timers = { enemy: 4, raider: 70, save: 0, reveal: 0, titan: 120, bonus: 0 };
   weather = { kind: null as string | null, t: 60, strength: 0 };
   private lastTs = 0;
   private acc = 0;
@@ -142,7 +149,9 @@ export class Game {
     this.gen.world.mods = new Map();
     this.opened.clear();
     this.cleared.clear();
-    this.stats = { kills: 0, rigs: 0, outposts: 0, extracts: 0, deaths: 0, playtime: 0 };
+    this.stats = { kills: 0, rigs: 0, outposts: 0, extracts: 0, deaths: 0, playtime: 0, titans: 0 };
+    this.tech = freeTech();
+    this.recruits = this.rollRecruits();
     this.dayTime = 0.3;
     this.player = new Player();
     const p = this.player;
@@ -164,7 +173,7 @@ export class Game {
     this.playerRig = rig;
     this.setupWorldSim();
     respawnPlayer(this, false);
-    this.timers = { enemy: 8, raider: 90, save: 0, reveal: 0 };
+    this.timers = { enemy: 8, raider: 90, save: 0, reveal: 0, titan: 150, bonus: 0 };
     this.startPlaying();
     this.toast('Welcome to the wasteland, drifter. Press H for controls.', '#ffb74d');
     this.toast('Walk to the Command Bridge (front of the upper deck) and press F to drive.', '#80deea');
@@ -198,6 +207,9 @@ export class Game {
     this.opened = new Set(d.opened);
     this.cleared = new Set(d.cleared);
     this.stats = { ...this.stats, ...d.stats };
+    this.tech = freeTech();
+    for (const id of d.tech ?? []) if (TECH_BY_ID.has(id)) this.tech.add(id);
+    this.recruits = d.recruits?.length ? d.recruits.map((c) => normalizeCrew(c)) : this.rollRecruits();
     this.dayTime = d.dayTime;
     this.player = new Player();
     const p = this.player;
@@ -276,6 +288,8 @@ export class Game {
       cleared: [...this.cleared],
       stats: this.stats,
       explored: this.worldMinimap?.saveExplored() ?? '',
+      tech: [...this.tech],
+      recruits: this.recruits.map((c) => ({ ...c })),
     };
     if (!writeSave(data)) this.toast('Could not write save (storage full or blocked).', '#ff5252');
   }
@@ -315,7 +329,7 @@ export class Game {
   }
 
   isPaused(): boolean {
-    return this.sim.kind === 'world' && (this.panel === 'pause' || this.panel === 'confirm' || this.panel === 'help' || this.panel === 'map');
+    return this.sim.kind === 'world' && (this.panel === 'pause' || this.panel === 'confirm' || this.panel === 'help' || this.panel === 'map' || this.panel === 'tech' || this.panel === 'crew');
   }
 
   private handleGlobalKeys(): void {
@@ -341,6 +355,8 @@ export class Game {
         else this.toast('Get aboard (or next to) your rig to build.', '#ffab40');
       }
       toggle('KeyR', 'rig');
+      toggle('KeyT', 'tech');
+      toggle('KeyP', 'crew');
     }
     if (inp.consume('Minus')) this.camera.userZoom = Math.max(0.5, this.camera.userZoom / 1.15);
     if (inp.consume('Equal')) this.camera.userZoom = Math.min(2.5, this.camera.userZoom * 1.15);
@@ -522,6 +538,7 @@ export class Game {
     x: number; y: number; angle: number; speed: number; dmg: number; team: string; kind: ProjKind;
     life?: number; explosive?: number; pierce?: number; gravity?: number; tileDmg?: number; color?: string;
     knock?: number; visual?: boolean; homing?: { x: number; y: number } | null; sourceRig?: Rig | null; weapon?: string;
+    srcMod?: number; turn?: number;
   }): Projectile {
     const p: Projectile = {
       x: o.x, y: o.y, vx: Math.cos(o.angle) * o.speed, vy: Math.sin(o.angle) * o.speed,
@@ -529,7 +546,7 @@ export class Game {
       explosive: o.explosive ?? 0, pierce: o.pierce ?? 0, gravity: o.gravity ?? 0, tileDmg: o.tileDmg ?? 0,
       color: o.color ?? '#ffd180', knock: o.knock ?? 60, visual: o.visual ?? false,
       hits: (o.pierce ?? 0) > 0 ? new Set() : null, homing: o.homing ?? null, sourceRig: o.sourceRig ?? null,
-      weapon: o.weapon ?? '', dead: false,
+      srcMod: o.srcMod ?? -1, turn: o.turn ?? 1, weapon: o.weapon ?? '', dead: false,
     };
     this.sim.projectiles.push(p);
     return p;
@@ -544,7 +561,9 @@ export class Game {
     const p = this.player;
     if (p.dead || p.invuln > 0) return;
     if (this.sim.kind === 'warzone') return; // server-authoritative there
-    const real = source === 'dot' || source === 'void' ? dmg : dmg * (20 / (20 + p.armor));
+    let real = source === 'dot' || source === 'void' ? dmg : dmg * (20 / (20 + p.armor));
+    const pr = this.playerRig;
+    if (pr && source !== 'void' && Math.hypot(pr.cx - p.cx, pr.cy - p.cy) < 40 * TILE) real *= pr.bonus.playerDmgTaken;
     p.hp -= real;
     p.regenDelay = 4;
     if (source !== 'dot') {
@@ -581,18 +600,37 @@ export class Game {
     if (e.dead) return;
     e.hp -= dmg;
     e.hurtFlash = 0.15;
-    e.vx += knockX * (e.kind === 'brute' ? 0.3 : 1);
-    if (!e.flying) e.vy += knockY * 0.5;
-    this.sim.particles.burst(e.cx, e.cy, 4, { color: '#ffab40', speed: 80, life: 0.3, size: 2 });
-    if (e.hp <= 0) {
-      e.dead = true;
-      this.stats.kills++;
-      this.sim.particles.burst(e.cx, e.cy, 18, { color: '#90a4ae', speed: 160, life: 0.6, gravity: 400, size: 3 });
-      this.sim.particles.burst(e.cx, e.cy, 10, { color: '#ffab40', speed: 120, life: 0.4, glow: true, size: 2 });
-      const rng = Math.random;
-      for (const st of rollLoot(e.loot, rng, e.kind === 'brute' ? 3 : 1)) this.dropItem(e.cx, e.cy, st);
-      this.audio.play('break');
+    const heavy = e.kind === 'titan' ? 0 : e.kind === 'brute' || e.elite ? 0.3 : 1;
+    e.vx += knockX * heavy;
+    if (!e.flying && e.kind !== 'titan') e.vy += knockY * 0.5;
+    this.sim.particles.burst(e.cx, e.cy, 4, { color: e.kind === 'titan' ? e.titan!.def.glow : '#ffab40', speed: 80, life: 0.3, size: 2 });
+    if (e.hp > 0) return;
+    e.dead = true;
+    this.stats.kills++;
+    const big = e.kind === 'titan';
+    this.sim.particles.burst(e.cx, e.cy, big ? 60 : 18, { color: '#90a4ae', speed: big ? 320 : 160, life: big ? 1.2 : 0.6, gravity: 400, size: big ? 5 : 3 });
+    this.sim.particles.burst(e.cx, e.cy, big ? 30 : 10, { color: '#ffab40', speed: 120, life: 0.4, glow: true, size: 2 });
+    if (big) {
+      for (let i = 0; i < 6; i++) this.sim.particles.explosion(e.x + Math.random() * e.w, e.y + Math.random() * e.h, 40);
+      this.camera.addShake(16);
+      this.audio.play('explode');
     }
+    const rolls = big ? 6 : e.kind === 'brute' ? 3 : 1;
+    const loot = [...rollLoot(big ? 'titan' : e.loot, Math.random, rolls + (big ? this.extraRolls() : 0))];
+    if (e.elite) loot.push(...rollLoot('elite', Math.random, 1));
+    if (big) {
+      loot.push({ id: 'tech_parts', n: 6 + Math.floor(e.threat) + (this.playerRig?.bonus.techBonus ?? 0) });
+      this.stats.titans++;
+      this.toast(`${e.name} has fallen! Its remains are rich with salvage.`, '#ffd740');
+      this.crewXp(() => true, 60);
+    }
+    for (const st of mergeStacks(loot)) this.dropItem(e.cx, e.cy, st);
+    // Gunner XP for the crew member who manned the killing turret.
+    if (e.lastHitMod >= 0 && this.playerRig) {
+      const xp = big ? 120 : e.elite ? 20 : 6;
+      this.crewXp((c) => c.post === e.lastHitMod, xp);
+    }
+    this.audio.play('break');
   }
 
   dropItem(x: number, y: number, stack: Stack): ItemDrop {
@@ -620,7 +658,7 @@ export class Game {
       let i = 0;
       return () => hash1(id * 131 + i++, this.seed);
     })();
-    const loot = mergeStacks(rollLoot(c.table, rng, 3));
+    const loot = mergeStacks(rollLoot(c.table, rng, 3 + this.extraRolls()));
     for (const st of loot) this.dropItem(c.x + 12, c.y - 12, st);
     this.audio.play('craft');
     this.sim.particles.burst(c.x + 12, c.y - 10, 16, { color: '#ffd740', speed: 120, life: 0.6, glow: true, size: 2 });
@@ -629,9 +667,11 @@ export class Game {
 
   onRigWrecked(r: Rig): void {
     const diff = ZONES[r.zoneIndex]?.difficulty ?? 1;
-    const loot = [...rollLoot('wreck', Math.random, 3 + diff), ...rollLoot('wreck_rare', Math.random, Math.max(1, Math.floor(diff / 2)))];
-    for (const st of mergeStacks(loot)) this.dropItem(r.cx, r.cy, st);
     const outpost = (r.ai as { outpostId?: number } | null)?.outpostId;
+    const loot = [...rollLoot('wreck', Math.random, 3 + diff + this.extraRolls()), ...rollLoot('wreck_rare', Math.random, Math.max(1, Math.floor(diff / 2)))];
+    const tech = (outpost ? 4 + diff : 1 + Math.floor(diff / 2)) + (this.playerRig?.bonus.techBonus ?? 0);
+    loot.push({ id: 'tech_parts', n: tech });
+    for (const st of mergeStacks(loot)) this.dropItem(r.cx, r.cy, st);
     if (outpost) {
       this.cleared.add(outpost);
       this.stats.outposts++;
@@ -640,6 +680,96 @@ export class Game {
       this.stats.rigs++;
       this.toast(`Raider rig "${r.name}" wrecked! Salvage it with your cutter.`, '#ffd740');
     }
+    this.crewXp(() => true, outpost ? 80 : 40);
+    // Sometimes a prisoner is freed from the wreck and offers to join.
+    if (Math.random() < (outpost ? 0.7 : 0.25)) {
+      const pr = this.playerRig;
+      const c = makeCrew(randomRole(), Math.random, Math.random() < 0.3 ? 2 : 1);
+      if (pr && pr.crew.length < pr.bunks) {
+        pr.crew.push(c);
+        this.toast(`Freed prisoner ${c.name} (${ROLES[c.role].name}) joins your crew!`, '#69f0ae');
+      } else {
+        this.recruits.unshift(c);
+        this.recruits = this.recruits.slice(0, 5);
+        this.toast(`Freed prisoner ${c.name} (${ROLES[c.role].name}) is waiting on the recruitment board: build bunks to take them in.`, '#80deea');
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Crew & research                                                     */
+  /* ------------------------------------------------------------------ */
+
+  /** Extra loot rolls from scavengers (fractional part is a chance). */
+  extraRolls(): number {
+    const v = this.playerRig?.bonus.lootRolls ?? 0;
+    return Math.floor(v) + (Math.random() < v % 1 ? 1 : 0);
+  }
+
+  rollRecruits(): CrewMember[] {
+    return Array.from({ length: 3 }, () => {
+      const r = Math.random();
+      return makeCrew(randomRole(), Math.random, r < 0.05 ? 3 : r < 0.3 ? 2 : 1);
+    });
+  }
+
+  /** Gives XP to the player's crew that match `who`; announces level-ups. */
+  crewXp(who: (c: CrewMember) => boolean, amount: number): void {
+    const r = this.playerRig;
+    if (!r) return;
+    for (const c of r.crew) {
+      if (!who(c)) continue;
+      if (giveXp(c, amount)) {
+        this.toast(`${c.name} (${ROLES[c.role].name}) reached level ${c.level}! Pick a perk in the Crew panel (P).`, ROLES[c.role].color);
+        this.audio.play('craft');
+      }
+    }
+  }
+
+  hire(index: number): boolean {
+    const r = this.playerRig;
+    const c = this.recruits[index];
+    if (!r || !c) return false;
+    if (r.crew.length >= r.bunks) {
+      this.toast('No free bunks. Build another Barracks.', '#ff5252');
+      return false;
+    }
+    const cost = hireCost(c);
+    const invs = this.craftInvs();
+    if (!canAfford(invs, cost)) {
+      this.toast('Not enough scrap or rations to hire.', '#ff5252');
+      return false;
+    }
+    payCost(invs, cost);
+    this.recruits.splice(index, 1);
+    r.crew.push(c);
+    this.toast(`${c.name} the ${ROLES[c.role].name} joins your crew.`, ROLES[c.role].color);
+    this.timers.bonus = 0;
+    return true;
+  }
+
+  research(id: string): boolean {
+    const node = TECH_BY_ID.get(id);
+    const r = this.playerRig;
+    if (!node || !r || !canResearch(this.tech, node)) return false;
+    const cost = researchCost(node, r.bonus.researchDiscount);
+    const invs = this.craftInvs();
+    if (!this.canBuild()) {
+      this.toast('Research happens aboard your rig. Get back to it first.', '#ffab40');
+      return false;
+    }
+    if (!canAfford(invs, cost)) {
+      this.toast('Not enough materials or Salvaged Tech.', '#ff5252');
+      this.audio.play('error');
+      return false;
+    }
+    payCost(invs, cost);
+    this.tech.add(id);
+    this.timers.bonus = 0;
+    this.toast(`Research complete: ${node.name}.`, '#80d8ff');
+    this.audio.play('craft');
+    this.crewXp((c) => c.role === 'scientist', 30);
+    return true;
   }
 
   private installRigHooks(): void {

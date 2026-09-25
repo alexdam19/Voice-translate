@@ -4,7 +4,8 @@ import { CELL_EMPTY, CELL_SOLID, type CollisionGrid } from '../shared/physics';
 import { TILES, type Terrain } from '../shared/tiles';
 import type { Hazard } from '../shared/types';
 import type { World } from '../shared/world';
-import { BG, CHASSIS, DRIVES, MODULES, RIG_CLEARANCE, RIG_TILES, RT, type ModuleDef, type Traction } from './rigDefs';
+import { defaultBonus, normalizeCrew, type CrewMember, type RigBonus } from './crew';
+import { ARMOR_TILES, BG, CHASSIS, DRIVES, MODULES, RIG_CLEARANCE, RIG_TILES, RT, type ModuleDef, type Traction } from './rigDefs';
 
 export interface ModuleInst {
   id: number;
@@ -18,13 +19,6 @@ export interface ModuleInst {
   crewed: boolean;
   timer: number;
   anim: number;
-}
-
-export interface CrewMember {
-  name: string;
-  hp: number;
-  post: number;
-  bob: number;
 }
 
 export interface RigHooks {
@@ -108,6 +102,8 @@ export class Rig implements CollisionGrid {
 
   /** AI brain for hostile rigs (opaque to the rig itself). */
   ai: unknown = null;
+  /** Crew + research effects (the game recomputes this for the player's rig). */
+  bonus: RigBonus = defaultBonus();
 
   constructor(cols: number, rows: number, team: 'player' | 'hostile', name: string) {
     this.cols = cols;
@@ -194,8 +190,15 @@ export class Rig implements CollisionGrid {
     if (!this.inGrid(tx, ty)) return;
     const i = ty * this.cols + tx;
     this.tiles[i] = t;
-    this.hp[i] = RIG_TILES[t].hp;
+    this.hp[i] = this.tileMax(t);
     this.version++;
+  }
+
+  /** Max health of a plating type, after armor research and crew perks. */
+  tileMax(t: number): number {
+    const base = RIG_TILES[t].hp;
+    if (t === RT.CHASSIS || t === RT.EMPTY) return base;
+    return Math.round(base * (ARMOR_TILES.has(t) ? this.bonus.armorHp * this.bonus.tileHp : this.bonus.tileHp));
   }
 
   setBg(tx: number, ty: number, b: number): void {
@@ -241,7 +244,7 @@ export class Rig implements CollisionGrid {
     for (let y = ty; y < ty + def.h; y++) for (let x = tx; x < tx + def.w; x++) if (this.tileAt(x, y) === RT.LAMP) this.setTile(x, y, RT.EMPTY);
     const m: ModuleInst = {
       id: this.nextModId++, def, x: tx, y: ty, hp: def.hp, maxHp: def.hp,
-      angle: -Math.PI / 2, cooldown: Math.random(), crewed: false, timer: 0, anim: Math.random() * 10,
+      angle: def.turret?.size === 'heavy' ? -0.06 : -Math.PI / 2, cooldown: Math.random(), crewed: false, timer: 0, anim: Math.random() * 10,
     };
     this.modules.push(m);
     this.rebuildModAt();
@@ -299,15 +302,17 @@ export class Rig implements CollisionGrid {
     for (let i = 0; i < this.tiles.length; i++) mass += RIG_TILES[this.tiles[i]].mass;
     let thrust = 0, prod = 0, use = 0, bunks = 0, cargo = 0, shield = 0, radar = 0, repair = 0;
     let cockpit = false;
+    const b = this.bonus;
     this.drillL = this.drillR = false;
     this.protects.clear();
     this.stations.clear();
     for (const m of this.modules) {
       const d = m.def;
       mass += d.w * d.h * 0.6;
-      if (d.power > 0) prod += d.power;
-      else use -= d.power;
-      thrust += d.thrust ?? 0;
+      const mb = b.mod.get(m.id);
+      if (d.power > 0) prod += d.power * (mb?.power ?? 1);
+      else use -= d.power * (d.turret ? b.weapon[d.turret.family].power : 1);
+      thrust += (d.thrust ?? 0) * (mb?.thrust ?? 1);
       bunks += d.bunks ?? 0;
       cargo += d.cargo ?? 0;
       shield += d.shield ?? 0;
@@ -322,12 +327,13 @@ export class Rig implements CollisionGrid {
       }
     }
     use -= DRIVES[this.drive].power;
+    if (cargo > 0) cargo += b.cargoBonus;
     this.mass = mass;
-    this.thrust = thrust;
-    this.powerProd = prod;
-    this.powerUse = use;
+    this.thrust = thrust * b.hull.thrust;
+    this.powerProd = Math.round(prod * b.powerProdMult);
+    this.powerUse = Math.round(use * b.powerUseMult);
     this.bunks = bunks;
-    this.shieldMax = shield;
+    this.shieldMax = Math.round(shield * b.hull.shield);
     this.shield = Math.min(this.shield, shield);
     this.radar = radar;
     this.repairRate = repair;
@@ -359,8 +365,8 @@ export class Rig implements CollisionGrid {
     for (let i = 0; i < this.tiles.length; i++) {
       const t = this.tiles[i];
       if (t === RT.EMPTY || t === RT.CHASSIS) continue;
-      cur += this.hp[i];
-      max += RIG_TILES[t].hp;
+      cur += Math.min(this.hp[i], this.tileMax(t));
+      max += this.tileMax(t);
     }
     for (const m of this.modules) {
       cur += m.hp;
@@ -372,7 +378,13 @@ export class Rig implements CollisionGrid {
   /* ---------------- Damage ---------------- */
 
   /** Applies damage at a world point. Returns true if it struck something solid. */
-  damageAt(wx: number, wy: number, dmg: number): boolean {
+  /** Incoming damage after evasive driving. */
+  private mitigate(dmg: number): number {
+    return Math.abs(this.vx) > 40 ? dmg * (1 - this.bonus.evasive) : dmg;
+  }
+
+  damageAt(wx: number, wy: number, dmgIn: number): boolean {
+    const dmg = this.mitigate(dmgIn);
     const { tx, ty } = this.toTile(wx, wy);
     if (!this.inGrid(tx, ty)) return false;
     const m = this.moduleAt(tx, ty);
@@ -413,7 +425,8 @@ export class Rig implements CollisionGrid {
   }
 
   /** Radial damage to everything within radius (world px). */
-  explode(wx: number, wy: number, radius: number, dmg: number): void {
+  explode(wx: number, wy: number, radius: number, dmgIn: number): void {
+    const dmg = this.mitigate(dmgIn);
     const r = Math.ceil(radius / TILE);
     const c = this.toTile(wx, wy);
     const hitMods = new Set<ModuleInst>();
@@ -486,6 +499,13 @@ export class Rig implements CollisionGrid {
     return { rest, terrain, liquid };
   }
 
+  /** Top speed on ideal ground in px/s. Tanks are heavy: thrust has to move mass. */
+  topSpeed(): number {
+    if (!this.hasCockpit || this.wrecked || this.thrust <= 0) return 0;
+    const thrustF = Math.min(1.3, (this.thrust * 100) / Math.max(60, this.mass));
+    return (30 + 200 * thrustF) * (0.35 + 0.65 * this.powerRatio) * this.bonus.speedMult;
+  }
+
   restY(ground: number): number {
     return ground - RIG_CLEARANCE - this.heightPx - (DRIVES[this.drive].hover ? 8 : 0);
   }
@@ -509,12 +529,15 @@ export class Rig implements CollisionGrid {
     const cur = this.sampleGround(world, this.x, def.hover);
     this.terrain = cur.terrain;
     this.liquidTile = cur.liquid;
-    const trc = def.traction[this.terrain];
+    const base = def.traction[this.terrain];
+    const trc: Traction = {
+      speed: base.speed < 0.4 ? Math.min(0.4, base.speed * this.bonus.bogMult) : base.speed,
+      climb: base.climb + this.bonus.climbBonus,
+      accel: base.accel,
+    };
     this.traction = trc;
 
-    const thrustF = Math.min(1.3, (this.thrust * 160) / Math.max(60, this.mass));
-    let maxV = (30 + 200 * thrustF) * trc.speed * (0.35 + 0.65 * this.powerRatio);
-    if (!this.hasCockpit || this.wrecked || this.thrust <= 0) maxV = 0;
+    const maxV = this.topSpeed() * trc.speed;
     if (this.throttle !== 0 && maxV > 0) {
       this.vx = approach(this.vx, this.throttle * maxV, 150 * trc.accel * dt);
       this.facing = this.throttle > 0 ? 1 : -1;
@@ -626,7 +649,7 @@ export class Rig implements CollisionGrid {
       x: this.x, y: this.y,
       tiles: Array.from(this.tiles), bg: Array.from(this.bg), hp: Array.from(this.hp, (v) => Math.round(v)),
       modules: this.modules.map((m) => ({ key: m.def.key, x: m.x, y: m.y, hp: Math.round(m.hp) })),
-      cargo: this.cargo.snapshot(), crew: this.crew.map((c) => ({ name: c.name, hp: c.hp })),
+      cargo: this.cargo.snapshot(), crew: this.crew.map((c) => ({ ...c })),
       shield: this.shield,
     };
   }
@@ -646,7 +669,7 @@ export class Rig implements CollisionGrid {
     }
     r.recalc();
     r.cargo = new Inventory(r.cargo.size, s.cargo);
-    r.crew = s.crew.map((c) => ({ name: c.name, hp: c.hp, post: -1, bob: Math.random() * 6 }));
+    r.crew = s.crew.map((c) => normalizeCrew(c));
     r.x = s.x;
     r.y = s.y;
     r.prevX = r.x;
@@ -671,6 +694,6 @@ export interface RigSave {
   hp: number[];
   modules: { key: string; x: number; y: number; hp: number }[];
   cargo: (Stack | null)[];
-  crew: { name: string; hp: number }[];
+  crew: (Partial<CrewMember> & { name: string })[];
   shield: number;
 }

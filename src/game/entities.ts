@@ -70,7 +70,37 @@ export class Player {
   }
 }
 
-export type EnemyKind = 'crawler' | 'gunner' | 'drone' | 'brute' | 'trooper';
+export type EnemyKind = 'crawler' | 'gunner' | 'drone' | 'brute' | 'trooper' | 'titan';
+
+export type TitanStyle = 'walker' | 'beast' | 'worm';
+
+export interface TitanDef {
+  key: string;
+  name: string;
+  style: TitanStyle;
+  w: number;
+  h: number;
+  hp: number;
+  dmg: number;
+  speed: number;
+  body: string;
+  dark: string;
+  glow: string;
+  segments?: number;
+}
+
+export interface TitanState {
+  def: TitanDef;
+  mode: 'stalk' | 'charge' | 'recover' | 'burrow' | 'emerge';
+  t: number;
+  attackCd: number;
+  stompCd: number;
+  dir: number;
+  burrowed: boolean;
+  /** Worm body: past head positions the segments follow. */
+  trail: { x: number; y: number }[];
+  step: number;
+}
 
 export class Enemy {
   x = 0;
@@ -101,6 +131,14 @@ export class Enemy {
   homeRig: Rig | null = null;
   loot = 'creature';
   stuck = 0;
+  /** Threat level the enemy was spawned at (scales stats). */
+  threat = 1;
+  elite = false;
+  /** Player-rig module that last hit this enemy (gunner XP), or -1. */
+  lastHitMod = -1;
+  titan: TitanState | null = null;
+  /** Extra hit circles (worm segments). */
+  parts: { x: number; y: number; r: number }[] | null = null;
 
   constructor(public kind: EnemyKind) {}
 
@@ -133,8 +171,23 @@ export interface Projectile {
   hits: Set<unknown> | null;
   homing: { x: number; y: number } | null;
   sourceRig: Rig | null;
+  /** Id of the player-rig module that fired this (for gunner XP), or -1. */
+  srcMod: number;
+  /** Homing turn-rate multiplier. */
+  turn: number;
   weapon: string;
   dead: boolean;
+}
+
+/** Short-lived lightning / tracer lines (tesla coils, point defense). */
+export interface Arc {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  life: number;
+  color: string;
+  jag: boolean;
 }
 
 export interface ItemDrop {
@@ -192,6 +245,7 @@ export class Sim {
   remotes = new Map<number, RemotePlayer>();
   crates = new Map<number, NetCrate>();
   extracts: Rect[] = [];
+  arcs: Arc[] = [];
   particles = new Particles();
   time = 0;
 

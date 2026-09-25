@@ -1,13 +1,16 @@
 # IRONCRAWL
 
-A 2D open-world sandbox in the spirit of Terraria, set in a tech-punk wasteland. Your base is a **huge rolling fortress** that you fortify, crew and upgrade facility by facility while driving it across six hostile zones. Raider war-rigs hunt you out in the open world. Past the checkpoint lies **the Dead Zone**, a multiplayer warzone where anything you carry can be taken from your corpse.
+A 2D open-world sandbox in the spirit of Terraria, set in a tech-punk wasteland. Your base is a **huge land-tank**: a multi-deck armored hull on treads that you walk around inside and drive. You fortify it facility by facility, arm it with military hardware you upgrade through a tech tree, and crew it with specialists who level up and learn perks.
 
-![Your rig](docs/screenshots/rig.jpg)
+Near camp you meet scavengers and critters. The deeper into the wasteland you go, the tougher the enemies get: gunners, brutes, elite Alphas, and finally **titans** big enough to fight your tank. Past the checkpoint lies **the Dead Zone**, a multiplayer warzone where anything you carry can be taken from your corpse.
+
+![Your tank](docs/screenshots/rig.jpg)
 
 | | |
 |---|---|
-| ![Combat](docs/screenshots/combat.jpg) | ![Glass Crater](docs/screenshots/glass-crater.jpg) |
-| ![Build mode](docs/screenshots/build-mode.jpg) | ![The Dead Zone](docs/screenshots/dead-zone.jpg) |
+| ![A Dune Wyrm erupts under the tank](docs/screenshots/titan.jpg) | ![Magma Colossus](docs/screenshots/titan-magma.jpg) |
+| ![Military tech tree](docs/screenshots/tech-tree.jpg) | ![Crew roster](docs/screenshots/crew.jpg) |
+| ![Glass Crater](docs/screenshots/glass-crater.jpg) | ![The Dead Zone](docs/screenshots/dead-zone.jpg) |
 
 ## Quick start
 
@@ -43,26 +46,64 @@ Server environment variables: `PORT`, `WARZONE_SEED` (fixed map), `WARZONE_BOTS`
 | `I` / `Tab` | Inventory (shift-click moves items between pack and rig cargo) |
 | `C` | Crafting |
 | `B` | Build mode: rig construction |
-| `R` | Rig management: drive trains, chassis upgrades, crew, emergency winch |
+| `R` | Rig management: drive trains, chassis upgrades, emergency winch |
+| `P` | Crew roster: stations, perks, recruitment board |
+| `T` | Military tech tree |
 | `M` | Map · `-` `=` zoom · `N` sound · `H` help · `Esc` pause |
 
 ## How it plays
 
-### The rig
+### The tank
 
-You start with **The Rustbucket**, a 40×14-tile two-deck crawler. It's a real tile grid that moves through the world. You walk around inside it, it carries you as it drives, and you build on it in Build mode:
+You start with **The Rustbucket**, a 48×16-tile two-deck tank. It has sloped glacis armor at both ends, tread units with road wheels and armored side skirts, and an 88 mm **Main Battery** turret on the roof between two autocannons. It's a real tile grid that moves through the world. You walk around inside it, it carries you as it drives, and you build on it in Build mode:
 
-- **Structure:** hull and armor plating, deck grating, ladders, viewports, blast doors (they open for you and stop boarders), cabin lights, and interior backdrop. Backdrop marks a space as sealed and indoors, which is what protects you from hazards.
-- **25 facility modules** in five groups:
+- **Structure:** hull, armor and glacis plating, deck grating, ladders, viewports, blast doors (they open for you and stop boarders), cabin lights, and interior backdrop. Backdrop marks a space as sealed and indoors, which is what protects you from hazards and soaks blast damage.
+- **31 facility modules** in five groups:
   - **Core:** Command Bridge, Scrap Reactor, Fission Core, Diesel-Arc Engine, Ion Drive.
   - **Crew & living:** Barracks, Living Quarters (your respawn point), Medbay, Hydroponics.
   - **Industry:** Cargo Bay, Fabricator, Refinery, Armory, Drive Workshop, Repair Drones, Drill Ram.
-  - **Defense:** Autocannon, Flak Battery, Laser Turret, Missile Pod, Shield Generator, Radar Mast.
+  - **Military:** Autocannon, Gatling Sponson, Main Battery, Mortar Pit, Rail Cannon, Missile Pod, Laser Turret, Tesla Coil, Flak Battery, Point Defense, Shield Generator, Radar Mast.
   - **Environmental:** Rad Baffles, Thermal Regulator, Hull Sealant Pump.
 - **Power** is a budget: reactors produce it, everything else draws it. In a deficit, everything slows down.
-- **Speed** comes from thrust versus mass. A bigger base needs more engines.
-- **Crew** live in barracks bunks. They man turrets (an uncrewed turret stays silent) and shoot boarders.
-- **Chassis upgrades** grow the grid: Scav Crawler 40×14, then Road Hauler 56×18, Behemoth 76×22 and Leviathan 100×28. That leaves room for barracks, living quarters, an armory and all the loot you haul.
+- **Speed** comes from thrust versus mass. A heavier tank needs more engines.
+- **Crushing:** anything small in front of the treads gets run over.
+- **Chassis upgrades** grow the hull: Light Crawler 48×16, then Assault Landship 64×20, Siege Landship 84×24, Land Dreadnought 110×28 and Colossus 140×34.
+
+### Military equipment and the tech tree
+
+Press `T` to open the tech tree chart. It has six branches of 29 nodes: Ballistics, Artillery, Missiles, Energy, Defense, and Hull & Drive. **Unlock** nodes add new equipment to Build mode. **Upgrade** nodes improve every gun of that family on your tank (for example, Hardened Rounds give ballistic weapons +25% damage and an Autoloader makes artillery reload 40% faster). Some nodes cross branches: the Rail Cannon needs both the 120 mm Bore and Capacitor Banks.
+
+The weapons behave differently from each other:
+- **Shells:** the Main Battery fires explosive rounds.
+- **Mortars:** the Mortar Pit lobs shells over terrain.
+- **Chain lightning:** the Tesla Coil arcs between up to 3 targets.
+- **Interceptors:** Point Defense shoots down incoming rockets, shells and titan boulders.
+- **Piercing slugs:** the Rail Cannon punches through a whole enemy rig in one line.
+- **Homing swarms:** Missile Pods fire volleys that track their target.
+
+Research costs materials plus **Salvaged Tech**, which drops from raider wrecks, outposts, elites, titans and supply drops, and comes from cutting the guns off wrecks.
+
+### Crew
+
+Every crew member has a **role**, a **trait**, a **level** and **perks**. Each role boosts the station it works at:
+
+| Role | Station | Ability | Perks |
+|---|---|---|---|
+| Gunner | any gun | +8% damage & fire rate per level on that gun | Deadeye, Rapid Reload, Spotter (+15% range rig-wide) |
+| Engineer | reactor / engine | +10% power or thrust per level | Overclock, Efficiency (-10% power draw), Hot Swap (self-repair) |
+| Driver | Command Bridge | +5% speed per level | Rough Rider (+1 climb, less bogging), Lead Foot, Evasive Driving |
+| Mechanic | anywhere | patches plating (3 hp/s per level, scrap from cargo) | Field Welder, Armorsmith, Salvager |
+| Medic | medbay / quarters | heals you and the crew | Triage, Combat Stims, Field Surgeon |
+| Scavenger | cargo / garage | extra loot rolls | Keen Eye, Pack Rat, Tech Hunter |
+| Quartermaster | refinery / cargo | +cargo, chance to double refinery output | Bulk Smelting, Logistics, Rationing |
+| Scientist | fabricator / armory | cheaper research | Reverse Engineering, Theorist, Weapons Lab |
+| Marine | barracks | hits boarders hardest | Veteran, Suppressive Fire, Overwatch |
+
+Crew post themselves automatically, or you can pin them to a station in the Crew panel (`P`). Guns only fire when manned, and spare hands and marines fill any silent guns.
+
+Crew earn XP from duty, from kills made by the gun they man, and from driving, repairing and research. Each level grants a perk.
+
+Hire recruits from the recruitment board; each Barracks adds 4 bunks. Wrecked raider rigs and outposts sometimes free prisoners who join you.
 
 ### Zones, drive trains and equipment
 
@@ -79,9 +120,34 @@ The world is 4,800 × 400 tiles, split into six zones from west to east. Each zo
 
 On the wrong drive train your rig bogs down, slips on slopes, cooks its wheels or wades through acid. The HUD tells you why. If you get stuck, the Rig panel can winch you back to the last safe ground. The progression is a web: dune titanium unlocks chains and rad baffles, crater uranium and cryo crystals unlock hover skirts, and marsh xenite unlocks endgame gear.
 
+### Threat: the deeper you go, the worse it gets
+
+The HUD shows a **threat level**. It is 1.0 at the starting camp and rises the farther you travel east or west, and the deeper you dig:
+
+| Tier | Threat | What you meet |
+|---|---|---|
+| I · Scavenger country | < 1.6 | crawlers and drones |
+| II · Raider territory | 1.6+ | + gunners and raider troopers |
+| III · Titan grounds | 2.2+ | + brutes, elite **Alpha** variants (bigger, 2.5× health, extra loot) and **titans** |
+| IV · Deep wasteland | 4+ | everything hits harder and has more health |
+| V · No-return zone | 6+ | the far edges of the world |
+
+Each zone has a **titan**, a boss that hunts your tank and gets a boss health bar:
+
+| Titan | Zone | How it fights |
+|---|---|---|
+| Scrap Titan | Rustbelt edges | walks up and stomps the hull, lobs boulders |
+| Magma Colossus | Magma Rift | a much bigger version of the same |
+| Rime Crab | Cryo Spires | circles, then charges and rams the hull |
+| Rad Behemoth | Glass Crater | the same, with glowing tumors |
+| Dune Wyrm | Dune Sea | burrows, then erupts under or through the tank |
+| Bog Wyrm | Acid Marsh | the same, and spits acid |
+
+Titans drop piles of Salvaged Tech and rare materials.
+
 ### Other bases
 
-- **Raider war-rigs** roam each zone and are built from the same grid system as yours, tougher in harder zones. They close to cannon range, deploy boarding troopers from their barracks, and their troopers batter your doors. Destroy the Command Bridge to wreck them, then cut the wreck apart with your Plasma Cutter for salvage.
+- **Raider war-tanks** roam each zone and are built from the same grid system as yours, tougher in harder zones (heavier ones carry their own main battery). They close to cannon range, deploy boarding troopers from their barracks, and their troopers batter your doors. Destroy the Command Bridge to wreck them, then cut the wreck apart with your Plasma Cutter for salvage.
 - **Raider outposts** are fortified, stationary bases with turrets and garrisons (one or two per zone). Wreck one and it stays cleared.
 - **Creatures and drones** vary by zone. More come out at night.
 
@@ -109,10 +175,12 @@ src/shared/     Pure simulation code, shared by the browser and the server
   physics.ts      AABB-vs-tile-grid collision that works on the world *and* on moving rigs
   protocol.ts     Dead Zone wire format
 src/game/       Client game logic
-  rig.ts          the mobile base: tile grid, modules, power/mass/thrust, terrain-aware driving, drilling, damage
-  rigDefs.ts      rig tiles, facility modules, drive trains, chassis tiers
-  rigTemplates.ts starter rig, raider war-rigs, outposts
-  systems/        player, combat, enemies, rigs (turrets/crew/raider AI), hazards, build mode, drops
+  rig.ts          the tank: tile grid, modules, power/mass/thrust, terrain-aware driving, drilling, damage
+  rigDefs.ts      rig tiles (incl. glacis armor), facility modules and weapons, drive trains, chassis tiers
+  rigTemplates.ts starter tank, raider war-tanks, outposts
+  tech.ts         military tech tree: nodes, unlocks, per-family weapon and hull modifiers
+  crew.ts         crew roles, traits, levels, perks, station posting and the bonuses they produce
+  systems/        player, combat, enemies (threat, elites, titans), rigs (turrets/crew/raider AI), hazards, build mode, drops
   warzone.ts      Dead Zone client
 src/render/     Canvas renderer: procedural pixel-art tiles, chunk cache, parallax, tile lighting, rig art
 src/ui/         DOM HUD and panels

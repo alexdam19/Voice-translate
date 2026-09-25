@@ -7,7 +7,8 @@ import { iconURL } from '../render/icons';
 import type { Panel } from '../game/game';
 import { RECIPES, STATION_NAMES, type Recipe } from '../game/recipes';
 import { CATEGORY_NAMES, CHASSIS, DRIVES, MODULE_LIST, RIG_TILES, TERRAIN_NAMES, type ModuleCategory } from '../game/rigDefs';
-import { crewName } from '../game/rigTemplates';
+import { hireCost, MAX_LEVEL, perkPoints, ROLES, TRAITS, XP_LEVELS, type CrewMember } from '../game/crew';
+import { BRANCHES, canResearch, moduleUnlocked, researchCost, TECH, TECH_BY_ID, type TechNode } from '../game/tech';
 import { WarzoneClient } from '../game/warzone';
 import { button, costHTML, esc, h, itemTooltip, slotEl } from './dom';
 import type { UI } from './ui';
@@ -25,7 +26,7 @@ function recipeTab(r: Recipe): CraftTab {
   return 'blocks';
 }
 
-const RECRUIT_COST = { scrap: 30, rations: 3 };
+const REFRESH_COST = { scrap: 10 };
 const RECALL_COST = { scrap: 15 };
 
 export class Panels {
@@ -98,6 +99,14 @@ export class Panels {
       }
       case 'loot':
         return JSON.stringify(g.sim.crates.get(this.lootId) ?? null);
+      case 'crew': {
+        const r = g.playerRig;
+        return JSON.stringify([r?.crew.map((c) => [c.id, c.level, Math.ceil(c.hp), c.perks, c.post, c.assign, Math.floor(c.xp)]), r?.bunks, g.recruits.map((c) => c.id), r?.modules.length, countAcross(g.craftInvs(), 'scrap'), countAcross(g.craftInvs(), 'rations')]);
+      }
+      case 'tech': {
+        const invs = g.craftInvs();
+        return JSON.stringify([[...g.tech], ALL_ITEMS.map((i) => countAcross(invs, i.id)), g.playerRig?.bonus.researchDiscount]);
+      }
       default:
         return this.key;
     }
@@ -119,6 +128,8 @@ export class Panels {
       case 'pause': return this.pause();
       case 'loot': return this.loot();
       case 'dead': return this.worldDeath();
+      case 'crew': return this.crew();
+      case 'tech': return this.techTree();
       default:
     }
   }
@@ -404,6 +415,15 @@ export class Panels {
         const sel = g.build.kind === 'module' && g.build.id === m.key;
         const afford = canAfford(invs, m.cost);
         const el = h('div', `pal ${sel ? 'sel' : ''}`);
+        if (!moduleUnlocked(g.tech, m.key)) {
+          const node = TECH_BY_ID.get(m.tech!)!;
+          el.style.opacity = '0.45';
+          el.innerHTML = `<div class="sw" style="background:#333"></div><div class="meta"><b>🔒 ${m.name}</b> <span style="color:#7d8a96">${m.w}×${m.h}</span><div class="cost"><span>Research <b style="color:#80d8ff">${esc(node.name)}</b> in the Tech Tree (T)</span></div></div>`;
+          el.addEventListener('click', () => g.toast(`${m.name} needs research: ${node.name} (open the Tech Tree with T).`, '#80d8ff'));
+          this.hover(el, () => `<h4>${m.name}</h4><div class="d">${esc(m.desc)}</div><div style="color:#80d8ff">Locked: research ${esc(node.name)}</div>`);
+          pal.appendChild(el);
+          continue;
+        }
         el.style.opacity = afford ? '1' : '0.6';
         const pw = m.power > 0 ? `<span class="good">+${m.power} ⚡</span>` : m.power < 0 ? `${m.power} ⚡` : '';
         el.innerHTML = `<div class="sw" style="background:${m.accent}"></div><div class="meta"><b>${m.name}</b> <span style="color:#7d8a96">${m.w}×${m.h}</span>${costHTML(m.cost, invs)}</div><div class="pw">${pw}</div>`;
@@ -467,20 +487,11 @@ export class Panels {
 
     col1.appendChild(h('h3', '', 'CREW'));
     const crewList = h('div', 'note');
-    crewList.innerHTML = r.crew.length ? r.crew.map((c) => `${esc(c.name)} <span style="color:${c.hp < 50 ? '#ff5252' : '#69f0ae'}">${Math.ceil(c.hp)}hp</span>`).join('<br>') : 'No crew. Turrets need crew to fire.';
+    crewList.innerHTML = r.crew.length
+      ? r.crew.map((c) => `<span style="color:${ROLES[c.role].color}">■</span> ${esc(c.name)} · ${ROLES[c.role].name} L${c.level}`).join('<br>')
+      : 'No crew. Turrets need crew to fire.';
     col1.appendChild(crewList);
-    const rec = button(`RECRUIT (${RECRUIT_COST.scrap} scrap, ${RECRUIT_COST.rations} rations)`, () => {
-      if (!canAfford(invs, RECRUIT_COST)) return g.toast('Not enough scrap/rations.', '#ff5252');
-      payCost(invs, RECRUIT_COST);
-      const c = { name: crewName(), hp: 100, post: -1, bob: 0 };
-      r.crew.push(c);
-      g.toast(`${c.name} joins your crew.`, '#69f0ae');
-      this.render();
-    });
-    rec.disabled = !near || r.crew.length >= r.bunks || !canAfford(invs, RECRUIT_COST);
-    rec.title = r.crew.length >= r.bunks ? 'Build more Barracks for bunks' : '';
-    col1.appendChild(rec);
-    col1.appendChild(h('div', 'note', 'Crew man turrets first; the rest repel boarders. Each Barracks adds 4 bunks.'));
+    col1.appendChild(button('OPEN CREW PANEL (P)', () => g.setPanel('crew'), 'primary'));
     row.appendChild(col1);
 
     const col2 = h('div');
@@ -674,12 +685,16 @@ export class Panels {
       <tr><td><kbd>I</kbd> / <kbd>Tab</kbd></td><td>Inventory</td></tr>
       <tr><td><kbd>C</kbd></td><td>Crafting</td></tr>
       <tr><td><kbd>B</kbd></td><td>Build mode (rig construction)</td></tr>
-      <tr><td><kbd>R</kbd></td><td>Rig management: drive trains, chassis, crew</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Rig management: drive trains, chassis</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Crew roster: posts, perks, recruitment</td></tr>
+      <tr><td><kbd>T</kbd></td><td>Military tech tree</td></tr>
       <tr><td><kbd>M</kbd></td><td>Map</td></tr>
       <tr><td><kbd>-</kbd> <kbd>=</kbd></td><td>Zoom · <kbd>N</kbd> sound on/off</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close / pause</td></tr>
       </table></div><div>
-      <h3>YOUR RIG</h3><p>Your base is a rolling fortress. Take the wheel at the Command Bridge (F), then A/D to drive. Mouse aims your turrets; hold LMB to fire them. Build hull, decks and facilities with B. Turrets only fire when crewed, and every facility draws power.</p>
+      <h3>YOUR TANK</h3><p>Your base is a land-tank. Take the wheel at the Command Bridge (F), then A/D to drive. Mouse aims every gun; hold LMB to fire. Build hull, glacis armor, decks and facilities with B. Guns only fire when crewed and everything draws power. Research new military hardware and upgrades in the Tech Tree (T) with Salvaged Tech.</p>
+      <h3>CREW</h3><p>Every crew member has a role (gunner, engineer, driver, mechanic, medic, scavenger, quartermaster, scientist, marine) that boosts the station they work at. They level up and learn perks. Hire more in the Crew panel (P); each Barracks adds 4 bunks.</p>
+      <h3>THREAT</h3><p>The farther from camp (and the deeper underground) the tougher it gets: gunners, brutes, elite Alphas, and eventually titans that hunt your tank.</p>
       <h3>ZONES</h3><p>The wasteland runs west to east: Magma Rift · Cryo Spires · <b>Rustbelt</b> (start) · Dune Sea · Glass Crater · Acid Marsh. Terrain needs the right drive train (tracks for sand, chains for ice, magma treads for ash, hover skirts for acid). Hazards need rig modules (Rad Baffles, Thermal Regulator, Sealant Pump) and suits on foot.</p>
       <h3>THE DEAD ZONE</h3><p>Drive to the checkpoint east of spawn and press F at the gate. It is multiplayer PvP: if you die, your pack drops for anyone to loot. Secure pouch, suit and gadget are safe. Reach an extraction point to keep what you carry.</p>
       </div></div>`);
@@ -787,6 +802,193 @@ export class Panels {
     b.style.marginTop = '12px';
     b.style.width = '100%';
     this.el!.appendChild(b);
+  }
+
+  /* ---------------- Crew ---------------- */
+
+  private crewCard(c: CrewMember, owned: boolean): HTMLDivElement {
+    const g = this.g;
+    const r = g.playerRig!;
+    const role = ROLES[c.role];
+    const trait = TRAITS.find((t) => t.key === c.trait);
+    const card = h('div', 'crew-card');
+    card.style.borderColor = role.color + '66';
+    const next = XP_LEVELS[c.level] ?? XP_LEVELS[XP_LEVELS.length - 1];
+    const prev = XP_LEVELS[c.level - 1] ?? 0;
+    const pct = c.level >= MAX_LEVEL ? 100 : Math.max(0, Math.min(100, ((c.xp - prev) / (next - prev)) * 100));
+    card.innerHTML = `<div class="crew-head"><span class="role-badge" style="background:${role.color}">${role.name.toUpperCase()}</span><b>${esc(c.name)}</b><span class="lvl">LV ${c.level}${c.level >= MAX_LEVEL ? ' MAX' : ''}</span></div>
+      <div class="bar xp"><i style="width:${pct}%"></i><span>${c.level >= MAX_LEVEL ? 'VETERAN' : `XP ${Math.floor(c.xp)} / ${next}`}</span></div>
+      <div class="note" style="margin:3px 0">${esc(role.ability)}</div>
+      <div class="kv"><span>TRAIT</span><b title="${esc(trait?.desc ?? '')}">${esc(trait?.name ?? c.trait)}</b></div>
+      <div class="kv"><span>HEALTH</span><b class="${c.hp < c.maxHp * 0.4 ? 'warn' : ''}">${Math.ceil(c.hp)} / ${c.maxHp}</b></div>`;
+    if (owned) {
+      const row = h('div', 'kv');
+      row.innerHTML = '<span>POST</span>';
+      const sel = h('select', 'text') as HTMLSelectElement;
+      sel.style.width = '190px';
+      const auto = h('option', '', `Auto (${r.modules.find((m) => m.id === c.post)?.def.name ?? 'idle'})`) as HTMLOptionElement;
+      auto.value = '';
+      sel.appendChild(auto);
+      for (const m of r.modules) {
+        const o = h('option', '', `${m.def.name}${m.def.turret ? ' ⌖' : ''}`) as HTMLOptionElement;
+        o.value = String(m.id);
+        if (c.assign === m.id) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => {
+        c.assign = sel.value ? Number(sel.value) : null;
+        g.timers.bonus = 0;
+        this.render();
+      });
+      row.appendChild(sel);
+      card.appendChild(row);
+      const perks = h('div', 'perks');
+      const pts = perkPoints(c);
+      for (const pk of role.perks) {
+        const have = c.perks.includes(pk.id);
+        const b = h('button', `perk ${have ? 'have' : pts > 0 ? 'avail' : ''}`, `${have ? '✔ ' : ''}${pk.name}`) as HTMLButtonElement;
+        b.disabled = have || pts <= 0;
+        b.addEventListener('click', () => {
+          c.perks.push(pk.id);
+          if (pk.id === 'veteran') {
+            c.maxHp += 50;
+            c.hp += 50;
+          }
+          g.timers.bonus = 0;
+          g.audio.play('craft');
+          g.toast(`${c.name} learned ${pk.name}.`, role.color);
+          this.render();
+        });
+        this.hover(b, () => `<h4>${pk.name}</h4><div class="d">${esc(pk.desc)}</div>${have ? '' : pts > 0 ? '<div class="good">Click to learn</div>' : `<div class="d">Unlocks with levels (${c.perks.length + 1 < MAX_LEVEL ? `next at LV ${c.perks.length + 2}` : 'max'})</div>`}`);
+        perks.appendChild(b);
+      }
+      card.appendChild(perks);
+      if (pts > 0) card.appendChild(h('div', 'good', `▲ ${pts} perk point${pts > 1 ? 's' : ''} to spend`));
+      const dismiss = button('DISMISS', () => {
+        if (!confirm(`Dismiss ${c.name}? They will leave the rig for good.`)) return;
+        r.crew.splice(r.crew.indexOf(c), 1);
+        g.timers.bonus = 0;
+        this.render();
+      }, 'danger');
+      dismiss.style.marginTop = '6px';
+      dismiss.style.fontSize = '10px';
+      card.appendChild(dismiss);
+    }
+    return card;
+  }
+
+  private crew(): void {
+    const g = this.g;
+    const r = g.playerRig;
+    this.el!.classList.add('center');
+    if (!r) {
+      this.header('CREW');
+      return;
+    }
+    this.header('CREW ROSTER', `${r.crew.length} / ${r.bunks} bunks · roles boost the station they work at`);
+    const row = h('div', 'row');
+    const left = h('div', 'crew-grid');
+    for (const c of r.crew) left.appendChild(this.crewCard(c, true));
+    if (!r.crew.length) left.appendChild(h('div', 'note', 'No crew aboard. Hire from the recruitment board.'));
+    row.appendChild(left);
+    const right = h('div');
+    right.style.width = '290px';
+    right.appendChild(h('h3', '', 'RECRUITMENT BOARD'));
+    const invs = g.craftInvs();
+    g.recruits.forEach((c, i) => {
+      const card = this.crewCard(c, false);
+      const cost = hireCost(c);
+      card.insertAdjacentHTML('beforeend', costHTML(cost, invs));
+      const b = button('HIRE', () => {
+        if (g.hire(i)) this.render();
+      }, 'primary');
+      b.disabled = r.crew.length >= r.bunks || !canAfford(invs, cost) || !g.canBuild();
+      b.title = r.crew.length >= r.bunks ? 'No free bunks: build another Barracks' : '';
+      card.appendChild(b);
+      right.appendChild(card);
+    });
+    const refresh = button(`NEW CANDIDATES (${REFRESH_COST.scrap} scrap)`, () => {
+      if (!canAfford(invs, REFRESH_COST)) return g.toast('Not enough scrap.', '#ff5252');
+      payCost(invs, REFRESH_COST);
+      g.recruits = g.rollRecruits();
+      this.render();
+    });
+    refresh.style.width = '100%';
+    right.appendChild(refresh);
+    right.appendChild(h('div', 'note', 'Crew level up from duty, kills made by the gun they man, driving and research. Every level grants a perk. Raider wrecks and outposts sometimes free prisoners who join you.'));
+    row.appendChild(right);
+    this.el!.appendChild(row);
+  }
+
+  /* ---------------- Tech tree ---------------- */
+
+  private techTree(): void {
+    const g = this.g;
+    const r = g.playerRig;
+    const invs = g.craftInvs();
+    const discount = r?.bonus.researchDiscount ?? 0;
+    this.el!.classList.add('center', 'tech-panel');
+    this.header('MILITARY TECH TREE', `Salvaged Tech: <b style="color:#80d8ff">${countAcross(invs, 'tech_parts')}</b>${discount > 0 ? ` · scientists: -${Math.round(discount * 100)}% cost` : ''}`);
+    const COL = 176, ROW = 74, PADX = 120, PADY = 10, NW = 150, NH = 54;
+    const maxTier = Math.max(...TECH.map((t) => t.tier));
+    const W = PADX + (maxTier + 1) * COL, H = PADY * 2 + BRANCHES.length * ROW;
+    const wrap = h('div', 'tech-wrap');
+    wrap.style.width = `${W}px`;
+    wrap.style.height = `${H}px`;
+    const pos = (n: TechNode): { x: number; y: number } => ({ x: PADX + n.tier * COL, y: PADY + BRANCHES.findIndex((b) => b.key === n.branch) * ROW });
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', String(W));
+    svg.setAttribute('height', String(H));
+    svg.classList.add('tech-lines');
+    for (const n of TECH) {
+      for (const req of n.requires) {
+        const a = pos(TECH_BY_ID.get(req)!), b = pos(n);
+        const path = document.createElementNS(svgNS, 'path');
+        const x1 = a.x + NW, y1 = a.y + NH / 2, x2 = b.x, y2 = b.y + NH / 2;
+        const mx = (x1 + x2) / 2;
+        path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+        const done = g.tech.has(req);
+        path.setAttribute('stroke', done ? (g.tech.has(n.id) ? '#69f0ae' : '#80d8ff') : '#2e3a44');
+        path.setAttribute('stroke-width', done ? '2' : '1.5');
+        path.setAttribute('fill', 'none');
+        if (!done) path.setAttribute('stroke-dasharray', '4 4');
+        svg.appendChild(path);
+      }
+    }
+    wrap.appendChild(svg);
+    BRANCHES.forEach((b, i) => {
+      const lab = h('div', 'tech-branch', b.name);
+      lab.style.top = `${PADY + i * ROW + NH / 2 - 8}px`;
+      lab.style.color = b.color;
+      wrap.appendChild(lab);
+    });
+    for (const n of TECH) {
+      const p = pos(n);
+      const branch = BRANCHES.find((b) => b.key === n.branch)!;
+      const have = g.tech.has(n.id);
+      const avail = canResearch(g.tech, n);
+      const cost = researchCost(n, discount);
+      const afford = canAfford(invs, cost);
+      const el = h('div', `tech-node ${have ? 'have' : avail ? (afford ? 'avail' : 'avail poor') : 'locked'}`);
+      el.style.left = `${p.x}px`;
+      el.style.top = `${p.y}px`;
+      el.style.setProperty('--c', branch.color);
+      const kind = n.unlocks ? 'UNLOCK' : 'UPGRADE';
+      el.innerHTML = `<small>${kind}</small><b>${esc(n.name)}</b><small>${have ? '✔ RESEARCHED' : avail ? `${cost.tech_parts ?? 0} ⚙ tech` : 'LOCKED'}</small>`;
+      this.hover(el, () => {
+        const reqs = n.requires.map((id) => `<span style="color:${g.tech.has(id) ? '#69f0ae' : '#ff8a80'}">${esc(TECH_BY_ID.get(id)!.name)}</span>`).join(', ');
+        return `<h4>${esc(n.name)}</h4><div class="d">${esc(n.desc)}</div>${reqs ? `<div>Requires: ${reqs}</div>` : ''}${have ? '<div class="good">Researched</div>' : costHTML(cost, invs)}`;
+      });
+      if (avail) el.addEventListener('click', () => {
+        if (g.research(n.id)) this.render();
+      });
+      wrap.appendChild(el);
+    }
+    const scroll = h('div', 'tech-scroll');
+    scroll.appendChild(wrap);
+    this.el!.appendChild(scroll);
+    this.el!.appendChild(h('div', 'note', 'Unlock nodes add new military equipment to Build mode (B). Upgrade nodes improve every weapon of that family on your rig. Salvaged Tech comes from raider wrecks, outposts, titans, elites and supply drops.'));
   }
 
   deathScreen(title: string, lost: Stack[], onContinue: () => void): void {

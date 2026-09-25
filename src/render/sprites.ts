@@ -120,9 +120,149 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number): v
       });
     }
   }
+  if (e.elite) {
+    ctx.strokeStyle = 'rgba(255,215,64,0.8)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - 1.5, y - 1.5, e.w + 3, e.h + 3);
+    R(ctx, x + e.w / 2 - 3, y - 12, 6, 3, '#ffd740');
+  }
   if (e.hp < e.maxHp) {
     R(ctx, x, y - 6, e.w, 2, 'rgba(0,0,0,0.6)');
-    R(ctx, x, y - 6, (e.w * Math.max(0, e.hp)) / e.maxHp, 2, '#ff5252');
+    R(ctx, x, y - 6, (e.w * Math.max(0, e.hp)) / e.maxHp, 2, e.elite ? '#ffd740' : '#ff5252');
+  }
+}
+
+function hexRGB(hex: string): RGB {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Giant enemies: walkers (mech/golem), beasts (crab/behemoth) and burrowing worms. */
+export function drawTitan(ctx: CanvasRenderingContext2D, e: Enemy, t: number): void {
+  const T = e.titan!;
+  const d = T.def;
+  // Titans get hit constantly; a faint tint reads better than a white flash.
+  const hurt = e.hurtFlash > 0 && Math.floor(t * 20) % 2 === 0;
+  const body = hurt ? rgb(mixRGB(hexRGB(d.body), [255, 255, 255], 0.35)) : d.body;
+  const dark = d.dark;
+  const f = e.facing;
+  const { x, y, w, h } = e;
+  ctx.lineCap = 'round';
+  if (d.style === 'worm') {
+    if (T.burrowed) return;
+    const parts = e.parts ?? [];
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      ctx.fillStyle = i % 2 ? body : dark;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 0.7, -0.4, 0.4);
+      ctx.stroke();
+    }
+    const hx = e.cx, hy = e.cy;
+    const ang = Math.atan2(e.vy, e.vx);
+    ctx.save();
+    ctx.translate(hx, hy);
+    ctx.rotate(ang);
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(0, 0, w / 2, 0, Math.PI * 2);
+    ctx.fill();
+    const open = 0.4 + 0.3 * Math.sin(t * 10);
+    ctx.fillStyle = dark;
+    for (const s2 of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(w * 0.3, s2 * w * 0.15);
+      ctx.lineTo(w * 0.8, s2 * w * (0.25 + open * 0.3));
+      ctx.lineTo(w * 0.45, s2 * w * 0.4);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#1a0a0a';
+    ctx.beginPath();
+    ctx.arc(w * 0.28, 0, w * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (d.style === 'walker') {
+    const s2 = Math.sin(T.step / 26);
+    const hipY = y + h * 0.55;
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = w * 0.2;
+    for (const [side, ph] of [[-1, s2], [1, -s2]] as const) {
+      const hx = x + w / 2 + side * w * 0.2;
+      const kx = hx + ph * 10, ky = hipY + h * 0.22;
+      const fx = hx + ph * 20, fy = y + h - 6;
+      ctx.beginPath();
+      ctx.moveTo(hx, hipY);
+      ctx.lineTo(kx, ky);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+      R(ctx, fx - w * 0.16, y + h - 8, w * 0.32, 8, body);
+    }
+    R(ctx, x + w * 0.08, y + h * 0.18, w * 0.84, h * 0.4, body);
+    R(ctx, x + w * 0.08, y + h * 0.18, w * 0.84, 4, 'rgba(255,255,255,0.15)');
+    for (let i = 1; i < 4; i++) R(ctx, x + w * 0.08, y + h * (0.18 + i * 0.1), w * 0.84, 2, dark);
+    R(ctx, x + w * 0.3, y + h * 0.02, w * 0.4, h * 0.18, dark);
+    R(ctx, x + w * (f > 0 ? 0.42 : 0.33), y + h * 0.08, w * 0.25, 5, d.glow);
+    // cannon arm
+    const ax = x + w / 2 + f * w * 0.45, ay = y + h * 0.3;
+    R(ctx, Math.min(ax, ax + f * w * 0.5), ay, w * 0.5, h * 0.07, dark);
+    R(ctx, Math.min(ax + f * w * 0.45, ax + f * w * 0.55), ay - 3, w * 0.1, h * 0.07 + 6, body);
+    ctx.fillStyle = d.glow;
+    ctx.beginPath();
+    ctx.arc(x + w / 2, y + h * 0.36, w * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  // beast
+  const s3 = Math.sin(T.step / 18);
+  const legs = d.key === 'rime_crab' ? 6 : 4;
+  ctx.strokeStyle = dark;
+  ctx.lineWidth = d.key === 'rime_crab' ? 7 : 16;
+  for (let i = 0; i < legs; i++) {
+    const lx = x + w * (0.15 + (0.7 * i) / (legs - 1));
+    const ph = (i % 2 ? 1 : -1) * s3 * 8;
+    ctx.beginPath();
+    ctx.moveTo(lx, y + h * 0.5);
+    if (d.key === 'rime_crab') {
+      ctx.lineTo(lx + (lx < e.cx ? -14 : 14) + ph, y + h * 0.35);
+      ctx.lineTo(lx + (lx < e.cx ? -8 : 8) + ph, y + h);
+    } else {
+      ctx.lineTo(lx + ph, y + h);
+    }
+    ctx.stroke();
+  }
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.ellipse(e.cx, y + h * 0.42, w * 0.46, h * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // spikes / crystals / tumors on the back
+  ctx.fillStyle = d.key === 'rime_crab' ? '#e0f7ff' : d.glow;
+  for (let i = 0; i < 5; i++) {
+    const bx = x + w * (0.22 + i * 0.14);
+    ctx.beginPath();
+    ctx.moveTo(bx - 6, y + h * 0.18);
+    ctx.lineTo(bx, y + h * 0.18 - 10 - (i % 2) * 8);
+    ctx.lineTo(bx + 6, y + h * 0.18);
+    ctx.fill();
+  }
+  const hx = f > 0 ? x + w * 0.88 : x + w * 0.12;
+  R(ctx, hx - 16, y + h * 0.3, 32, h * 0.3, dark);
+  R(ctx, hx - 10 + f * 4, y + h * 0.36, 6, 4, d.glow);
+  R(ctx, hx + 2 + f * 4, y + h * 0.36, 6, 4, d.glow);
+  if (d.key === 'rime_crab') {
+    ctx.strokeStyle = body;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(hx, y + h * 0.5);
+    ctx.lineTo(hx + f * 26, y + h * 0.55 + s3 * 4);
+    ctx.lineTo(hx + f * 34, y + h * 0.4);
+    ctx.stroke();
   }
 }
 
@@ -157,6 +297,25 @@ export function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile): vo
       ctx.beginPath();
       ctx.arc(p.x - dx * 12, p.y - dy * 12, 3 + Math.random() * 2, 0, Math.PI * 2);
       ctx.fill();
+      break;
+    case 'shell':
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(p.x - dx * 26, p.y - dy * 26);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.strokeStyle = '#fff3e0';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      break;
+    case 'mortar':
+    case 'boulder':
+      ctx.fillStyle = p.kind === 'boulder' ? '#5d4a3a' : '#3a3e44';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.kind === 'boulder' ? 6 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
       break;
     case 'grenade':
       ctx.fillStyle = '#4a5a3a';

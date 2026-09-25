@@ -1,6 +1,6 @@
 import { TILE } from '../../shared/constants';
 import { TILES } from '../../shared/tiles';
-import type { Projectile } from '../entities';
+import type { Enemy, Projectile } from '../entities';
 import type { Game } from '../game';
 import type { Rig } from '../rig';
 import { breakTile } from './player';
@@ -9,6 +9,12 @@ function shieldContains(r: Rig, x: number, y: number): boolean {
   const rx = r.widthPx / 2 + 20, ry = r.heightPx / 2 + 34;
   const dx = (x - r.cx) / rx, dy = (y - (r.cy + 10)) / ry;
   return dx * dx + dy * dy <= 1;
+}
+
+function hitsEnemy(e: Enemy, x: number, y: number): boolean {
+  if (x > e.x - 2 && x < e.x + e.w + 2 && y > e.y - 2 && y < e.y + e.h + 2) return true;
+  if (e.parts) for (const p of e.parts) if (Math.hypot(p.x - x, p.y - y) < p.r) return true;
+  return false;
 }
 
 export function updateProjectiles(g: Game, dt: number): void {
@@ -27,7 +33,8 @@ export function updateProjectiles(g: Game, dt: number): void {
       let d = want - cur;
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
-      const turn = Math.max(-3 * dt, Math.min(3 * dt, d));
+      const rate = 3 * pr.turn;
+      const turn = Math.max(-rate * dt, Math.min(rate * dt, d));
       const sp = Math.hypot(pr.vx, pr.vy) * (1 + dt * 0.8);
       pr.vx = Math.cos(cur + turn) * sp;
       pr.vy = Math.sin(cur + turn) * sp;
@@ -118,8 +125,9 @@ function step(g: Game, pr: Projectile, px: number, py: number): void {
 
   if (pr.team !== 'hostile') {
     for (const e of s.enemies) {
-      if (e.dead || pr.hits?.has(e)) continue;
-      if (pr.x > e.x - 2 && pr.x < e.x + e.w + 2 && pr.y > e.y - 2 && pr.y < e.y + e.h + 2) {
+      if (e.dead || pr.hits?.has(e) || e.titan?.burrowed) continue;
+      if (hitsEnemy(e, pr.x, pr.y)) {
+        e.lastHitMod = pr.srcMod;
         if (pr.explosive > 0) {
           pr.dead = true;
           g.explode(pr.x, pr.y, pr.explosive, pr.dmg, pr.team, pr.tileDmg);
@@ -179,8 +187,10 @@ export function explodeAt(g: Game, x: number, y: number, radius: number, dmg: nu
 
   if (team !== 'hostile') {
     for (const e of s.enemies) {
+      if (e.titan?.burrowed) continue;
+      const reach = radius + 8 + (e.kind === 'titan' ? Math.max(e.w, e.h) / 2 : 0);
       const d = Math.hypot(e.cx - x, e.cy - y);
-      if (d < radius + 8) g.damageEnemy(e, dmg * (1 - (d / (radius + 8)) * 0.6), Math.sign(e.cx - x) * 200, -200);
+      if (d < reach) g.damageEnemy(e, dmg * (1 - (d / reach) * 0.6), Math.sign(e.cx - x) * 200, -200);
     }
     if (s.kind === 'warzone' && g.warzone) {
       for (const r of s.remotes.values()) {
@@ -192,7 +202,9 @@ export function explodeAt(g: Game, x: number, y: number, radius: number, dmg: nu
   const p = g.player;
   const pd = Math.hypot(p.cx - x, p.cy - y);
   if (pd < radius + 8 && s.kind === 'world') {
-    const f = team === 'hostile' ? 1 : 0.35;
+    // Standing inside your own hull soaks most of a blast outside it.
+    const sheltered = g.playerRig?.isInterior(p.cx, p.cy) && !g.playerRig.isInterior(x, y);
+    const f = (team === 'hostile' ? 1 : 0.35) * (sheltered ? 0.15 : 1);
     g.hurtPlayer(dmg * f * (1 - (pd / (radius + 8)) * 0.6), 'explosion', Math.sign(p.cx - x) * 250);
   }
 

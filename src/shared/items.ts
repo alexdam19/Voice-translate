@@ -6,7 +6,8 @@ export type ItemKind =
   | 'consumable' | 'drive' | 'throwable';
 
 export type ProjKind =
-  | 'bullet' | 'pellet' | 'laser' | 'rail' | 'rocket' | 'grenade' | 'flak' | 'missile' | 'plasma' | 'spit' | 'melee';
+  | 'bullet' | 'pellet' | 'laser' | 'rail' | 'rocket' | 'grenade' | 'flak' | 'missile' | 'plasma' | 'spit' | 'melee'
+  | 'shell' | 'mortar' | 'tesla' | 'pd' | 'boulder';
 
 export type IconShape =
   | 'block' | 'ore' | 'scrap' | 'plate' | 'wire' | 'alloy' | 'rod' | 'crystal' | 'core' | 'chip'
@@ -107,6 +108,7 @@ item('cryo_core', 'Cryo Core', 'material', 'core', '#8af6ff', '#2c6a8a', { value
 item('circuit', 'Circuit Board', 'material', 'chip', '#2ecc71', '#f1c40f', { value: 6 });
 item('xeno_alloy', 'Xeno Alloy', 'material', 'alloy', '#ff6ae6', '#7a2a8a', { value: 45 });
 item('explosive', 'Explosive Charge', 'material', 'explosive', '#e84a3a', '#ffe246', { value: 6 });
+item('tech_parts', 'Salvaged Tech', 'material', 'chip', '#80d8ff', '#ff6e40', { value: 25, desc: 'Military-grade components torn from raider rigs, outposts and titans. Spent on the Tech Tree (T).' });
 
 /* Ammo */
 item('rounds', 'Scrap Rounds', 'ammo', 'ammo', '#d4a24a', '#8a6a3a', { value: 0.2, desc: 'Ammunition for ballistic weapons.' });

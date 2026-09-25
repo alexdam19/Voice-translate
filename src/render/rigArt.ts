@@ -1,7 +1,8 @@
 import { TILE } from '../shared/constants';
 import type { Game } from '../game/game';
 import type { ModuleInst, Rig } from '../game/rig';
-import { BG, DRIVES, RIG_CLEARANCE, RIG_TILES, RT, WHEEL_R } from '../game/rigDefs';
+import { ROLES } from '../game/crew';
+import { BG, DRIVES, RIG_CLEARANCE, RT, WHEEL_R } from '../game/rigDefs';
 import type { PointLight } from './lighting';
 
 interface Cache {
@@ -258,6 +259,60 @@ function moduleStatic(ctx: CanvasRenderingContext2D, m: ModuleInst, pal: Pal, ri
       }
       R(ctx, cx - 8, y + h - 5, 16, 5, '#455a64');
       break;
+    case 'main_battery': {
+      // Heavy tank turret: turret ring, sloped dome, hatch and periscope.
+      const steel = pal === PAL.player ? '#5a5f66' : '#5a4a48';
+      const dark = pal === PAL.player ? '#3a3e44' : '#3a2e2c';
+      R(ctx, x + 4, y + h - 8, w - 8, 8, dark);
+      stripes(ctx, x + 6, y + h - 5, w - 12, 3);
+      ctx.fillStyle = steel;
+      ctx.beginPath();
+      ctx.moveTo(x + 6, y + h - 8);
+      ctx.lineTo(x + 16, y + 10);
+      ctx.lineTo(x + w - 22, y + 8);
+      ctx.lineTo(x + w - 6, y + h - 14);
+      ctx.lineTo(x + w - 6, y + h - 8);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x + 16, y + 10);
+      ctx.lineTo(x + w - 22, y + 8);
+      ctx.stroke();
+      R(ctx, x + 24, y + 4, 12, 5, dark);
+      R(ctx, x + 26, y + 2, 8, 3, steel);
+      R(ctx, x + w - 34, y + 4, 4, 5, '#263238');
+      R(ctx, x + w - 33, y + 5, 2, 2, '#00e5ff');
+      for (let i = 0; i < 5; i++) R(ctx, x + 14 + i * 15, y + h - 11, 2, 2, pal.rivet);
+      R(ctx, x + 10, y + h - 20, 26, 3, d.accent);
+      break;
+    }
+    case 'rail_cannon':
+      R(ctx, x + 4, y + h - 10, w - 8, 10, '#2b2b36');
+      R(ctx, x + 8, y + h - 16, w - 16, 7, '#3d3d4d');
+      stripes(ctx, x + 6, y + h - 4, w - 12, 3, '#ea80fc', '#1c1c24');
+      break;
+    case 'mortar':
+      for (let i = 0; i < 5; i++) {
+        ctx.fillStyle = i % 2 ? '#8d7b5a' : '#7a6a4c';
+        ctx.beginPath();
+        ctx.ellipse(x + 6 + i * 9, y + h - 5, 6, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      R(ctx, x + w / 2 - 7, y + h - 14, 14, 6, '#4a4f55');
+      break;
+    case 'tesla':
+      R(ctx, x + w / 2 - 4, y + 12, 8, h - 14, '#37374a');
+      for (let yy = y + 16; yy < y + h - 4; yy += 5) R(ctx, x + w / 2 - 8, yy, 16, 2, '#b87333');
+      R(ctx, x + 4, y + h - 5, w - 8, 5, '#2b2b36');
+      break;
+    case 'point_defense':
+      R(ctx, x + 6, y + h - 10, w - 12, 10, '#4a4f55');
+      ctx.fillStyle = '#607d8b';
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h - 10, 8, Math.PI, 0);
+      ctx.fill();
+      break;
     default:
       if (d.turret) {
         ctx.fillStyle = pal === PAL.player ? '#4a4f55' : '#4a3a3a';
@@ -281,9 +336,39 @@ function drawTile(ctx: CanvasRenderingContext2D, rig: Rig, tx: number, ty: numbe
   const x = tx * TILE, y = ty * TILE;
   const same = (dx: number, dy: number): boolean => {
     const n = rig.tileAt(tx + dx, ty + dy);
-    return n === RT.HULL || n === RT.ARMOR || n === RT.CHASSIS || n === RT.DOOR || n === RT.WINDOW;
+    return n === RT.HULL || n === RT.ARMOR || n === RT.CHASSIS || n === RT.DOOR || n === RT.WINDOW || n === RT.GLACIS_L || n === RT.GLACIS_R;
   };
   switch (t) {
+    case RT.GLACIS_L:
+    case RT.GLACIS_R: {
+      // Sloped armor: solid triangle under the diagonal.
+      const left = t === RT.GLACIS_L;
+      ctx.fillStyle = pal === PAL.player ? '#5e6168' : '#56494a';
+      ctx.beginPath();
+      if (left) {
+        ctx.moveTo(x + TILE, y);
+        ctx.lineTo(x + TILE, y + TILE);
+        ctx.lineTo(x, y + TILE);
+      } else {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + TILE);
+        ctx.lineTo(x + TILE, y + TILE);
+      }
+      ctx.fill();
+      ctx.strokeStyle = pal === PAL.player ? '#9aa1ab' : '#8a7470';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (left) {
+        ctx.moveTo(x, y + TILE);
+        ctx.lineTo(x + TILE, y);
+      } else {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + TILE, y + TILE);
+      }
+      ctx.stroke();
+      R(ctx, left ? x + 11 : x + 3, y + 11, 2, 2, pal.rivet);
+      break;
+    }
     case RT.HULL:
     case RT.ARMOR: {
       const armor = t === RT.ARMOR;
@@ -354,7 +439,7 @@ function drawTile(ctx: CanvasRenderingContext2D, rig: Rig, tx: number, ty: numbe
       break;
   }
   if (t !== RT.EMPTY && t !== RT.CHASSIS) {
-    const hpr = rig.hp[ty * rig.cols + tx] / RIG_TILES[t].hp;
+    const hpr = rig.hp[ty * rig.cols + tx] / rig.tileMax(t);
     if (hpr < 0.66) {
       ctx.strokeStyle = 'rgba(0,0,0,0.6)';
       ctx.lineWidth = 1;
@@ -370,6 +455,11 @@ function drawTile(ctx: CanvasRenderingContext2D, rig: Rig, tx: number, ty: numbe
       if (hpr < 0.33) R(ctx, x + 6, y + 7, 3, 3, 'rgba(0,0,0,0.7)');
     }
   }
+}
+
+/** A gatling spins up while it has somewhere to point. */
+function targetsActive(m: ModuleInst): boolean {
+  return m.cooldown > -0.5;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -414,7 +504,7 @@ export class RigRenderer {
     return cv;
   }
 
-  /** Legs/foundation for outposts, wheels or hover pads for rigs. */
+  /** Foundations for outposts; tank treads (or hover pads) and armored side skirts for rigs. */
   drawUnder(ctx: CanvasRenderingContext2D, rig: Rig, world: { get(x: number, y: number): number }, t: number): void {
     const bottom = rig.y + rig.heightPx;
     if (rig.anchored) {
@@ -428,93 +518,119 @@ export class RigRenderer {
     }
     void world;
     const drive = DRIVES[rig.drive];
-    const n = rig.team === 'player' ? rig.chassisDef.wheels : Math.max(4, Math.floor(rig.cols / 7));
+    const player = rig.team === 'player';
+    const n = player ? rig.chassisDef.wheels : Math.max(6, Math.floor(rig.cols / 4));
     const c0 = Math.floor(rig.x / TILE);
+    const rest = bottom + RIG_CLEARANCE - WHEEL_R;
+    const x0 = rig.x + 10 + WHEEL_R, x1 = rig.x + rig.widthPx - 10 - WHEEL_R;
     const wheels: { x: number; y: number }[] = [];
     for (let i = 0; i < n; i++) {
-      const wx = rig.x + ((i + 0.5) * rig.widthPx) / n;
+      const wx = x0 + ((x1 - x0) * i) / Math.max(1, n - 1);
       const col = Math.floor(wx / TILE) - c0;
       const ground = rig.groundTops[col] ?? bottom + RIG_CLEARANCE;
-      const rest = bottom + RIG_CLEARANCE - WHEEL_R;
-      const wy = Math.max(rest - 2, Math.min(ground - WHEEL_R, rest + 26));
+      const end = i === 0 || i === n - 1;
+      const wy = end ? rest - 6 : Math.max(rest - 2, Math.min(ground - WHEEL_R, rest + 22));
       wheels.push({ x: wx, y: wy });
     }
+    const skirt = (): void => {
+      const top = bottom - 2;
+      const col = player ? '#4d443b' : '#4a3834';
+      R(ctx, rig.x + 2, top, rig.widthPx - 4, 14, col);
+      R(ctx, rig.x + 2, top, rig.widthPx - 4, 2, player ? '#6e6155' : '#6a524c');
+      R(ctx, rig.x + 2, top + 12, rig.widthPx - 4, 2, '#1e1a17');
+      for (let x = rig.x + 10; x < rig.x + rig.widthPx - 8; x += 22) {
+        R(ctx, x, top + 4, 2, 2, player ? '#a08c78' : '#9a7870');
+        R(ctx, x, top + 9, 2, 2, player ? '#a08c78' : '#9a7870');
+      }
+      for (let x = rig.x + 32; x < rig.x + rig.widthPx - 20; x += 64) R(ctx, x, top + 2, 1, 10, '#2a2420');
+      stripes(ctx, rig.facing > 0 ? rig.x + rig.widthPx - 26 : rig.x + 4, top + 3, 22, 8, player ? '#e0b020' : '#c62828');
+    };
     if (drive.hover) {
       for (const w of wheels) {
-        R(ctx, w.x - 16, bottom, 32, 10, '#2c3440');
-        R(ctx, w.x - 12, bottom + 10, 24, 4, '#1c232c');
-        R(ctx, w.x - 10, bottom + 14, 20, 2, '#6af0ff');
+        R(ctx, w.x - 16, bottom, 32, 12, '#2c3440');
+        R(ctx, w.x - 12, bottom + 12, 24, 4, '#1c232c');
+        R(ctx, w.x - 10, bottom + 16, 20, 2, '#6af0ff');
       }
+      skirt();
       return;
     }
-    for (const w of wheels) {
-      R(ctx, w.x - 3, bottom, 6, w.y - bottom, '#3a3d42');
-      R(ctx, w.x - 8, bottom, 16, 4, '#4a4e54');
-    }
-    const tracked = rig.drive === 'tracks' || rig.drive === 'magma';
-    if (tracked) {
-      const first = wheels[0], last = wheels[wheels.length - 1];
-      const ty = Math.max(...wheels.map((w) => w.y));
-      ctx.fillStyle = '#1e1f22';
-      ctx.beginPath();
-      ctx.roundRect(first.x - WHEEL_R - 4, ty - WHEEL_R - 4, last.x - first.x + WHEEL_R * 2 + 8, WHEEL_R * 2 + 8, WHEEL_R + 4);
-      ctx.fill();
-      const len = last.x - first.x;
-      const off = ((rig.wheelAngle * WHEEL_R) % 10 + 10) % 10;
-      ctx.fillStyle = rig.drive === 'magma' ? '#ff6e28' : '#4a4036';
-      for (let k = -10; k < len + 10; k += 10) {
-        R(ctx, first.x + k + off, ty - WHEEL_R - 4, 5, 3, ctx.fillStyle as string);
-        R(ctx, first.x + k - off + 5, ty + WHEEL_R + 1, 5, 3, ctx.fillStyle as string);
-      }
-      for (const w of wheels) {
-        ctx.fillStyle = '#35373c';
-        ctx.beginPath();
-        ctx.arc(w.x, ty, WHEEL_R - 6, 0, Math.PI * 2);
-        ctx.fill();
-        R(ctx, w.x - 2, ty - 2, 4, 4, '#777');
-      }
-      if (rig.drive === 'magma') {
-        ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t * 6);
-        R(ctx, first.x - WHEEL_R, ty + WHEEL_R + 3, len + WHEEL_R * 2, 2, '#ffab40');
-        ctx.globalAlpha = 1;
-      }
-      return;
-    }
-    for (const w of wheels) {
-      ctx.fillStyle = '#1c1d20';
-      ctx.beginPath();
-      ctx.arc(w.x, w.y, WHEEL_R, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#2e3034';
-      ctx.lineWidth = 3;
-      for (let k = 0; k < 10; k++) {
-        const a = rig.wheelAngle + (k / 10) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(w.x + Math.cos(a) * (WHEEL_R - 4), w.y + Math.sin(a) * (WHEEL_R - 4));
-        ctx.lineTo(w.x + Math.cos(a) * WHEEL_R, w.y + Math.sin(a) * WHEEL_R);
-        ctx.stroke();
-      }
-      ctx.fillStyle = '#6b7079';
-      ctx.beginPath();
-      ctx.arc(w.x, w.y, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#3a3d42';
-      ctx.lineWidth = 2;
-      for (let k = 0; k < 3; k++) {
-        const a = rig.wheelAngle + (k / 3) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(w.x, w.y);
-        ctx.lineTo(w.x + Math.cos(a) * 7, w.y + Math.sin(a) * 7);
-        ctx.stroke();
-      }
-      if (rig.drive === 'chains') {
-        ctx.fillStyle = '#c4d6ec';
-        for (let k = 0; k < 12; k++) {
-          const a = rig.wheelAngle + (k / 12) * Math.PI * 2;
-          ctx.fillRect(w.x + Math.cos(a) * (WHEEL_R + 1) - 1, w.y + Math.sin(a) * (WHEEL_R + 1) - 1, 3, 3);
+    const style = {
+      wheels: { belt: '#222327', link: '#3b3d43', wheel: '#3a3d44' },
+      tracks: { belt: '#3a342c', link: '#8a7a5a', wheel: '#4a443a' },
+      chains: { belt: '#24262e', link: '#c4d6ec', wheel: '#3a3e4a' },
+      magma: { belt: '#261c1c', link: '#ff6e28', wheel: '#3a2a26' },
+    }[rig.drive as 'wheels' | 'tracks' | 'chains' | 'magma'] ?? { belt: '#222327', link: '#3b3d43', wheel: '#3a3d44' };
+    const first = wheels[0], last = wheels[wheels.length - 1];
+    const topY = bottom + 1;
+    const R2 = WHEEL_R + 4;
+    // Belt: upper run, end wraps, and a lower run that follows the road wheels.
+    ctx.fillStyle = style.belt;
+    ctx.strokeStyle = style.belt;
+    ctx.fillRect(first.x, topY - 1, last.x - first.x, 7);
+    ctx.beginPath();
+    ctx.arc(first.x, first.y, R2, 0, Math.PI * 2);
+    ctx.arc(last.x, last.y, R2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 8;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(first.x, first.y + R2 - 4);
+    for (const w of wheels) ctx.lineTo(w.x, w.y + WHEEL_R + 1);
+    ctx.lineTo(last.x, last.y + R2 - 4);
+    ctx.stroke();
+    // Moving tread links.
+    const off = (((rig.wheelAngle * WHEEL_R) % 9) + 9) % 9;
+    ctx.fillStyle = style.link;
+    for (let x = first.x + off; x < last.x; x += 9) R(ctx, x, topY - 2, 4, 2, style.link);
+    for (let i = 0; i < wheels.length - 1; i++) {
+      const a = wheels[i], b = wheels[i + 1];
+      const segs = Math.max(1, Math.floor((b.x - a.x) / 9));
+      for (let k = 0; k < segs; k++) {
+        const f = (k + (1 - off / 9)) / segs;
+        const lx = a.x + (b.x - a.x) * f, ly = a.y + (b.y - a.y) * f + WHEEL_R + 3;
+        if (rig.drive === 'chains') {
+          R(ctx, lx - 1, ly + 1, 3, 3, style.link);
+        } else {
+          R(ctx, lx - 2, ly, 4, 2, style.link);
         }
       }
     }
+    // Road wheels, drive sprocket and idler.
+    wheels.forEach((w, i) => {
+      const end = i === 0 || i === wheels.length - 1;
+      const rr = end ? WHEEL_R - 1 : WHEEL_R - 3;
+      ctx.fillStyle = style.wheel;
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, rr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#6b7079';
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, end ? 6 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      if (end) {
+        ctx.strokeStyle = '#2a2c30';
+        ctx.lineWidth = 2;
+        for (let k = 0; k < 6; k++) {
+          const a = rig.wheelAngle + (k / 6) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(w.x + Math.cos(a) * 6, w.y + Math.sin(a) * 6);
+          ctx.lineTo(w.x + Math.cos(a) * rr, w.y + Math.sin(a) * rr);
+          ctx.stroke();
+        }
+      }
+    });
+    if (rig.drive === 'magma') {
+      ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t * 6);
+      ctx.strokeStyle = '#ffab40';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(first.x, first.y + R2 - 1);
+      for (const w of wheels) ctx.lineTo(w.x, w.y + WHEEL_R + 4);
+      ctx.lineTo(last.x, last.y + R2 - 1);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    skirt();
   }
 
   drawBody(ctx: CanvasRenderingContext2D, rig: Rig): void {
@@ -532,27 +648,77 @@ export class RigRenderer {
       const cx = x + w / 2;
       const a = m.anim;
       if (d.turret) {
-        const px = cx, py = y + h * 0.45;
+        const heavy = d.turret.size === 'heavy';
+        const px = cx, py = y + h * (heavy ? 0.35 : 0.45);
+        const fired = live && m.cooldown > 0 ? Math.max(0, 1 - (1 / d.turret.rate - m.cooldown) * (heavy ? 3 : 30)) : 0;
         ctx.save();
         ctx.translate(px, py);
+        if (d.key === 'tesla') {
+          ctx.restore();
+          const glowA = live ? 0.6 + 0.4 * Math.sin(m.anim * 12) : 0.2;
+          ctx.fillStyle = `rgba(179,136,255,${glowA})`;
+          ctx.beginPath();
+          ctx.arc(cx, y + 9, 7, 0, Math.PI * 2);
+          ctx.fill();
+          R(ctx, cx - 1, y + 9, 2, 6, '#e1bee7');
+          continue;
+        }
         ctx.rotate(m.angle);
-        const len = d.key === 'missile_pod' ? 14 : d.key === 'laser_turret' ? 22 : d.key === 'flak' ? 16 : 20;
-        const recoil = Math.max(0, m.cooldown) > 0 && live ? Math.max(0, 3 - (1 / d.turret.rate - m.cooldown) * 30) : 0;
-        if (d.key === 'missile_pod') {
-          R(ctx, -6, -8, len + 4, 16, '#4a4f55');
-          for (let i = 0; i < 3; i++) R(ctx, len - 2, -6 + i * 5, 3, 3, '#ff3d00');
-        } else if (d.key === 'flak') {
-          R(ctx, -4 - recoil, -6, len, 4, '#6b7178');
-          R(ctx, -4 - recoil, 2, len, 4, '#6b7178');
-        } else {
-          R(ctx, -4 - recoil, -3, len, 6, d.key === 'laser_turret' ? '#37474f' : '#6b7178');
-          if (d.key === 'laser_turret') R(ctx, len - 8, -2, 6, 4, '#ff4081');
+        const steel = rig.team === 'player' ? '#6b7178' : '#6b5a58';
+        switch (d.key) {
+          case 'main_battery': {
+            const rc = fired * 10;
+            R(ctx, -10, -7, 20, 14, rig.team === 'player' ? '#4d5259' : '#4d4040');
+            R(ctx, 8 - rc, -4, 50, 8, steel);
+            R(ctx, 8 - rc, -4, 50, 2, 'rgba(255,255,255,0.2)');
+            R(ctx, 30 - rc, -5, 6, 10, '#4a4f55');
+            R(ctx, 56 - rc, -6, 9, 12, '#3a3e44');
+            R(ctx, 58 - rc, -2, 7, 4, '#1a1c1f');
+            break;
+          }
+          case 'rail_cannon': {
+            const rc = fired * 6;
+            R(ctx, -8, -8, 18, 16, '#3d3d4d');
+            R(ctx, 6 - rc, -6, 58, 4, '#9e9eb8');
+            R(ctx, 6 - rc, 2, 58, 4, '#9e9eb8');
+            for (let i = 0; i < 5; i++) R(ctx, 12 + i * 10 - rc, -2, 4, 4, '#ea80fc');
+            break;
+          }
+          case 'mortar':
+            R(ctx, -4, -5, 20, 10, '#4a4f55');
+            R(ctx, 12, -6, 5, 12, '#2b2e33');
+            break;
+          case 'gatling': {
+            const spin = m.anim * (live && targetsActive(m) ? 30 : 2);
+            for (let i = 0; i < 3; i++) R(ctx, -2 - fired * 2, -4 + ((i * 3 + Math.floor(spin)) % 9), 22, 2, i === 1 ? '#9e9e9e' : '#7a7a7a');
+            R(ctx, -6, -5, 8, 10, '#4a4f55');
+            break;
+          }
+          case 'point_defense':
+            R(ctx, -2, -4, 14, 2, '#b0bec5');
+            R(ctx, -2, 2, 14, 2, '#b0bec5');
+            break;
+          case 'missile_pod': {
+            const len = 14;
+            R(ctx, -6, -8, len + 4, 16, '#4a4f55');
+            for (let i = 0; i < 3; i++) R(ctx, len - 2, -6 + i * 5, 3, 3, '#ff3d00');
+            break;
+          }
+          case 'flak':
+            R(ctx, -4 - fired * 3, -6, 16, 4, steel);
+            R(ctx, -4 - fired * 3, 2, 16, 4, steel);
+            break;
+          default:
+            R(ctx, -4 - fired * 3, -3, d.key === 'laser_turret' ? 22 : 20, 6, d.key === 'laser_turret' ? '#37474f' : steel);
+            if (d.key === 'laser_turret') R(ctx, 14, -2, 6, 4, '#ff4081');
         }
         ctx.restore();
-        ctx.fillStyle = rig.team === 'player' ? '#5a6068' : '#5a4448';
-        ctx.beginPath();
-        ctx.arc(px, py, 8, 0, Math.PI * 2);
-        ctx.fill();
+        if (!heavy) {
+          ctx.fillStyle = rig.team === 'player' ? '#5a6068' : '#5a4448';
+          ctx.beginPath();
+          ctx.arc(px, py, d.key === 'point_defense' ? 5 : 8, 0, Math.PI * 2);
+          ctx.fill();
+        }
         R(ctx, px - 2, py - 2, 4, 4, m.crewed && live ? d.accent : '#333');
         continue;
       }
@@ -668,7 +834,7 @@ export class RigRenderer {
         }
         c.bob += 0.05;
         const bob = Math.sin(c.bob * 2 + i) > 0.7 ? 1 : 0;
-        R(ctx, x - 3, y - 12 - bob, 6, 7, pal.suit);
+        R(ctx, x - 3, y - 12 - bob, 6, 7, rig.team === 'player' ? ROLES[c.role]?.color ?? pal.suit : pal.suit);
         R(ctx, x - 2, y - 17 - bob, 5, 5, '#d7a98b');
         R(ctx, x - 2, y - 17 - bob, 5, 2, '#3e2723');
         R(ctx, x - 3, y - 5, 2, 5, '#263238');
@@ -703,6 +869,8 @@ export class RigRenderer {
         else if (d.key === 'refinery') glow(c.x, c.y + 6, 34, '#ff6e40', 0.35);
         else if (d.key === 'hydroponics') glow(c.x, c.y - 8, 30, '#d500f9', 0.2);
         else if (d.key === 'cockpit') glow(c.x, oy + (m.y + m.def.h) * TILE - 10, 24, '#00e5ff', 0.25);
+        else if (d.key === 'tesla') glow(c.x, oy + m.y * TILE + 9, 30, '#b388ff', 0.35 + 0.25 * Math.sin(m.anim * 12));
+        else if (d.key === 'rail_cannon') glow(c.x, oy + (m.y + 0.8) * TILE, 36, '#ea80fc', 0.25 + 0.15 * Math.sin(m.anim * 4));
         else if (d.turret && m.crewed) glow(c.x, oy + (m.y + m.def.h * 0.45) * TILE, 10, d.accent, 0.25);
         else glow(c.x, oy + (m.y + 0.2) * TILE, 14, d.accent, 0.12);
       }

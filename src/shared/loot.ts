@@ -19,10 +19,12 @@ export const LOOT_TABLES: Record<string, LootEntry[]> = {
   cache_magma: [...COMMON, L('sulfur', 4, 12, 5), L('explosive', 2, 5, 3), L('rockets', 3, 8, 2), L('rocket_tube', 1, 1, 0.25), L('cryo_core', 1, 2, 1)],
   cache_acid: [...COMMON, L('xenite', 2, 5, 5), L('uranium_rod', 1, 2, 2), L('hazmat_suit', 1, 1, 0.3), L('rail_lance', 1, 1, 0.2), L('xeno_alloy', 1, 2, 1)],
   wreck: [L('scrap', 15, 40, 10), L('iron_plate', 4, 10, 6), L('circuit', 1, 4, 5), L('copper_wire', 4, 10, 4), L('rounds', 30, 80, 5), L('medkit', 1, 2, 2), L('explosive', 1, 3, 2)],
-  wreck_rare: [L('titanium_alloy', 2, 6, 5), L('uranium_rod', 1, 3, 2), L('cryo_core', 1, 3, 2), L('scattergun', 1, 1, 1), L('arc_rifle', 1, 1, 0.6), L('rocket_tube', 1, 1, 0.3), L('jetpack1', 1, 1, 0.6)],
+  titan: [L('tech_parts', 3, 6, 10), L('titanium_alloy', 4, 10, 6), L('uranium_rod', 2, 4, 4), L('cryo_core', 2, 4, 4), L('xenite', 3, 8, 4), L('xeno_alloy', 1, 3, 2), L('medkit', 2, 4, 3)],
+  elite: [L('tech_parts', 1, 1, 4), L('scrap', 6, 14, 6), L('circuit', 1, 3, 4), L('rounds', 20, 40, 4), L('medkit', 1, 1, 2)],
+  wreck_rare: [L('tech_parts', 1, 3, 6), L('titanium_alloy', 2, 6, 5), L('uranium_rod', 1, 3, 2), L('cryo_core', 1, 3, 2), L('scattergun', 1, 1, 1), L('arc_rifle', 1, 1, 0.6), L('rocket_tube', 1, 1, 0.3), L('jetpack1', 1, 1, 0.6)],
   creature: [L('scrap', 1, 4, 10), L('biomass', 1, 2, 6), L('rounds', 4, 12, 4)],
   trooper: [L('scrap', 2, 6, 8), L('rounds', 8, 24, 8), L('medkit', 1, 1, 1.5), L('grenade', 1, 1, 1), L('circuit', 1, 1, 1.5)],
-  supply_drop: [L('titanium_alloy', 3, 8, 6), L('uranium_rod', 1, 3, 4), L('cryo_core', 1, 3, 4), L('xenite', 2, 6, 4), L('xeno_alloy', 1, 3, 2), L('arc_rifle', 1, 1, 1.2), L('rail_lance', 1, 1, 0.6), L('rocket_tube', 1, 1, 0.8), L('warborn_exo', 1, 1, 0.25), L('jetpack2', 1, 1, 0.5), L('medkit', 2, 4, 3), L('stim', 1, 3, 3)],
+  supply_drop: [L('tech_parts', 2, 5, 5), L('titanium_alloy', 3, 8, 6), L('uranium_rod', 1, 3, 4), L('cryo_core', 1, 3, 4), L('xenite', 2, 6, 4), L('xeno_alloy', 1, 3, 2), L('arc_rifle', 1, 1, 1.2), L('rail_lance', 1, 1, 0.6), L('rocket_tube', 1, 1, 0.8), L('warborn_exo', 1, 1, 0.25), L('jetpack2', 1, 1, 0.5), L('medkit', 2, 4, 3), L('stim', 1, 3, 3)],
   deadzone_scav: [L('scrap', 6, 18, 8), L('rounds', 20, 60, 8), L('titanium_alloy', 1, 3, 3), L('circuit', 1, 3, 4), L('medkit', 1, 2, 3), L('uranium_ore', 2, 5, 2), L('cryo_crystal', 2, 5, 2), L('scattergun', 1, 1, 0.5), L('scrap_smg', 1, 1, 0.7)],
 };
 

@@ -6,7 +6,7 @@ import { canAfford, payCost, scaleCost } from '../../shared/inventory';
 import { EXTRACT_SECONDS } from '../../shared/protocol';
 import type { Game, Interactable } from '../game';
 import type { Rig } from '../rig';
-import { RIG_TILES, RT } from '../rigDefs';
+import { RT } from '../rigDefs';
 
 const approach = (v: number, t: number, s: number): number => (v < t ? Math.min(t, v + s) : Math.max(t, v - s));
 const warned = new Map<string, number>();
@@ -332,6 +332,8 @@ const SALVAGE: Record<number, { id: string; n: number }> = {
   [RT.DOOR]: { id: 'iron_plate', n: 1 },
   [RT.LADDER]: { id: 'scrap', n: 1 },
   [RT.LAMP]: { id: 'copper_wire', n: 1 },
+  [RT.GLACIS_L]: { id: 'iron_plate', n: 1 },
+  [RT.GLACIS_R]: { id: 'iron_plate', n: 1 },
 };
 
 function mine(g: Game, def: ItemDef, dt: number): void {
@@ -361,8 +363,11 @@ function mine(g: Game, def: ItemDef, dt: number): void {
       if (p.mining.progress >= 1) {
         p.mining = null;
         if (mod) {
-          const yieldCost = scaleCost(mod.def.cost, 0.45);
+          const mult = g.playerRig?.bonus.salvageMult ?? 1;
+          const yieldCost = scaleCost(mod.def.cost, 0.45 * mult);
           if (!Object.keys(yieldCost).length) yieldCost.scrap = 3;
+          // Military hardware is where Salvaged Tech comes from.
+          if (mod.def.turret || mod.def.shield) yieldCost.tech_parts = (yieldCost.tech_parts ?? 0) + Math.max(1, Math.round((mod.def.turret?.size === 'heavy' ? 3 : 1) * mult));
           for (const id in yieldCost) g.dropItem(m.x, m.y, { id, n: yieldCost[id] });
           rig.removeModule(mod);
         } else {
@@ -449,7 +454,7 @@ function repair(g: Game, def: ItemDef, dt: number): void {
   } else {
     const i = ty * r.cols + tx;
     const t = r.tiles[i];
-    const max = RIG_TILES[t].hp;
+    const max = r.tileMax(t);
     if (t !== RT.EMPTY && t !== RT.CHASSIS && r.hp[i] < max) {
       healed = Math.min(amount, max - r.hp[i]);
       r.hp[i] += healed;

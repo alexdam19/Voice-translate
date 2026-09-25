@@ -1,4 +1,5 @@
 import type { Slot } from '../shared/inventory';
+import type { CrewMember } from './crew';
 import type { RigSave } from './rig';
 
 export interface SaveData {
@@ -11,8 +12,10 @@ export interface SaveData {
   mods: number[];
   opened: number[];
   cleared: number[];
-  stats: { kills: number; rigs: number; outposts: number; extracts: number; deaths: number; playtime: number };
+  stats: { kills: number; rigs: number; outposts: number; extracts: number; deaths: number; playtime: number; titans?: number };
   explored: string;
+  tech?: string[];
+  recruits?: CrewMember[];
 }
 
 const KEY = 'ironcrawl-save-v1';

@@ -24,6 +24,14 @@ function drive(r: Rig, w: World, seconds: number): number {
 }
 
 describe('rigs', () => {
+  it('starter rig is a tank: glacis hull, main battery, crew with roles', () => {
+    const r = buildStarterRig();
+    expect(r.cols).toBe(48);
+    expect(r.modules.some((m) => m.def.key === 'main_battery')).toBe(true);
+    expect([...r.tiles].filter((t) => t === RT.GLACIS_L || t === RT.GLACIS_R).length).toBe(8);
+    expect(r.crew.map((c) => c.role).sort()).toEqual(['driver', 'engineer', 'gunner', 'gunner']);
+  });
+
   it('starter rig is complete and powered', () => {
     const r = buildStarterRig();
     expect(r.hasCockpit).toBe(true);
@@ -61,9 +69,9 @@ describe('rigs', () => {
   it('validates module placement', () => {
     const r = buildStarterRig();
     const garage = MODULES.garage;
-    expect(r.checkModule(garage, 28, 9)).toBeNull();
+    expect(r.checkModule(garage, 30, 11)).toBeNull();
     expect(r.checkModule(MODULES.autocannon, 14, 0)).toBe('Needs a floor underneath');
-    expect(r.checkModule(garage, 28, 2)).toBe('Overlaps a module');
+    expect(r.checkModule(garage, 20, 2)).toBe('Overlaps a module');
     expect(r.checkModule(MODULES.cockpit, 28, 10)).toBe('Only one allowed');
     expect(r.checkModule(MODULES.drill, 20, 8)).not.toBeNull();
   });
