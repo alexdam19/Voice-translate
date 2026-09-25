@@ -75,32 +75,36 @@ export class Audio {
   }
 
   play(name: string, vol = 1): void {
-    if (this.muted || !this.throttle(name, name === 'mine' ? 90 : 30)) return;
+    if (this.muted || vol <= 0.02 || !this.throttle(name, name === 'harvest' ? 120 : name === 'smg' ? 45 : 30)) return;
     switch (name) {
-      case 'pistol': this.noise(0.12, 0.5 * vol, 2600); this.tone(180, 0.08, 'square', 0.15 * vol, 0.5); break;
-      case 'smg': this.noise(0.07, 0.35 * vol, 3200); break;
-      case 'shotgun': this.noise(0.3, 0.7 * vol, 1400); this.tone(90, 0.2, 'sawtooth', 0.2 * vol, 0.4); break;
-      case 'laser': this.tone(1200, 0.14, 'sawtooth', 0.12 * vol, 0.3); break;
-      case 'rail': this.tone(2200, 0.35, 'sawtooth', 0.18 * vol, 0.1); this.noise(0.2, 0.3 * vol, 5000); break;
-      case 'rocket': this.noise(0.5, 0.4 * vol, 900); break;
-      case 'throw': this.tone(400, 0.1, 'triangle', 0.1 * vol, 0.6); break;
-      case 'melee': this.tone(160, 0.1, 'square', 0.15 * vol, 2); break;
-      case 'cannon': this.noise(0.18, 0.45 * vol, 1200); this.tone(110, 0.15, 'square', 0.12 * vol, 0.5); break;
-      case 'explode': this.noise(0.9, 0.9 * vol, 500, 0.7); this.tone(60, 0.6, 'sine', 0.5 * vol, 0.3); break;
-      case 'hit': this.noise(0.05, 0.3 * vol, 4000); break;
-      case 'clank': this.tone(320, 0.08, 'square', 0.1 * vol, 0.7); this.noise(0.05, 0.2 * vol, 6000); break;
-      case 'hurt': this.tone(220, 0.2, 'sawtooth', 0.2 * vol, 0.5); break;
-      case 'mine': this.noise(0.05, 0.12 * vol, 3000 + Math.random() * 2000); break;
-      case 'break': this.noise(0.15, 0.3 * vol, 1800); break;
-      case 'pickup': this.tone(880, 0.07, 'square', 0.08 * vol, 1.5); break;
-      case 'craft': this.tone(520, 0.08, 'square', 0.1 * vol, 1.2); setTimeout(() => this.tone(780, 0.1, 'square', 0.1 * vol, 1.2), 70); break;
-      case 'build': this.tone(260, 0.06, 'square', 0.12 * vol, 0.8); this.noise(0.05, 0.2 * vol, 3000); break;
-      case 'ui': this.tone(660, 0.04, 'square', 0.06 * vol); break;
-      case 'error': this.tone(140, 0.15, 'square', 0.12 * vol); break;
-      case 'shield': this.tone(900, 0.12, 'sine', 0.12 * vol, 0.6); break;
-      case 'alarm': this.tone(700, 0.25, 'square', 0.1 * vol, 0.7); break;
-      case 'jet': this.noise(0.08, 0.1 * vol, 1500); break;
-      case 'door': this.tone(200, 0.12, 'triangle', 0.1 * vol, 1.3); break;
+      case 'smg': this.noise(0.07, 0.3 * vol, 3200); this.tone(160, 0.05, 'square', 0.05 * vol, 0.6); break;
+      case 'shotgun': this.noise(0.25, 0.6 * vol, 1400); this.tone(90, 0.18, 'sawtooth', 0.15 * vol, 0.4); break;
+      case 'cannon': this.noise(0.35, 0.7 * vol, 900); this.tone(70, 0.3, 'square', 0.25 * vol, 0.4); break;
+      case 'laser': this.tone(1200, 0.14, 'sawtooth', 0.1 * vol, 0.3); break;
+      case 'rail': this.tone(2200, 0.35, 'sawtooth', 0.16 * vol, 0.1); this.noise(0.2, 0.3 * vol, 5000); break;
+      case 'rocket': this.noise(0.45, 0.35 * vol, 900); this.tone(300, 0.2, 'triangle', 0.06 * vol, 2); break;
+      case 'mortar': this.tone(180, 0.25, 'square', 0.18 * vol, 0.5); this.noise(0.2, 0.4 * vol, 700); break;
+      case 'tesla': this.noise(0.18, 0.3 * vol, 6000, 4); this.tone(90, 0.15, 'sawtooth', 0.1 * vol, 3); break;
+      case 'flak': this.noise(0.12, 0.35 * vol, 1800); break;
+      case 'enemyshot': this.noise(0.06, 0.2 * vol, 2400); this.tone(420, 0.05, 'square', 0.04 * vol, 0.6); break;
+      case 'boom': this.noise(0.5, 0.6 * vol, 600, 0.7); this.tone(70, 0.35, 'sine', 0.3 * vol, 0.4); break;
+      case 'bigboom': this.noise(1.1, 0.95 * vol, 400, 0.7); this.tone(45, 0.8, 'sine', 0.55 * vol, 0.3); break;
+      case 'splat': this.noise(0.12, 0.25 * vol, 1200); this.tone(140, 0.1, 'square', 0.06 * vol, 0.5); break;
+      case 'bite': this.tone(200, 0.08, 'square', 0.1 * vol, 0.6); break;
+      case 'harvest': this.noise(0.06, 0.12 * vol, 2500 + Math.random() * 2000); this.tone(700 + Math.random() * 200, 0.04, 'square', 0.03 * vol); break;
+      case 'pickup': this.tone(880, 0.06, 'square', 0.06 * vol, 1.5); break;
+      case 'chest': this.tone(523, 0.1, 'square', 0.1 * vol); setTimeout(() => this.tone(659, 0.1, 'square', 0.1 * vol), 90); setTimeout(() => this.tone(784, 0.18, 'square', 0.1 * vol), 180); break;
+      case 'legendary': [523, 659, 784, 1047, 1319].forEach((f, i) => setTimeout(() => this.tone(f, 0.22, 'square', 0.1 * vol), i * 90)); break;
+      case 'rune': this.tone(330, 0.5, 'sine', 0.15 * vol, 2); this.tone(495, 0.5, 'triangle', 0.08 * vol, 2); break;
+      case 'levelup': [392, 523, 659].forEach((f, i) => setTimeout(() => this.tone(f, 0.12, 'square', 0.08 * vol), i * 80)); break;
+      case 'ability': this.tone(600, 0.12, 'triangle', 0.12 * vol, 1.8); this.noise(0.1, 0.15 * vol, 4000); break;
+      case 'alarm': this.tone(700, 0.25, 'square', 0.1 * vol, 0.7); setTimeout(() => this.tone(700, 0.25, 'square', 0.1 * vol, 0.7), 300); break;
+      case 'roar': this.noise(1.4, 0.6 * vol, 300, 2); this.tone(55, 1.2, 'sawtooth', 0.3 * vol, 0.6); break;
+      case 'ui': this.tone(660, 0.04, 'square', 0.05 * vol); break;
+      case 'error': this.tone(140, 0.15, 'square', 0.1 * vol); break;
+      case 'build': this.tone(260, 0.06, 'square', 0.1 * vol, 0.8); this.noise(0.05, 0.2 * vol, 3000); break;
+      case 'craft': this.tone(520, 0.08, 'square', 0.08 * vol, 1.2); setTimeout(() => this.tone(780, 0.1, 'square', 0.08 * vol, 1.2), 70); break;
+      case 'hurt': this.tone(220, 0.2, 'sawtooth', 0.15 * vol, 0.5); break;
     }
   }
 
@@ -119,7 +123,7 @@ export class Audio {
       this.engineOsc.connect(f).connect(this.engineGain).connect(this.master);
       this.engineOsc.start();
     }
-    this.engineOsc.frequency.setTargetAtTime(38 + Math.abs(speed) * 0.35, c.currentTime, 0.1);
-    this.engineGain!.gain.setTargetAtTime(on && !this.muted ? 0.05 + Math.min(0.06, Math.abs(speed) * 0.0004) : 0, c.currentTime, 0.2);
+    this.engineOsc.frequency.setTargetAtTime(36 + Math.abs(speed) * 6, c.currentTime, 0.1);
+    this.engineGain!.gain.setTargetAtTime(on && !this.muted ? 0.04 + Math.min(0.06, Math.abs(speed) * 0.008) : 0, c.currentTime, 0.2);
   }
 }

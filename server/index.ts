@@ -4,8 +4,8 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { DEFAULT_PORT } from '../src/shared/constants';
+import { WarzoneServer } from '../src/shared/dzServer';
 import { NET_TICK_MS, type C2S } from '../src/shared/protocol';
-import { WarzoneServer } from './warzone';
 
 const PORT = Number(process.env.PORT) || DEFAULT_PORT;
 const SEED = Number(process.env.WARZONE_SEED) || Math.floor(Math.random() * 1e9);
@@ -42,7 +42,7 @@ const http = createServer((req, res) => {
 });
 
 const zone = new WarzoneServer(SEED, BOTS);
-const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: 64 * 1024 });
+const wss = new WebSocketServer({ server: http, path: '/ws', maxPayload: 256 * 1024 });
 
 wss.on('connection', (ws) => {
   const session = zone.connect({

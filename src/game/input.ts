@@ -2,41 +2,53 @@
 export class Input {
   private held = new Set<string>();
   private pressed = new Set<string>();
-  mouse = { x: 0, y: 0, left: false, right: false, leftPressed: false, rightPressed: false, wheel: 0, overUI: false };
+  mouse = {
+    x: 0, y: 0, left: false, right: false, middle: false, leftPressed: false, rightPressed: false, leftReleased: false,
+    wheel: 0, overUI: false, inside: true,
+  };
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
       if (this.isTyping(e)) return;
       if (!this.held.has(e.code)) this.pressed.add(e.code);
       this.held.add(e.code);
-      if (['Space', 'Tab', 'F1', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
+      if (['Space', 'Tab', 'F1', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     });
     window.addEventListener('keyup', (e) => this.held.delete(e.code));
     window.addEventListener('blur', () => {
       this.held.clear();
-      this.mouse.left = this.mouse.right = false;
+      this.mouse.left = this.mouse.right = this.mouse.middle = false;
     });
-    canvas.addEventListener('mousemove', (e) => this.setMouse(e));
     window.addEventListener('mousemove', (e) => {
-      this.setMouse(e);
-      this.mouse.overUI = e.target !== canvas;
+      this.mouse.x = e.clientX;
+      this.mouse.y = e.clientY;
+      this.mouse.overUI = e.target !== target;
+      this.mouse.inside = true;
     });
-    canvas.addEventListener('mousedown', (e) => {
-      this.setMouse(e);
+    document.addEventListener('mouseleave', () => (this.mouse.inside = false));
+    target.addEventListener('mousedown', (e) => {
+      this.mouse.x = e.clientX;
+      this.mouse.y = e.clientY;
       if (e.button === 0) {
         this.mouse.left = true;
         this.mouse.leftPressed = true;
       } else if (e.button === 2) {
         this.mouse.right = true;
         this.mouse.rightPressed = true;
+      } else if (e.button === 1) {
+        this.mouse.middle = true;
+        e.preventDefault();
       }
     });
     window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) this.mouse.left = false;
-      else if (e.button === 2) this.mouse.right = false;
+      if (e.button === 0) {
+        if (this.mouse.left) this.mouse.leftReleased = true;
+        this.mouse.left = false;
+      } else if (e.button === 2) this.mouse.right = false;
+      else if (e.button === 1) this.mouse.middle = false;
     });
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    canvas.addEventListener(
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+    target.addEventListener(
       'wheel',
       (e) => {
         this.mouse.wheel += Math.sign(e.deltaY);
@@ -44,17 +56,21 @@ export class Input {
       },
       { passive: false },
     );
+    // Basic touch: tap = move, long-press = attack/fire.
+    target.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      if (!t) return;
+      this.mouse.x = t.clientX;
+      this.mouse.y = t.clientY;
+      this.mouse.rightPressed = true;
+      this.mouse.overUI = false;
+      e.preventDefault();
+    }, { passive: false });
   }
 
   private isTyping(e: KeyboardEvent): boolean {
     const t = e.target as HTMLElement | null;
-    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
-  }
-
-  private setMouse(e: MouseEvent): void {
-    const r = this.canvas.getBoundingClientRect();
-    this.mouse.x = e.clientX - r.left;
-    this.mouse.y = e.clientY - r.top;
+    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT');
   }
 
   down(code: string): boolean {
@@ -65,18 +81,17 @@ export class Input {
     return this.pressed.has(code);
   }
 
-  /** Consumes a key press so other handlers don't see it this frame. */
   consume(code: string): boolean {
     const had = this.pressed.has(code);
     this.pressed.delete(code);
     return had;
   }
 
-  /** Clears one-shot input (presses, clicks, wheel) so it is seen by exactly one simulation step. */
   endFrame(): void {
     this.pressed.clear();
     this.mouse.leftPressed = false;
     this.mouse.rightPressed = false;
+    this.mouse.leftReleased = false;
     this.mouse.wheel = 0;
   }
 }

@@ -1,6 +1,7 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 
-// The Warzone server listens on 8787; in dev we proxy /ws to it so the client
+// The Dead Zone server listens on 8787; in dev we proxy /ws to it so the client
 // can always connect to the same origin it was served from.
 export default defineConfig({
   server: {
@@ -12,5 +13,9 @@ export default defineConfig({
   build: {
     target: 'es2022',
     outDir: 'dist',
+    chunkSizeWarningLimit: 1500,
+  },
+  test: {
+    include: ['tests/**/*.test.ts'],
   },
 });

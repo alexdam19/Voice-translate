@@ -1,119 +1,216 @@
 import type { Cost } from '../shared/inventory';
-import type { ModuleInst } from './rig';
-import { hullMods, weaponMods, type HullMods, type WeaponMods } from './tech';
-import type { WeaponFamily } from './rigDefs';
+import { RARITIES, rollRarity, type Rarity } from '../shared/rarity';
 
 /* ---------------------------------------------------------------------- */
-/* Roles, perks, traits                                                    */
+/* Roles and abilities                                                     */
 /* ---------------------------------------------------------------------- */
 
 export type CrewRole = 'gunner' | 'engineer' | 'mechanic' | 'medic' | 'driver' | 'scavenger' | 'quartermaster' | 'scientist' | 'marine';
 
-export interface PerkDef {
-  id: string;
+export interface AbilityDef {
+  key: string;
   name: string;
   desc: string;
+  /** Base cooldown in seconds. */
+  cd: number;
+  /** 'point' abilities are cast at the mouse cursor. */
+  target: 'self' | 'point';
+  range?: number;
+  color: string;
 }
+
+export const ABILITIES: Record<string, AbilityDef> = {
+  barrage: { key: 'barrage', name: 'Barrage', desc: 'All weapons fire {50%} faster for 5s.', cd: 22, target: 'self', color: '#ff9100' },
+  shield_surge: { key: 'shield_surge', name: 'Shield Surge', desc: 'Gain a barrier worth {18%} of max hull for 6s.', cd: 28, target: 'self', color: '#40c4ff' },
+  weld: { key: 'weld', name: 'Weld Crew', desc: 'Repair {22%} of max hull over 3s.', cd: 30, target: 'self', color: '#ffd740' },
+  triage: { key: 'triage', name: 'Triage', desc: 'Revive injured crew, cleanse burns and stuns, and regenerate {6%} hull over 5s.', cd: 40, target: 'self', color: '#76ff03' },
+  nitro: { key: 'nitro', name: 'Nitro', desc: '+{70%} speed for 4s. Ram enemies for damage.', cd: 18, target: 'self', color: '#00e5ff' },
+  magnet: { key: 'magnet', name: 'Magnet Sweep', desc: 'Pull in all loot within 30 units and harvest {60%} faster for 8s.', cd: 20, target: 'self', color: '#bcaaa4' },
+  artillery: { key: 'artillery', name: 'Artillery Call', desc: 'Six shells hit the target area after 1s ({60} damage each).', cd: 26, target: 'point', range: 32, color: '#ff6e40' },
+  emp: { key: 'emp', name: 'EMP Pulse', desc: 'Stun enemies within 12 units for {2s} and deal 40 damage.', cd: 30, target: 'self', color: '#ea80fc' },
+  squad: { key: 'squad', name: 'Drop Squad', desc: 'Deploy {3} marines for 20s.', cd: 40, target: 'self', color: '#ff5252' },
+  // Champion signatures
+  deadeye: { key: 'deadeye', name: 'Deadeye Salvo', desc: 'For {6s} every shot is a critical hit and pierces one extra target.', cd: 35, target: 'self', color: '#ffab00' },
+  meltdown: { key: 'meltdown', name: 'Meltdown Core', desc: 'Refill shields; weapons fire {80%} faster for 7s.', cd: 45, target: 'self', color: '#ffea00' },
+  nanite: { key: 'nanite', name: 'Nanite Cloud', desc: 'Repair {45%} hull over 5s and gain +30% armor.', cd: 45, target: 'self', color: '#c6ff00' },
+  miracle: { key: 'miracle', name: 'Miracle Protocol', desc: 'Invulnerable for {3s}, repair 25% hull, revive and cleanse everyone.', cd: 60, target: 'self', color: '#b9f6ca' },
+  charge: { key: 'charge', name: 'Juggernaut Charge', desc: 'Dash toward the cursor, crushing everything in the way for {150} damage.', cd: 16, target: 'point', range: 20, color: '#18ffff' },
+  treasure: { key: 'treasure', name: 'Treasure Sense', desc: 'Pull in loot within 60 units, reveal every loot area and rune, and upgrade the next chest by one rarity.', cd: 90, target: 'self', color: '#ffd23f' },
+  orbital: { key: 'orbital', name: 'Orbital Lance', desc: 'A beam from orbit hits the target after 1.2s for {600} damage and sets the ground alight.', cd: 50, target: 'point', range: 40, color: '#ff3d00' },
+  singularity: { key: 'singularity', name: 'Singularity', desc: 'A gravity well drags enemies in for 3s, then detonates for {250}.', cd: 40, target: 'point', range: 26, color: '#d500f9' },
+  legion: { key: 'legion', name: 'Iron Legion', desc: 'Deploy {5} heavy marines for 25s.', cd: 50, target: 'self', color: '#ff1744' },
+};
 
 export interface RoleDef {
   key: CrewRole;
   name: string;
   color: string;
-  /** Module keys this role prefers to be posted at, best first. */
-  posts: string[];
   ability: string;
-  perks: PerkDef[];
+  /** What side crew of this role do passively. */
+  passive: string;
 }
 
-const P = (id: string, name: string, desc: string): PerkDef => ({ id, name, desc });
-
 export const ROLES: Record<CrewRole, RoleDef> = {
-  gunner: {
-    key: 'gunner', name: 'Gunner', color: '#ff9100', posts: ['rail_cannon', 'main_battery', 'missile_pod', 'mortar', 'laser_turret', 'autocannon', 'gatling', 'tesla', 'flak', 'point_defense'],
-    ability: 'Mans a turret: +8% damage and fire rate per level on that gun.',
-    perks: [P('deadeye', 'Deadeye', 'Manned turret deals +20% damage.'), P('rapid_reload', 'Rapid Reload', 'Manned turret fires +20% faster.'), P('spotter', 'Spotter', 'Every turret on the rig gets +15% range.')],
-  },
-  engineer: {
-    key: 'engineer', name: 'Engineer', color: '#ffd740', posts: ['fission', 'reactor', 'ion_engine', 'engine'],
-    ability: 'Runs a reactor (+10% power per level) or an engine (+10% thrust per level).',
-    perks: [P('overclock', 'Overclock', 'Their reactor or engine gets another +15%.'), P('efficiency', 'Efficiency', 'Rig-wide power draw -10%.'), P('hot_swap', 'Hot Swap', 'Facilities slowly self-repair (2 hp/s).')],
-  },
-  mechanic: {
-    key: 'mechanic', name: 'Mechanic', color: '#ffab40', posts: ['repair_bay', 'garage', 'engine'],
-    ability: 'Patches plating anywhere on the rig: 3 hp/s per level (double at Repair Drones). Uses cargo scrap.',
-    perks: [P('field_welder', 'Field Welder', 'Repairs 50% faster.'), P('armorsmith', 'Armorsmith', 'All plating +15% max health.'), P('salvager', 'Salvager', 'Salvaging wrecks yields 50% more.')],
-  },
-  medic: {
-    key: 'medic', name: 'Medic', color: '#76ff03', posts: ['medbay', 'quarters'],
-    ability: 'Heals you and the crew aboard: 1.5 hp/s per level (double from a Medbay).',
-    perks: [P('triage', 'Triage', 'Crew are never killed by hazards.'), P('combat_stims', 'Combat Stims', 'You take 15% less damage near the rig.'), P('field_surgeon', 'Field Surgeon', 'Heals you anywhere within 40 tiles of the rig.')],
-  },
-  driver: {
-    key: 'driver', name: 'Driver', color: '#00e5ff', posts: ['cockpit'],
-    ability: 'At the Command Bridge: +5% speed per level.',
-    perks: [P('rough_rider', 'Rough Rider', '+1 climb and half the bog-down penalty on bad terrain.'), P('lead_foot', 'Lead Foot', '+15% speed.'), P('evasive', 'Evasive Driving', 'Rig takes 15% less damage while moving.')],
-  },
-  scavenger: {
-    key: 'scavenger', name: 'Scavenger', color: '#a1887f', posts: ['cargo', 'garage'],
-    ability: '+20% chance per level of an extra loot roll from caches, wrecks and titans.',
-    perks: [P('keen_eye', 'Keen Eye', 'Always one extra loot roll.'), P('pack_rat', 'Pack Rat', '+16 cargo slots.'), P('tech_hunter', 'Tech Hunter', '+1 Salvaged Tech from every wreck and titan.')],
-  },
-  quartermaster: {
-    key: 'quartermaster', name: 'Quartermaster', color: '#b0bec5', posts: ['refinery', 'cargo'],
-    ability: 'At a Refinery or Cargo Bay: +8 cargo slots and +10% chance per level to double refinery output.',
-    perks: [P('bulk_smelting', 'Bulk Smelting', '+20% more chance to double refinery output.'), P('logistics', 'Logistics', '+24 cargo slots.'), P('rationing', 'Rationing', 'Hydroponics grow twice as fast.')],
-  },
-  scientist: {
-    key: 'scientist', name: 'Scientist', color: '#ea80fc', posts: ['fabricator', 'armory', 'radar'],
-    ability: 'Research costs -8% per level (max -50% across the crew).',
-    perks: [P('reverse_engineering', 'Reverse Engineering', '+1 Salvaged Tech from every wreck and titan.'), P('theorist', 'Theorist', 'Another -15% research cost.'), P('lab_safety', 'Weapons Lab', 'Energy weapons deal +10% damage.')],
-  },
-  marine: {
-    key: 'marine', name: 'Marine', color: '#ff5252', posts: ['barracks', 'armory'],
-    ability: 'Repels boarders: +25% damage per level when defending the rig.',
-    perks: [P('veteran', 'Veteran', '+50 max health.'), P('suppressive_fire', 'Suppressive Fire', 'Fires 50% faster at intruders.'), P('boarding_party', 'Overwatch', 'Also shoots enemies within 14 tiles outside the hull.')],
-  },
+  gunner: { key: 'gunner', name: 'Gunner', color: '#ff9100', ability: 'barrage', passive: '+2.5% weapon damage per level' },
+  engineer: { key: 'engineer', name: 'Engineer', color: '#ffd740', ability: 'shield_surge', passive: '+4% power and +3% shields per level' },
+  mechanic: { key: 'mechanic', name: 'Mechanic', color: '#ffab40', ability: 'weld', passive: '+0.35 hull repair per second per level' },
+  medic: { key: 'medic', name: 'Medic', color: '#76ff03', ability: 'triage', passive: 'Injured crew recover 25% faster per level' },
+  driver: { key: 'driver', name: 'Driver', color: '#00e5ff', ability: 'nitro', passive: '+2% speed per level' },
+  scavenger: { key: 'scavenger', name: 'Scavenger', color: '#bcaaa4', ability: 'magnet', passive: '+4% loot and +5% harvest speed per level' },
+  quartermaster: { key: 'quartermaster', name: 'Quartermaster', color: '#b0bec5', ability: 'artillery', passive: '+2 cargo slots per level' },
+  scientist: { key: 'scientist', name: 'Scientist', color: '#ea80fc', ability: 'emp', passive: '-3% research cost per level' },
+  marine: { key: 'marine', name: 'Marine', color: '#ff5252', ability: 'squad', passive: '+1% armor and +2% hull per level' },
 };
 
 export const ROLE_LIST = Object.values(ROLES);
 
-export interface TraitDef {
-  key: string;
+/* ---------------------------------------------------------------------- */
+/* Champions and exclusive characters                                      */
+/* ---------------------------------------------------------------------- */
+
+export interface ChampionDef {
+  id: string;
   name: string;
+  title: string;
+  role: CrewRole;
+  ability: string;
+  hair: string;
+  accent: string;
+}
+
+/** Legendary crew with signature abilities. Only from rune chests. */
+export const CHAMPIONS: ChampionDef[] = [
+  { id: 'vex', name: 'Vex Morrow', title: 'the Railhand', role: 'gunner', ability: 'deadeye', hair: '#e0e0e0', accent: '#ffab00' },
+  { id: 'brass', name: 'Old Brass', title: 'Reactor Whisperer', role: 'engineer', ability: 'meltdown', hair: '#8d6e63', accent: '#ffea00' },
+  { id: 'rivet', name: 'Doc Rivet', title: 'Nanite Surgeon', role: 'mechanic', ability: 'nanite', hair: '#212121', accent: '#c6ff00' },
+  { id: 'kess', name: 'Mother Kess', title: 'Saint of Rust', role: 'medic', ability: 'miracle', hair: '#f5f5f5', accent: '#b9f6ca' },
+  { id: 'grit', name: 'Grit Taggart', title: 'the Juggernaut', role: 'driver', ability: 'charge', hair: '#ff7043', accent: '#18ffff' },
+  { id: 'magpie', name: 'Magpie', title: 'Queen of Junk', role: 'scavenger', ability: 'treasure', hair: '#311b92', accent: '#ffd23f' },
+  { id: 'hale', name: 'Marshal Hale', title: 'Orbital Liaison', role: 'quartermaster', ability: 'orbital', hair: '#546e7a', accent: '#ff3d00' },
+  { id: 'nova', name: 'Nova Six', title: 'Gravity Witch', role: 'scientist', ability: 'singularity', hair: '#e040fb', accent: '#d500f9' },
+  { id: 'sol', name: 'Warden Sol', title: 'Iron Legion', role: 'marine', ability: 'legion', hair: '#ffd54f', accent: '#ff1744' },
+];
+
+export interface ExclusiveDef {
+  id: string;
+  name: string;
+  role: CrewRole;
+  effect: 'heal_boost' | 'cdr_all' | 'extra_marines' | 'terrain' | 'research' | 'regen' | 'crit_all' | 'chest_luck' | 'cargo';
   desc: string;
 }
 
-export const TRAITS: TraitDef[] = [
-  { key: 'tough', name: 'Tough', desc: '+50 max health.' },
-  { key: 'quick', name: 'Quick Learner', desc: '+50% experience.' },
-  { key: 'ex_military', name: 'Ex-Military', desc: '+10% damage on any turret they man.' },
-  { key: 'iron_lungs', name: 'Iron Lungs', desc: 'Takes half damage from hazards.' },
-  { key: 'frugal', name: 'Frugal', desc: 'Recruits for half price.' },
-  { key: 'steady', name: 'Steady', desc: 'No special talent. Reliable.' },
+/** Epic crew with a unique passive. Only from rune chests and choice chests. */
+export const EXCLUSIVES: ExclusiveDef[] = [
+  { id: 'ashveil', name: 'Sister Ashveil', role: 'medic', effect: 'heal_boost', desc: 'All hull repair is 30% stronger.' },
+  { id: 'rho', name: 'Tinker Rho', role: 'engineer', effect: 'cdr_all', desc: 'All officer abilities recharge 10% faster.' },
+  { id: 'krank', name: 'Krank', role: 'marine', effect: 'extra_marines', desc: 'Every marine drop brings 2 extra marines.' },
+  { id: 'zara', name: 'Dune Queen Zara', role: 'driver', effect: 'terrain', desc: 'Sand, snow, ice and mud never slow the fortress.' },
+  { id: 'glitch', name: 'Glitch', role: 'scientist', effect: 'research', desc: 'Research costs 20% less.' },
+  { id: 'pete', name: 'Rustlung Pete', role: 'mechanic', effect: 'regen', desc: '+2 hull repair per second, always.' },
+  { id: 'bo', name: 'Bullseye Bo', role: 'gunner', effect: 'crit_all', desc: 'All weapons +10% critical hit chance.' },
+  { id: 'loretta', name: 'Lucky Loretta', role: 'scavenger', effect: 'chest_luck', desc: 'Chests roll noticeably better rarities.' },
+  { id: 'stack', name: 'Sergeant Stack', role: 'quartermaster', effect: 'cargo', desc: '+24 cargo slots.' },
 ];
 
-export const XP_LEVELS = [0, 100, 260, 520];
+/* ---------------------------------------------------------------------- */
+/* Perks (with rarity)                                                     */
+/* ---------------------------------------------------------------------- */
+
+export type PerkStat =
+  | 'dmg' | 'rate' | 'range' | 'hp' | 'shield' | 'speed' | 'armor' | 'regen' | 'cdr' | 'power'
+  | 'loot' | 'harvest' | 'cargo' | 'crit' | 'lifesteal' | 'ability' | 'vision' | 'research' | 'xp';
+
+export interface PerkDef {
+  id: string;
+  name: string;
+  stat: PerkStat;
+  /** Value per rarity: common..legendary. Percent stats are fractions. */
+  values: [number, number, number, number, number];
+  desc: string;
+  minRarity?: Rarity;
+}
+
+const PCT: [number, number, number, number, number] = [0.03, 0.05, 0.08, 0.12, 0.18];
+
+export const PERKS: PerkDef[] = [
+  { id: 'sharpshooter', name: 'Sharpshooter', stat: 'dmg', values: PCT, desc: '+{v} weapon damage' },
+  { id: 'trigger', name: 'Trigger Discipline', stat: 'rate', values: PCT, desc: '+{v} fire rate' },
+  { id: 'longbarrel', name: 'Long Barrels', stat: 'range', values: [0.03, 0.05, 0.07, 0.1, 0.14], desc: '+{v} weapon range' },
+  { id: 'plating', name: 'Extra Plating', stat: 'hp', values: [0.03, 0.05, 0.08, 0.12, 0.18], desc: '+{v} max hull' },
+  { id: 'capacitor', name: 'Shield Tuning', stat: 'shield', values: [0.05, 0.08, 0.12, 0.18, 0.26], desc: '+{v} shields' },
+  { id: 'leadfoot', name: 'Lead Foot', stat: 'speed', values: [0.02, 0.035, 0.05, 0.075, 0.11], desc: '+{v} speed' },
+  { id: 'bulwark', name: 'Bulwark', stat: 'armor', values: [0.01, 0.015, 0.025, 0.04, 0.06], desc: '+{v} armor' },
+  { id: 'patchwork', name: 'Patchwork', stat: 'regen', values: [0.4, 0.7, 1.1, 1.7, 2.6], desc: '+{v} hull repair per second' },
+  { id: 'quickhands', name: 'Quick Hands', stat: 'cdr', values: [0.02, 0.035, 0.05, 0.07, 0.1], desc: 'Officer abilities recharge {v} faster' },
+  { id: 'overvolt', name: 'Overvolt', stat: 'power', values: [0.04, 0.06, 0.1, 0.15, 0.22], desc: '+{v} power' },
+  { id: 'scrounger', name: 'Scrounger', stat: 'loot', values: [0.04, 0.07, 0.11, 0.16, 0.24], desc: '+{v} loot' },
+  { id: 'prospector', name: 'Prospector', stat: 'harvest', values: [0.05, 0.08, 0.12, 0.18, 0.26], desc: '+{v} harvest speed' },
+  { id: 'packrat', name: 'Pack Rat', stat: 'cargo', values: [2, 3, 5, 8, 12], desc: '+{v} cargo slots' },
+  { id: 'eagle', name: 'Eagle Eye', stat: 'crit', values: [0.02, 0.03, 0.05, 0.08, 0.12], desc: '+{v} critical hit chance' },
+  { id: 'vampiric', name: 'Vampiric Rounds', stat: 'lifesteal', values: [0.005, 0.01, 0.015, 0.025, 0.04], desc: 'Heal {v} of weapon damage dealt', minRarity: 2 },
+  { id: 'signature', name: 'Signature Move', stat: 'ability', values: [0.06, 0.09, 0.14, 0.2, 0.3], desc: 'Their own ability is {v} stronger' },
+  { id: 'lookout', name: 'Lookout', stat: 'vision', values: [1, 1.5, 2.5, 3.5, 5], desc: '+{v} vision range' },
+  { id: 'egghead', name: 'Egghead', stat: 'research', values: [0.02, 0.03, 0.05, 0.07, 0.1], desc: '-{v} research cost' },
+  { id: 'student', name: 'Fast Learner', stat: 'xp', values: [0.08, 0.12, 0.18, 0.26, 0.4], desc: '+{v} crew experience' },
+];
+
+export const PERK_BY_ID = new Map(PERKS.map((p) => [p.id, p]));
+
+const FLAT_STATS: PerkStat[] = ['regen', 'cargo', 'vision'];
+
+export function perkValueText(p: PerkDef, r: Rarity): string {
+  const v = p.values[r];
+  if (FLAT_STATS.includes(p.stat)) return String(Math.round(v * 10) / 10);
+  return `${Math.round(v * 1000) / 10}%`;
+}
+
+export function perkText(id: string, r: Rarity): string {
+  const p = PERK_BY_ID.get(id);
+  if (!p) return id;
+  return p.desc.replace('{v}', perkValueText(p, r));
+}
+
+export interface PerkInst {
+  id: string;
+  rarity: Rarity;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Crew members                                                            */
+/* ---------------------------------------------------------------------- */
+
+export const XP_LEVELS = [0, 60, 150, 280, 450, 680, 960, 1300, 1700, 2200];
 export const MAX_LEVEL = XP_LEVELS.length;
+
+export type CrewLoc = 'main' | 'outrider' | 'away';
 
 export interface CrewMember {
   id: number;
   name: string;
   role: CrewRole;
-  trait: string;
+  rarity: Rarity;
   level: number;
   xp: number;
-  perks: string[];
-  hp: number;
-  maxHp: number;
-  /** Module id they currently work at (-1 = none). */
-  post: number;
-  /** Manually assigned module id, or null for automatic posting. */
-  assign: number | null;
-  bob: number;
+  perks: PerkInst[];
+  /** Pending perk choice after a level up (pick one of three). */
+  draft: PerkInst[] | null;
+  champion: string | null;
+  exclusive: string | null;
+  /** Portrait seed. */
+  face: number;
+  /** Seconds until an injured crew member is back on duty (0 = fit). */
+  injured: number;
+  loc: CrewLoc;
+  /** Officer slot 0-5 (Q W E R D F), or -1 for side crew. */
+  officer: number;
+  /** Ability cooldown remaining (s). */
+  cd: number;
+  /** For crew away from the fortress: seconds until they walk back. */
+  returnIn: number;
 }
 
-const FIRST = ['Vex', 'Rook', 'Juno', 'Kade', 'Mara', 'Ozzy', 'Tamsin', 'Brick', 'Nyx', 'Solder', 'Wren', 'Grit', 'Pike', 'Echo', 'Dusk', 'Riva', 'Hex', 'Moth', 'Cinder', 'Talon', 'Ash', 'Bolt', 'Kestrel', 'Nova', 'Sable', 'Tank'];
-const LAST = ['Kowalski', 'Ashgrove', 'Nine', 'Rustfang', 'Okafor', 'Vance', 'Ironside', 'Marrow', 'Quill', 'Duarte', 'Sato', 'Holloway', 'Reyes', 'Blackwell', 'Voss', 'Mbeki', 'Castellan'];
+const FIRST = ['Vex', 'Rook', 'Juno', 'Kade', 'Mara', 'Ozzy', 'Tamsin', 'Brick', 'Nyx', 'Solder', 'Wren', 'Grit', 'Pike', 'Echo', 'Dusk', 'Riva', 'Hex', 'Moth', 'Cinder', 'Talon', 'Ash', 'Bolt', 'Kestrel', 'Nova', 'Sable', 'Tank', 'Lug', 'Sprocket', 'Faye', 'Dex'];
+const LAST = ['Kowalski', 'Ashgrove', 'Nine', 'Rustfang', 'Okafor', 'Vance', 'Ironside', 'Marrow', 'Quill', 'Duarte', 'Sato', 'Holloway', 'Reyes', 'Blackwell', 'Voss', 'Mbeki', 'Castellan', 'Pryce', 'Lindqvist'];
 
 let nextCrewId = 1;
 export function bumpCrewId(min: number): void {
@@ -124,253 +221,245 @@ export function crewName(rng: () => number = Math.random): string {
   return `${FIRST[Math.floor(rng() * FIRST.length)]} ${LAST[Math.floor(rng() * LAST.length)]}`;
 }
 
-export function makeCrew(role: CrewRole, rng: () => number = Math.random, level = 1, trait?: string): CrewMember {
-  const t = trait ?? TRAITS[Math.floor(rng() * TRAITS.length)].key;
-  const maxHp = 100 + (t === 'tough' ? 50 : 0);
+export function makeCrew(role: CrewRole, rarity: Rarity, level = 1, rng: () => number = Math.random): CrewMember {
   return {
-    id: nextCrewId++, name: crewName(rng), role, trait: t, level, xp: XP_LEVELS[level - 1] ?? 0, perks: [],
-    hp: maxHp, maxHp, post: -1, assign: null, bob: rng() * 6,
+    id: nextCrewId++, name: crewName(rng), role, rarity, level: Math.max(1, Math.min(MAX_LEVEL, level)), xp: XP_LEVELS[level - 1] ?? 0,
+    perks: [], draft: null, champion: null, exclusive: null, face: Math.floor(rng() * 1e9), injured: 0, loc: 'main', officer: -1, cd: 0, returnIn: 0,
   };
+}
+
+export function makeChampion(id: string, rng: () => number = Math.random): CrewMember {
+  const def = CHAMPIONS.find((c) => c.id === id) ?? CHAMPIONS[0];
+  const c = makeCrew(def.role, 4, 3, rng);
+  c.name = def.name;
+  c.champion = def.id;
+  return c;
+}
+
+export function makeExclusive(id: string, rng: () => number = Math.random): CrewMember {
+  const def = EXCLUSIVES.find((c) => c.id === id) ?? EXCLUSIVES[0];
+  const c = makeCrew(def.role, 3, 2, rng);
+  c.name = def.name;
+  c.exclusive = def.id;
+  return c;
 }
 
 export function randomRole(rng: () => number = Math.random): CrewRole {
   return ROLE_LIST[Math.floor(rng() * ROLE_LIST.length)].key;
 }
 
+/** A recruit for the hiring board. Rarity rarely goes past Rare. */
+export function makeRecruit(rng: () => number, threat: number): CrewMember {
+  const r = rollRarity(rng, Math.max(0, threat - 1) * 0.15, 0, 3);
+  const level = 1 + Math.floor(rng() * Math.min(3, threat));
+  return makeCrew(randomRole(rng), r, level, rng);
+}
+
+export function abilityOf(c: CrewMember): AbilityDef {
+  if (c.champion) {
+    const def = CHAMPIONS.find((d) => d.id === c.champion);
+    if (def) return ABILITIES[def.ability];
+  }
+  return ABILITIES[ROLES[c.role].ability];
+}
+
+export function championDef(c: CrewMember): ChampionDef | undefined {
+  return c.champion ? CHAMPIONS.find((d) => d.id === c.champion) : undefined;
+}
+
+export function exclusiveDef(c: CrewMember): ExclusiveDef | undefined {
+  return c.exclusive ? EXCLUSIVES.find((d) => d.id === c.exclusive) : undefined;
+}
+
+export function displayTitle(c: CrewMember): string {
+  const ch = championDef(c);
+  if (ch) return `${ch.title} · Champion`;
+  if (c.exclusive) return `${ROLES[c.role].name} · Exclusive`;
+  return ROLES[c.role].name;
+}
+
+function perkSum(c: CrewMember, stat: PerkStat): number {
+  let s = 0;
+  for (const p of c.perks) {
+    const d = PERK_BY_ID.get(p.id);
+    if (d && d.stat === stat) s += d.values[p.rarity];
+  }
+  return s;
+}
+
+/** Multiplier on this crew member's own ability effect. */
+export function abilityPower(c: CrewMember): number {
+  return (1 + 0.15 * c.rarity) * (1 + 0.07 * (c.level - 1)) * (1 + perkSum(c, 'ability'));
+}
+
+export function abilityCooldown(c: CrewMember, globalCdr: number): number {
+  const base = abilityOf(c).cd;
+  return base * (1 - 0.03 * (c.level - 1)) * (1 - Math.min(0.45, globalCdr));
+}
+
 export function hireCost(c: CrewMember): Cost {
-  const f = c.trait === 'frugal' ? 0.5 : 1;
-  return { scrap: Math.ceil((30 + 25 * (c.level - 1)) * f), rations: Math.ceil(3 * c.level * f) };
+  const f = 1 + c.rarity * 0.8;
+  return { scrap: Math.ceil((30 + 22 * (c.level - 1)) * f), rations: Math.ceil((2 + 2 * c.level) * (1 + c.rarity * 0.5)) };
 }
 
-/** Perk points not yet spent. */
-export function perkPoints(c: CrewMember): number {
-  return c.level - 1 - c.perks.length;
+/** Rolls a pick-one-of-three perk draft. Rarer crew draft rarer perks. */
+export function rollDraft(c: CrewMember, rng: () => number, extraLuck = 0): PerkInst[] {
+  const out: PerkInst[] = [];
+  const pool = PERKS.slice();
+  while (out.length < 3 && pool.length) {
+    const i = Math.floor(rng() * pool.length);
+    const d = pool.splice(i, 1)[0];
+    const r = rollRarity(rng, 0.2 * c.rarity + extraLuck, d.minRarity ?? 0);
+    out.push({ id: d.id, rarity: r });
+  }
+  return out;
 }
 
-/** Adds XP; returns true if the crew member levelled up. */
-export function giveXp(c: CrewMember, amount: number): boolean {
-  if (c.level >= MAX_LEVEL) return false;
-  c.xp += amount * (c.trait === 'quick' ? 1.5 : 1);
-  let up = false;
+/** Adds XP; rolls a perk draft on each level-up. Returns levels gained. */
+export function giveXp(c: CrewMember, amount: number, rng: () => number = Math.random): number {
+  if (c.level >= MAX_LEVEL) return 0;
+  c.xp += amount * (1 + perkSum(c, 'xp'));
+  let ups = 0;
   while (c.level < MAX_LEVEL && c.xp >= XP_LEVELS[c.level]) {
     c.level++;
-    up = true;
+    ups++;
   }
-  return up;
+  if (ups && !c.draft) c.draft = rollDraft(c, rng);
+  return ups;
 }
 
-export function hasPerk(c: CrewMember, id: string): boolean {
-  return c.perks.includes(id);
+export function pickPerk(c: CrewMember, index: number, rng: () => number = Math.random): boolean {
+  if (!c.draft || !c.draft[index]) return false;
+  c.perks.push(c.draft[index]);
+  // Unspent levels queue another draft.
+  const owed = c.level - 1 - c.perks.length;
+  c.draft = owed > 0 ? rollDraft(c, rng) : null;
+  return true;
 }
 
 export function normalizeCrew(raw: Partial<CrewMember> & { name: string }): CrewMember {
   const role = raw.role && raw.role in ROLES ? raw.role : randomRole();
-  const c = makeCrew(role, Math.random, Math.max(1, Math.min(MAX_LEVEL, raw.level ?? 1)), raw.trait ?? 'steady');
+  const c = makeCrew(role, (raw.rarity ?? 0) as Rarity, raw.level ?? 1);
   c.name = raw.name;
   if (raw.id) c.id = raw.id;
   bumpCrewId(c.id);
   c.xp = raw.xp ?? c.xp;
-  c.perks = (raw.perks ?? []).filter((p) => ROLES[role].perks.some((d) => d.id === p));
-  c.maxHp = 100 + (c.trait === 'tough' ? 50 : 0) + (c.perks.includes('veteran') ? 50 : 0);
-  c.hp = Math.min(c.maxHp, raw.hp ?? c.maxHp);
-  c.assign = raw.assign ?? null;
+  c.perks = (raw.perks ?? []).filter((p) => PERK_BY_ID.has(p.id));
+  c.draft = raw.draft ?? null;
+  c.champion = raw.champion ?? null;
+  c.exclusive = raw.exclusive ?? null;
+  c.face = raw.face ?? c.face;
+  c.injured = raw.injured ?? 0;
+  c.loc = raw.loc ?? 'main';
+  c.officer = raw.officer ?? -1;
+  c.cd = 0;
+  c.returnIn = raw.returnIn ?? 0;
+  if (c.loc === 'away' && c.returnIn <= 0) c.loc = 'main';
   return c;
 }
 
 /* ---------------------------------------------------------------------- */
-/* Bonuses                                                                 */
+/* Crew bonus: what everyone aboard adds up to                             */
 /* ---------------------------------------------------------------------- */
 
-export interface ModuleBonus {
+export interface CrewBonus {
   dmg: number;
   rate: number;
+  range: number;
+  crit: number;
+  lifesteal: number;
+  hp: number;
+  shield: number;
+  armor: number;
+  regen: number;
+  speed: number;
   power: number;
-  thrust: number;
+  cdr: number;
+  loot: number;
+  harvest: number;
+  cargo: number;
+  research: number;
+  vision: number;
+  recovery: number;
+  healMult: number;
+  extraMarines: number;
+  terrainImmune: boolean;
+  chestLuck: number;
 }
 
-/** Everything crew and research do to a rig, recomputed a few times a second. */
-export interface RigBonus {
-  mod: Map<number, ModuleBonus>;
-  weapon: Record<WeaponFamily, WeaponMods>;
-  hull: HullMods;
-  powerProdMult: number;
-  powerUseMult: number;
-  speedMult: number;
-  climbBonus: number;
-  bogMult: number;
-  evasive: number;
-  rangeMult: number;
-  tileHp: number;
-  armorHp: number;
-  cargoBonus: number;
-  repairHps: number;
-  moduleRegen: number;
-  healHps: number;
-  healRange: number;
-  playerDmgTaken: number;
-  crewSafe: boolean;
-  lootRolls: number;
-  techBonus: number;
-  salvageMult: number;
-  researchDiscount: number;
-  refineDouble: number;
-  rationMult: number;
-  defenderDmg: number;
-  defenderRate: number;
-  overwatch: boolean;
-}
-
-const FAMILIES: WeaponFamily[] = ['ballistic', 'artillery', 'missile', 'energy', 'defense'];
-
-export function defaultBonus(tech?: Set<string>): RigBonus {
-  const weapon = {} as Record<WeaponFamily, WeaponMods>;
-  for (const f of FAMILIES) weapon[f] = weaponMods(tech ?? new Set(), f);
-  const hull = hullMods(tech ?? new Set());
+export function emptyBonus(): CrewBonus {
   return {
-    mod: new Map(), weapon, hull,
-    powerProdMult: 1, powerUseMult: 1, speedMult: hull.speed, climbBonus: 0, bogMult: 1, evasive: 0, rangeMult: 1,
-    tileHp: hull.tileHp, armorHp: hull.armorHp, cargoBonus: 0, repairHps: 0, moduleRegen: 0, healHps: 0, healRange: 0,
-    playerDmgTaken: 1, crewSafe: false, lootRolls: 0, techBonus: 0, salvageMult: 1, researchDiscount: 0, refineDouble: 0,
-    rationMult: 1, defenderDmg: 1, defenderRate: 1, overwatch: false,
+    dmg: 0, rate: 0, range: 0, crit: 0, lifesteal: 0, hp: 0, shield: 0, armor: 0, regen: 0, speed: 0, power: 0, cdr: 0,
+    loot: 0, harvest: 0, cargo: 0, research: 0, vision: 0, recovery: 0, healMult: 1, extraMarines: 0, terrainImmune: false, chestLuck: 0,
   };
 }
 
-export function computeBonus(crew: CrewMember[], modules: ModuleInst[], tech: Set<string>): RigBonus {
-  const b = defaultBonus(tech);
-  const byId = new Map(modules.map((m) => [m.id, m]));
-  const mb = (m: ModuleInst): ModuleBonus => {
-    let v = b.mod.get(m.id);
-    if (!v) {
-      v = { dmg: 1, rate: 1, power: 1, thrust: 1 };
-      b.mod.set(m.id, v);
-    }
-    return v;
-  };
-  let marines = 0;
+/** Sums passives and perks of every fit crew member aboard the fortress. */
+export function computeCrewBonus(crew: CrewMember[]): CrewBonus {
+  const b = emptyBonus();
   for (const c of crew) {
-    const L = c.level;
-    const post = byId.get(c.post);
-    const perk = (id: string): boolean => c.perks.includes(id);
-    if (post?.def.turret && c.trait === 'ex_military') mb(post).dmg *= 1.1;
+    if (c.loc !== 'main' || c.injured > 0) continue;
+    const q = (1 + 0.15 * c.rarity) * c.level;
     switch (c.role) {
-      case 'gunner':
-        if (post?.def.turret) {
-          mb(post).dmg *= 1 + 0.08 * L + (perk('deadeye') ? 0.2 : 0);
-          mb(post).rate *= 1 + 0.08 * L + (perk('rapid_reload') ? 0.2 : 0);
-        }
-        if (perk('spotter')) b.rangeMult *= 1.15;
-        break;
-      case 'engineer':
-        if (post && (post.def.power > 0)) mb(post).power *= 1 + 0.1 * L + (perk('overclock') ? 0.15 : 0);
-        if (post?.def.thrust) mb(post).thrust *= 1 + 0.1 * L + (perk('overclock') ? 0.15 : 0);
-        if (perk('efficiency')) b.powerUseMult *= 0.9;
-        if (perk('hot_swap')) b.moduleRegen += 2;
-        break;
-      case 'mechanic':
-        b.repairHps += 3 * L * (post?.def.key === 'repair_bay' ? 2 : 1) * (perk('field_welder') ? 1.5 : 1);
-        if (perk('armorsmith')) {
-          b.tileHp *= 1.15;
-          b.armorHp *= 1.15;
-        }
-        if (perk('salvager')) b.salvageMult *= 1.5;
-        break;
-      case 'medic':
-        b.healHps += 1.5 * L * (post?.def.medbay ? 2 : 1);
-        if (perk('triage')) b.crewSafe = true;
-        if (perk('combat_stims')) b.playerDmgTaken *= 0.85;
-        if (perk('field_surgeon')) b.healRange = Math.max(b.healRange, 40);
-        break;
-      case 'driver':
-        if (post?.def.key === 'cockpit') b.speedMult *= 1 + 0.05 * L;
-        if (perk('lead_foot')) b.speedMult *= 1.15;
-        if (perk('rough_rider')) {
-          b.climbBonus += 1;
-          b.bogMult = 2;
-        }
-        if (perk('evasive')) b.evasive = 0.15;
-        break;
-      case 'scavenger':
-        b.lootRolls += 0.2 * L + (perk('keen_eye') ? 1 : 0);
-        if (perk('pack_rat')) b.cargoBonus += 16;
-        if (perk('tech_hunter')) b.techBonus += 1;
-        break;
-      case 'quartermaster':
-        if (post && (post.def.key === 'refinery' || post.def.key === 'cargo')) {
-          b.cargoBonus += 8 * L;
-          b.refineDouble += 0.1 * L;
-        }
-        if (perk('bulk_smelting')) b.refineDouble += 0.2;
-        if (perk('logistics')) b.cargoBonus += 24;
-        if (perk('rationing')) b.rationMult = 2;
-        break;
-      case 'scientist':
-        b.researchDiscount += 0.08 * L + (perk('theorist') ? 0.15 : 0);
-        if (perk('reverse_engineering')) b.techBonus += 1;
-        if (perk('lab_safety')) b.weapon.energy = { ...b.weapon.energy, dmg: b.weapon.energy.dmg * 1.1 };
-        break;
-      case 'marine':
-        marines++;
-        b.defenderDmg = Math.max(b.defenderDmg, 1 + 0.25 * L);
-        if (perk('suppressive_fire')) b.defenderRate = Math.max(b.defenderRate, 1.5);
-        if (perk('boarding_party')) b.overwatch = true;
-        break;
+      case 'gunner': b.dmg += 0.025 * q; break;
+      case 'engineer': b.power += 0.04 * q; b.shield += 0.03 * q; break;
+      case 'mechanic': b.regen += 0.35 * q; break;
+      case 'medic': b.recovery += 0.25 * q; break;
+      case 'driver': b.speed += 0.02 * q; break;
+      case 'scavenger': b.loot += 0.04 * q; b.harvest += 0.05 * q; break;
+      case 'quartermaster': b.cargo += Math.round(2 * q); break;
+      case 'scientist': b.research += 0.03 * q; break;
+      case 'marine': b.armor += 0.01 * q; b.hp += 0.02 * q; break;
     }
-  }
-  b.researchDiscount = Math.min(0.5, b.researchDiscount);
-  b.refineDouble = Math.min(0.9, b.refineDouble);
-  void marines;
-  return b;
-}
-
-/* ---------------------------------------------------------------------- */
-/* Posting                                                                 */
-/* ---------------------------------------------------------------------- */
-
-const FILL_ORDER: CrewRole[] = ['marine', 'scavenger', 'quartermaster', 'scientist', 'medic', 'mechanic', 'engineer', 'driver'];
-const EXCLUSIVE = (m: ModuleInst): boolean => !!m.def.turret || m.def.key === 'cockpit';
-
-/**
- * Puts every crew member somewhere useful: manual assignments first, then
- * each role's preferred stations, then any idle hands onto unmanned guns.
- */
-export function assignPosts(crew: CrewMember[], modules: ModuleInst[]): void {
-  const taken = new Set<number>();
-  const byId = new Map(modules.map((m) => [m.id, m]));
-  for (const c of crew) c.post = -1;
-  for (const c of crew) {
-    if (c.assign === null) continue;
-    const m = byId.get(c.assign);
-    if (!m || (EXCLUSIVE(m) && taken.has(m.id))) {
-      if (!m) c.assign = null;
-      continue;
+    for (const p of c.perks) {
+      const d = PERK_BY_ID.get(p.id);
+      if (!d) continue;
+      const v = d.values[p.rarity];
+      switch (d.stat) {
+        case 'dmg': b.dmg += v; break;
+        case 'rate': b.rate += v; break;
+        case 'range': b.range += v; break;
+        case 'hp': b.hp += v; break;
+        case 'shield': b.shield += v; break;
+        case 'speed': b.speed += v; break;
+        case 'armor': b.armor += v; break;
+        case 'regen': b.regen += v; break;
+        case 'cdr': b.cdr += v; break;
+        case 'power': b.power += v; break;
+        case 'loot': b.loot += v; break;
+        case 'harvest': b.harvest += v; break;
+        case 'cargo': b.cargo += v; break;
+        case 'crit': b.crit += v; break;
+        case 'lifesteal': b.lifesteal += v; break;
+        case 'vision': b.vision += v; break;
+        case 'research': b.research += v; break;
+        default: break;
+      }
     }
-    c.post = m.id;
-    if (EXCLUSIVE(m)) taken.add(m.id);
-  }
-  const atStation = new Set<CrewMember>();
-  for (const c of crew) {
-    if (c.post !== -1) continue;
-    for (const key of ROLES[c.role].posts) {
-      const m = modules.find((x) => x.def.key === key && !(EXCLUSIVE(x) && taken.has(x.id)));
-      if (m) {
-        c.post = m.id;
-        atStation.add(c);
-        if (EXCLUSIVE(m)) taken.add(m.id);
-        break;
+    const ex = exclusiveDef(c);
+    if (ex) {
+      switch (ex.effect) {
+        case 'heal_boost': b.healMult += 0.3; break;
+        case 'cdr_all': b.cdr += 0.1; break;
+        case 'extra_marines': b.extraMarines += 2; break;
+        case 'terrain': b.terrainImmune = true; break;
+        case 'research': b.research += 0.2; break;
+        case 'regen': b.regen += 2; break;
+        case 'crit_all': b.crit += 0.1; break;
+        case 'chest_luck': b.chestLuck += 0.8; break;
+        case 'cargo': b.cargo += 24; break;
       }
     }
   }
-  // Spare hands (no station of their own) and marines crew any silent guns.
-  const idle = crew.filter((c) => c.assign === null && (!atStation.has(c) || c.role === 'marine') && !(byId.get(c.post) && EXCLUSIVE(byId.get(c.post)!)));
-  idle.sort((a, b) => FILL_ORDER.indexOf(a.role) - FILL_ORDER.indexOf(b.role));
-  for (const m of modules) {
-    if (!m.def.turret || taken.has(m.id)) continue;
-    const c = idle.shift();
-    if (!c) break;
-    c.post = m.id;
-    taken.add(m.id);
-  }
-  // Leftovers with no preferred station hang out in barracks/quarters.
-  const lounge = modules.find((m) => m.def.key === 'barracks') ?? modules.find((m) => m.def.key === 'quarters');
-  for (const c of crew) if (c.post === -1 && lounge) c.post = lounge.id;
+  b.dmg = Math.min(0.8, b.dmg);
+  b.rate = Math.min(0.6, b.rate);
+  b.speed = Math.min(0.35, b.speed);
+  b.armor = Math.min(0.3, b.armor);
+  b.research = Math.min(0.5, b.research);
+  b.cdr = Math.min(0.45, b.cdr);
+  b.crit = Math.min(0.5, b.crit);
+  return b;
 }
+
+export const rarityOfCrew = (c: CrewMember): Rarity => c.rarity;
+export const rarityMult = (r: Rarity): number => RARITIES[r].mult;

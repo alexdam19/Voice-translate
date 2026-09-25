@@ -1,4 +1,6 @@
 import { mergeStacks, type Stack } from './inventory';
+import { rollRarity, type Rarity } from './rarity';
+import { STANDARD_WEAPONS, type WeaponDef } from './weapons';
 
 interface LootEntry {
   id: string;
@@ -9,27 +11,28 @@ interface LootEntry {
 
 const L = (id: string, min: number, max: number, w: number): LootEntry => ({ id, min, max, w });
 
-const COMMON: LootEntry[] = [L('scrap', 6, 20, 10), L('rounds', 20, 60, 6), L('rations', 1, 3, 4), L('medkit', 1, 2, 2), L('iron_plate', 2, 6, 4), L('copper_wire', 2, 8, 4)];
+const COMMON: LootEntry[] = [L('scrap', 10, 28, 10), L('iron_plate', 2, 6, 4), L('copper_wire', 2, 8, 4), L('rations', 1, 3, 3), L('repair_kit', 1, 1, 1.5)];
 
 export const LOOT_TABLES: Record<string, LootEntry[]> = {
-  cache_rustbelt: [...COMMON, L('circuit', 1, 3, 3), L('iron_ore', 4, 10, 4), L('scrap_smg', 1, 1, 0.4), L('jetpack1', 1, 1, 0.25), L('grenade', 1, 3, 1)],
-  cache_dunes: [...COMMON, L('titanium_ore', 3, 8, 5), L('circuit', 1, 4, 3), L('scattergun', 1, 1, 0.4), L('glass', 4, 10, 2), L('grenade', 1, 3, 1)],
-  cache_glass: [...COMMON, L('uranium_ore', 3, 8, 5), L('titanium_alloy', 1, 3, 3), L('rad_suit', 1, 1, 0.35), L('arc_rifle', 1, 1, 0.25), L('circuit', 2, 5, 3)],
-  cache_cryo: [...COMMON, L('cryo_crystal', 3, 8, 5), L('titanium_alloy', 1, 3, 3), L('stim', 1, 2, 2), L('thermal_suit', 1, 1, 0.25), L('circuit', 2, 5, 3)],
-  cache_magma: [...COMMON, L('sulfur', 4, 12, 5), L('explosive', 2, 5, 3), L('rockets', 3, 8, 2), L('rocket_tube', 1, 1, 0.25), L('cryo_core', 1, 2, 1)],
-  cache_acid: [...COMMON, L('xenite', 2, 5, 5), L('uranium_rod', 1, 2, 2), L('hazmat_suit', 1, 1, 0.3), L('rail_lance', 1, 1, 0.2), L('xeno_alloy', 1, 2, 1)],
-  wreck: [L('scrap', 15, 40, 10), L('iron_plate', 4, 10, 6), L('circuit', 1, 4, 5), L('copper_wire', 4, 10, 4), L('rounds', 30, 80, 5), L('medkit', 1, 2, 2), L('explosive', 1, 3, 2)],
-  titan: [L('tech_parts', 3, 6, 10), L('titanium_alloy', 4, 10, 6), L('uranium_rod', 2, 4, 4), L('cryo_core', 2, 4, 4), L('xenite', 3, 8, 4), L('xeno_alloy', 1, 3, 2), L('medkit', 2, 4, 3)],
-  elite: [L('tech_parts', 1, 1, 4), L('scrap', 6, 14, 6), L('circuit', 1, 3, 4), L('rounds', 20, 40, 4), L('medkit', 1, 1, 2)],
-  wreck_rare: [L('tech_parts', 1, 3, 6), L('titanium_alloy', 2, 6, 5), L('uranium_rod', 1, 3, 2), L('cryo_core', 1, 3, 2), L('scattergun', 1, 1, 1), L('arc_rifle', 1, 1, 0.6), L('rocket_tube', 1, 1, 0.3), L('jetpack1', 1, 1, 0.6)],
-  creature: [L('scrap', 1, 4, 10), L('biomass', 1, 2, 6), L('rounds', 4, 12, 4)],
-  trooper: [L('scrap', 2, 6, 8), L('rounds', 8, 24, 8), L('medkit', 1, 1, 1.5), L('grenade', 1, 1, 1), L('circuit', 1, 1, 1.5)],
-  supply_drop: [L('tech_parts', 2, 5, 5), L('titanium_alloy', 3, 8, 6), L('uranium_rod', 1, 3, 4), L('cryo_core', 1, 3, 4), L('xenite', 2, 6, 4), L('xeno_alloy', 1, 3, 2), L('arc_rifle', 1, 1, 1.2), L('rail_lance', 1, 1, 0.6), L('rocket_tube', 1, 1, 0.8), L('warborn_exo', 1, 1, 0.25), L('jetpack2', 1, 1, 0.5), L('medkit', 2, 4, 3), L('stim', 1, 3, 3)],
-  deadzone_scav: [L('scrap', 6, 18, 8), L('rounds', 20, 60, 8), L('titanium_alloy', 1, 3, 3), L('circuit', 1, 3, 4), L('medkit', 1, 2, 3), L('uranium_ore', 2, 5, 2), L('cryo_crystal', 2, 5, 2), L('scattergun', 1, 1, 0.5), L('scrap_smg', 1, 1, 0.7)],
+  site_ruins: [...COMMON, L('circuit', 1, 3, 3), L('iron_ore', 6, 14, 4), L('copper_ore', 6, 14, 3), L('explosive', 1, 3, 2)],
+  site_convoy: [...COMMON, L('titanium_ore', 4, 10, 5), L('circuit', 1, 4, 3), L('titanium_alloy', 1, 3, 2), L('explosive', 2, 4, 2)],
+  site_bunker: [...COMMON, L('cryo_crystal', 4, 10, 5), L('titanium_alloy', 1, 3, 3), L('circuit', 2, 5, 3), L('cryo_core', 1, 2, 1)],
+  site_crash: [...COMMON, L('uranium_ore', 4, 10, 5), L('titanium_alloy', 1, 3, 3), L('circuit', 2, 5, 3), L('uranium_rod', 1, 2, 1)],
+  site_foundry: [...COMMON, L('sulfur', 6, 14, 5), L('explosive', 3, 6, 3), L('titanium_alloy', 2, 4, 2), L('cryo_core', 1, 2, 1)],
+  site_hive: [...COMMON, L('xenite', 3, 7, 5), L('biomass', 6, 14, 4), L('uranium_rod', 1, 2, 2), L('xeno_alloy', 1, 2, 1)],
+  creature: [L('scrap', 2, 6, 10), L('biomass', 1, 2, 4)],
+  trooper: [L('scrap', 3, 8, 10), L('rations', 1, 1, 2), L('circuit', 1, 1, 1), L('explosive', 1, 1, 1)],
+  elite: [L('tech_parts', 1, 1, 5), L('scrap', 10, 20, 6), L('circuit', 1, 3, 4), L('repair_kit', 1, 1, 2)],
+  raider: [L('scrap', 20, 45, 10), L('iron_plate', 4, 10, 6), L('circuit', 1, 4, 5), L('copper_wire', 4, 10, 4), L('explosive', 1, 3, 3), L('repair_kit', 1, 2, 2), L('titanium_alloy', 1, 3, 2)],
+  outpost: [L('tech_parts', 2, 4, 6), L('titanium_alloy', 3, 8, 6), L('circuit', 3, 8, 6), L('explosive', 3, 8, 4), L('uranium_rod', 1, 3, 2), L('cryo_core', 1, 3, 2), L('repair_kit', 1, 3, 3)],
+  titan: [L('tech_parts', 3, 6, 10), L('titanium_alloy', 4, 10, 6), L('uranium_rod', 2, 4, 4), L('cryo_core', 2, 4, 4), L('xenite', 3, 8, 4), L('xeno_alloy', 1, 3, 2), L('repair_kit', 2, 4, 3)],
+  rune: [L('tech_parts', 2, 4, 8), L('titanium_alloy', 3, 8, 5), L('uranium_rod', 1, 3, 3), L('cryo_core', 1, 3, 3), L('xeno_alloy', 1, 2, 2), L('circuit', 3, 8, 4)],
+  dz_crate: [L('scrap', 20, 50, 8), L('titanium_alloy', 2, 5, 5), L('circuit', 2, 6, 5), L('uranium_rod', 1, 2, 3), L('cryo_core', 1, 2, 3), L('xenite', 2, 5, 3), L('tech_parts', 1, 2, 4), L('repair_kit', 1, 2, 3)],
+  dz_supply: [L('tech_parts', 3, 6, 6), L('xeno_alloy', 1, 3, 4), L('uranium_rod', 2, 4, 4), L('cryo_core', 2, 4, 4), L('titanium_alloy', 4, 10, 5)],
 };
 
 export function rollLoot(table: string, rng: () => number, rolls: number): Stack[] {
-  const entries = LOOT_TABLES[table] ?? LOOT_TABLES.cache_rustbelt;
+  const entries = LOOT_TABLES[table] ?? LOOT_TABLES.site_ruins;
   const total = entries.reduce((s, e) => s + e.w, 0);
   const out: Stack[] = [];
   for (let r = 0; r < rolls; r++) {
@@ -43,4 +46,27 @@ export function rollLoot(table: string, rng: () => number, rolls: number): Stack
     }
   }
   return mergeStacks(out);
+}
+
+const SIZE_WEIGHT: Record<string, number> = { light: 5, medium: 3, heavy: 1.6 };
+
+/** Picks a random standard (non-exclusive) weapon; bigger guns are rarer. */
+export function rollWeaponKey(rng: () => number, filter?: (d: WeaponDef) => boolean): string {
+  const pool = STANDARD_WEAPONS.filter((d) => !filter || filter(d));
+  const total = pool.reduce((s, d) => s + SIZE_WEIGHT[d.size], 0);
+  let pick = rng() * total;
+  for (const d of pool) {
+    pick -= SIZE_WEIGHT[d.size];
+    if (pick <= 0) return d.key;
+  }
+  return pool[0].key;
+}
+
+/** Luck for rarity rolls from threat: deeper = better drops. */
+export function threatLuck(threat: number): number {
+  return Math.max(0, (threat - 1) * 0.28);
+}
+
+export function rollDropRarity(rng: () => number, threat: number, bonus = 0, min: Rarity = 0): Rarity {
+  return rollRarity(rng, threatLuck(threat) + bonus, min);
 }

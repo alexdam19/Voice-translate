@@ -1,16 +1,17 @@
 # IRONCRAWL
 
-A 2D open-world sandbox in the spirit of Terraria, set in a tech-punk wasteland. Your base is a **huge land-tank**: a multi-deck armored hull on treads that you walk around inside and drive. You fortify it facility by facility, arm it with military hardware you upgrade through a tech tree, and crew it with specialists who level up and learn perks.
+An overhead 3D, pixel-art wasteland game about commanding a **giant rolling tank-fortress**. It plays like a MOBA: right-click to drive, your guns aim and fire on their own, and your officers' abilities sit on **Q W E R D F** with cooldowns. The art is chunky 8-bit in the spirit of Terraria.
 
-Near camp you meet scavengers and critters. The deeper into the wasteland you go, the tougher the enemies get: gunners, brutes, elite Alphas, and finally **titans** big enough to fight your tank. Past the checkpoint lies **the Dead Zone**, a multiplayer warzone where anything you carry can be taken from your corpse.
+The base is the tank. You fill its deck with barracks, living quarters, reactors, cargo holds and weapon hardpoints, and grow it from a Light Crawler into a Colossus. The crew who live aboard level up and pick perks. Near camp you meet scrap rats and scavengers. Deeper into the wasteland you meet raider tanks, enemy outposts, elites and **titans**. North-east of camp is **the Dead Zone**, a multiplayer warzone where other players can loot your wreck.
 
-![Your tank](docs/screenshots/rig.jpg)
+![Your fortress at camp](docs/screenshots/hero.jpg)
 
 | | |
 |---|---|
-| ![A Dune Wyrm erupts under the tank](docs/screenshots/titan.jpg) | ![Magma Colossus](docs/screenshots/titan-magma.jpg) |
-| ![Military tech tree](docs/screenshots/tech-tree.jpg) | ![Crew roster](docs/screenshots/crew.jpg) |
-| ![Glass Crater](docs/screenshots/glass-crater.jpg) | ![The Dead Zone](docs/screenshots/dead-zone.jpg) |
+| ![Fighting in the ruined city](docs/screenshots/combat.jpg) | ![A titan in the Acid Marsh](docs/screenshots/acid-titan.jpg) |
+| ![BASE: the deck builder](docs/screenshots/base-panel.jpg) | ![CREW: officers and perk drafts](docs/screenshots/crew-panel.jpg) |
+| ![Tech tree chart](docs/screenshots/tech-tree.jpg) | ![This-or-That chest](docs/screenshots/choice-chest.jpg) |
+| ![The Magma Rift](docs/screenshots/magma.jpg) | ![The Dead Zone](docs/screenshots/dead-zone.jpg) |
 
 ## Quick start
 
@@ -19,175 +20,129 @@ npm install
 npm run dev          # client (Vite, http://localhost:5173) + Dead Zone server (ws on :8787)
 ```
 
-Open http://localhost:5173 and pick **NEW RUN**. Single-player needs only the browser. The Dead Zone needs the server, which `npm run dev` starts for you.
-
-Other scripts:
+Open http://localhost:5173 and press **Start**. Single-player only needs the browser. If the Dead Zone can't reach a server (for example when the game is embedded as a single file), you still get an **offline raid against bots**, run in the browser with the same server code.
 
 | Command | What it does |
 |---|---|
 | `npm run build` | Typecheck and build the client into `dist/` |
 | `npm start` | One process for production: serves `dist/` **and** the Dead Zone on `PORT` (default 8787) |
-| `npm test` | Unit tests (inventory, worldgen, physics, rig driving, warzone server rules) |
+| `npm test` | Unit tests (world gen, pathing, fortress, crew, chests, saves, Dead Zone server rules) |
 | `npm run typecheck` | `tsc --noEmit` |
 
-Server environment variables: `PORT`, `WARZONE_SEED` (fixed map), `WARZONE_BOTS` (AI scavengers, default 5).
+Server environment variables: `PORT`, `WARZONE_SEED` (fixed arena), `WARZONE_BOTS` (AI raiders, default 5).
 
 ## Controls
 
-| Key | Action |
+| Input | Action |
 |---|---|
-| `A` `D` | Move · (driving) throttle |
-| `Space` / `W` | Jump. Hold in the air with a jetpack equipped |
-| `W` `S` | Climb ladders · `S` drops through platforms · (driving) brake |
-| LMB | Use held item: mine, shoot, place a block, eat · (driving) fire turrets at the cursor |
-| RMB | With a Plasma Cutter: repair your rig (costs scrap) |
-| `1`–`0`, wheel | Hotbar |
-| `F` | Interact: take the wheel, open caches, use stations, enter the Dead Zone, search crates |
-| `I` / `Tab` | Inventory (shift-click moves items between pack and rig cargo) |
-| `C` | Crafting |
-| `B` | Build mode: rig construction |
-| `R` | Rig management: drive trains, chassis upgrades, emergency winch |
-| `P` | Crew roster: stations, perks, recruitment board |
-| `T` | Military tech tree |
-| `M` | Map · `-` `=` zoom · `N` sound · `H` help · `Esc` pause |
+| **Right-click** | Drive there. On an enemy: focus fire. On a resource node: harvest it. On a rune, loot area or the gate: go and use it. Hold to keep steering. |
+| **Q W E R D F** | Officer abilities (each has a cooldown). Aimed abilities fire at the cursor. |
+| **Left mouse** | Fire every weapon set to **MANUAL** at the cursor |
+| **Z** | Auto-fire on/off for every weapon. Click a weapon icon to switch just that one. |
+| **S** | Stop |
+| **1** | Repair kit |
+| **Y** / **Space** | Lock the camera / hold to recenter. The screen edge or arrow keys pan when unlocked. |
+| **Wheel** | Zoom |
+| **G** | Send the Outrider to the resource node or loot area under the cursor |
+| **B** / **C** / **T** | BASE (tank upgrades) · CREW (character upgrades) · Tech Tree |
+| **I** / **M** / **H** / **Esc** | Cargo & Workshop · World map · Help · Menu |
 
 ## How it plays
 
-### The tank
+### Upgrade your BASE (`B`): things bolted to the tank
 
-You start with **The Rustbucket**, a 48×16-tile two-deck tank. It has sloped glacis armor at both ends, tread units with road wheels and armored side skirts, and an 88 mm **Main Battery** turret on the roof between two autocannons. It's a real tile grid that moves through the world. You walk around inside it, it carries you as it drives, and you build on it in Build mode:
+- **Deck & Build.** The deck is a grid (7×10 cells on the Light Crawler, 13×21 on the Colossus). Place facilities on it:
+  - Command Bridge, reactors and a fission core, diesel and ion engines.
+  - Living Quarters and Barracks, which set how many crew you can bunk. Medbay and Hydroponics.
+  - Cargo Holds, a Secure Vault, Refinery, Workshop, Mk2/Mk3 drill rigs and a Garage.
+  - Armor plating, a shield generator, a repair bay and a radar mast.
+  - Hazard gear: Rad Baffles, Thermal Regulator, Sealant Pumps.
+  - Light, medium and heavy **hardpoints**.
+- **Armory.** Mount weapons on hardpoints of the right size: autocannon, gatling, flak, laser, point defense, missile pod, mortar, tesla coil, 88 mm main battery and rail cannon. You can build Common copies. Better ones drop as loot.
+- **Chassis & Drive.** Five hulls from Light Crawler to Colossus. Five drive trains: standard treads, dune tracks, spiked chains, magma treads and hover skirts. Each zone needs different gear, and the panel shows what you're missing.
+- **Tech Tree (`T`).** 34 nodes in 7 branches: ballistics, artillery, missiles, energy, defense, hull and industry. They unlock equipment or upgrade a whole weapon family. Research costs **Salvaged Tech**, which drops from raider tanks, outposts, elites, titans and chests.
 
-- **Structure:** hull, armor and glacis plating, deck grating, ladders, viewports, blast doors (they open for you and stop boarders), cabin lights, and interior backdrop. Backdrop marks a space as sealed and indoors, which is what protects you from hazards and soaks blast damage.
-- **31 facility modules** in five groups:
-  - **Core:** Command Bridge, Scrap Reactor, Fission Core, Diesel-Arc Engine, Ion Drive.
-  - **Crew & living:** Barracks, Living Quarters (your respawn point), Medbay, Hydroponics.
-  - **Industry:** Cargo Bay, Fabricator, Refinery, Armory, Drive Workshop, Repair Drones, Drill Ram.
-  - **Military:** Autocannon, Gatling Sponson, Main Battery, Mortar Pit, Rail Cannon, Missile Pod, Laser Turret, Tesla Coil, Flak Battery, Point Defense, Shield Generator, Radar Mast.
-  - **Environmental:** Rad Baffles, Thermal Regulator, Hull Sealant Pump.
-- **Power** is a budget: reactors produce it, everything else draws it. In a deficit, everything slows down.
-- **Speed** comes from thrust versus mass. A heavier tank needs more engines.
-- **Crushing:** anything small in front of the treads gets run over.
-- **Chassis upgrades** grow the hull: Light Crawler 48×16, then Assault Landship 64×20, Siege Landship 84×24, Land Dreadnought 110×28 and Colossus 140×34.
+### Upgrade your CREW (`C`): your people
 
-### Military equipment and the tech tree
+- **Officers (main crew).** Six seats bound to **Q W E R D F**. Each officer brings their role's **active ability** with a cooldown:
 
-Press `T` to open the tech tree chart. It has six branches of 29 nodes: Ballistics, Artillery, Missiles, Energy, Defense, and Hull & Drive. **Unlock** nodes add new equipment to Build mode. **Upgrade** nodes improve every gun of that family on your tank (for example, Hardened Rounds give ballistic weapons +25% damage and an Autoloader makes artillery reload 40% faster). Some nodes cross branches: the Rail Cannon needs both the 120 mm Bore and Capacitor Banks.
+  | Role | Ability |
+  |---|---|
+  | Gunner | Barrage |
+  | Engineer | Shield Surge |
+  | Mechanic | Weld Crew |
+  | Medic | Triage |
+  | Driver | Nitro |
+  | Scavenger | Magnet Sweep |
+  | Quartermaster | Artillery Call |
+  | Scientist | EMP Pulse |
+  | Marine | Drop Squad |
 
-The weapons behave differently from each other:
-- **Shells:** the Main Battery fires explosive rounds.
-- **Mortars:** the Mortar Pit lobs shells over terrain.
-- **Chain lightning:** the Tesla Coil arcs between up to 3 targets.
-- **Interceptors:** Point Defense shoots down incoming rockets, shells and titan boulders.
-- **Piercing slugs:** the Rail Cannon punches through a whole enemy rig in one line.
-- **Homing swarms:** Missile Pods fire volleys that track their target.
+- **Side crew.** Everyone else gives a passive bonus by role.
+- **Levels and perks.** On every level-up, pick **1 of 3 perks**. Perks roll a **rarity** (Common → Legendary), and rarer perks are stronger.
+- **Champions** (Legendary) have signature abilities that outclass the basics, like Juggernaut Charge, Orbital Lance or Singularity. **Exclusive characters** (Epic) have unique passives. Both come only from **Rune Chests**.
+- **Max 15 aboard.** Once the fortress holds 15 crew you can launch the **Outrider** from a Garage. It's a mini tank crewed by side crew. It follows you and fights, and you can send it on **expeditions** to harvest nodes or scavenge loot areas by itself. If it's destroyed, each crew member aboard may die (medics improve the odds).
 
-Research costs materials plus **Salvaged Tech**, which drops from raider wrecks, outposts, elites, titans and supply drops, and comes from cutting the guns off wrecks.
+### Loot, rarities and chests
 
-### Crew
+- Weapons and perks come in **Common, Uncommon, Rare, Epic and Legendary**. Rarer weapons hit harder, fire faster and roll bonus traits: Heavy, Rapid, Long-barrel, Incendiary, Piercing, High-yield, Arcing, Keen, Leeching.
+- **Loot areas** (yellow ◆): park inside the ring and hold while defenders attack. They pay out materials, often a weapon, and sometimes a **This-or-That chest**. You pick one of its two rewards and the other is gone.
+- **Runes** (colored ●): jungle-camp style. Beat the guardians, then park beside the altar. You get a 90 s buff (Crimson, Azure, Verdant or Gilded) and a **Rune Chest**, which can hold an **exclusive weapon** or an exclusive character. Rarely, it holds a **champion**.
+- **Exclusive weapons** are always Legendary: Sunspear Lance, Hydra Rack, Thunderhead Coil, Grinder Maw and Oblivion Mortar.
 
-Every crew member has a **role**, a **trait**, a **level** and **perks**. Each role boosts the station it works at:
+### The wasteland
 
-| Role | Station | Ability | Perks |
-|---|---|---|---|
-| Gunner | any gun | +8% damage & fire rate per level on that gun | Deadeye, Rapid Reload, Spotter (+15% range rig-wide) |
-| Engineer | reactor / engine | +10% power or thrust per level | Overclock, Efficiency (-10% power draw), Hot Swap (self-repair) |
-| Driver | Command Bridge | +5% speed per level | Rough Rider (+1 climb, less bogging), Lead Foot, Evasive Driving |
-| Mechanic | anywhere | patches plating (3 hp/s per level, scrap from cargo) | Field Welder, Armorsmith, Salvager |
-| Medic | medbay / quarters | heals you and the crew | Triage, Combat Stims, Field Surgeon |
-| Scavenger | cargo / garage | extra loot rolls | Keen Eye, Pack Rat, Tech Hunter |
-| Quartermaster | refinery / cargo | +cargo, chance to double refinery output | Bulk Smelting, Logistics, Rationing |
-| Scientist | fabricator / armory | cheaper research | Reverse Engineering, Theorist, Weapons Lab |
-| Marine | barracks | hits boarders hardest | Veteran, Suppressive Fire, Overwatch |
+The world is 640×640 tiles in six zones. Danger rises with distance from camp, in tiers I–V:
 
-Crew post themselves automatically, or you can pin them to a station in the Crew panel (`P`). Guns only fire when manned, and spare hands and marines fill any silent guns.
-
-Crew earn XP from duty, from kills made by the gun they man, and from driving, repairing and research. Each level grants a perk.
-
-Hire recruits from the recruitment board; each Barracks adds 4 bunks. Wrecked raider rigs and outposts sometimes free prisoners who join you.
-
-### Zones, drive trains and equipment
-
-The world is 4,800 × 400 tiles, split into six zones from west to east. Each zone blocks you with a **terrain type** that needs the right drive train, plus a **hazard** that needs a rig module (and a suit when you're on foot):
-
-| Zone | Terrain | Needs to drive | Hazard | Protection | Signature loot |
-|---|---|---|---|---|---|
-| Magma Rift | ash crust, lava chasms | Magma Treads | Heat | Thermal Regulator / Thermal Suit | sulfur, deep xenite |
-| Cryo Spires | ice & snow peaks | Spiked Chains | Cold | Thermal Regulator / Thermal Suit | cryo crystal |
-| **Rustbelt Flats** (start) | hardpan | anything | none | none | scrap, iron, copper |
-| The Dune Sea | sand dunes | Dune Tracks | none | none | titanium |
-| Glass Crater | fused glass bowl | anything | Radiation | Rad Baffles / Rad Suit | uranium |
-| Acid Marsh | mud & acid pools | Hover Skirts | Toxic | Hull Sealant Pump / Hazmat Suit | xenite |
-
-On the wrong drive train your rig bogs down, slips on slopes, cooks its wheels or wades through acid. The HUD tells you why. If you get stuck, the Rig panel can winch you back to the last safe ground. The progression is a web: dune titanium unlocks chains and rad baffles, crater uranium and cryo crystals unlock hover skirts, and marsh xenite unlocks endgame gear.
-
-### Threat: the deeper you go, the worse it gets
-
-The HUD shows a **threat level**. It is 1.0 at the starting camp and rises the farther you travel east or west, and the deeper you dig:
-
-| Tier | Threat | What you meet |
+| Zone | Direction | What you need |
 |---|---|---|
-| I · Scavenger country | < 1.6 | crawlers and drones |
-| II · Raider territory | 1.6+ | + gunners and raider troopers |
-| III · Titan grounds | 2.2+ | + brutes, elite **Alpha** variants (bigger, 2.5× health, extra loot) and **titans** |
-| IV · Deep wasteland | 4+ | everything hits harder and has more health |
-| V · No-return zone | 6+ | the far edges of the world |
+| **Rustbelt** | Center | Home turf |
+| **Dune Sea** | East | Dune tracks, or you crawl |
+| **Cryo Spires** | North | Spiked chains and a Thermal Regulator |
+| **Glass Crater** | South | Rad Baffles |
+| **Magma Rift** | West | A Thermal Regulator, plus magma treads to cross lava |
+| **Acid Marsh** | Outer ring | Hover skirts and Sealant Pumps |
 
-Each zone has a **titan**, a boss that hunts your tank and gets a boss health bar:
+Roads and lava bridges link the zones. You explore under a **fog of war**. Things you'll run into:
 
-| Titan | Zone | How it fights |
-|---|---|---|
-| Scrap Titan | Rustbelt edges | walks up and stomps the hull, lobs boulders |
-| Magma Colossus | Magma Rift | a much bigger version of the same |
-| Rime Crab | Cryo Spires | circles, then charges and rams the hull |
-| Rad Behemoth | Glass Crater | the same, with glowing tumors |
-| Dune Wyrm | Dune Sea | burrows, then erupts under or through the tank |
-| Bog Wyrm | Acid Marsh | the same, and spits acid |
-
-Titans drop piles of Salvaged Tech and rare materials.
-
-### Other bases
-
-- **Raider war-tanks** roam each zone and are built from the same grid system as yours, tougher in harder zones (heavier ones carry their own main battery). They close to cannon range, deploy boarding troopers from their barracks, and their troopers batter your doors. Destroy the Command Bridge to wreck them, then cut the wreck apart with your Plasma Cutter for salvage.
-- **Raider outposts** are fortified, stationary bases with turrets and garrisons (one or two per zone). Wreck one and it stays cleared.
-- **Creatures and drones** vary by zone. More come out at night.
+- **Raider tanks:** enemy bases on treads, armed with rarity-rolled weapons.
+- **Outposts:** fortresses that drop a This-or-That chest and free a prisoner.
+- **Titans**, each attack telegraphed on the ground:
+  - The **Colossal Walker** stomps and lobs boulders.
+  - The **Dread Behemoth** charges.
+  - The **Burrow Titan** erupts from below.
 
 ### The Dead Zone (multiplayer)
 
-Drive to the checkpoint east of spawn, stand under the gate and press `F`.
+Drive into the gate north-east of camp:
 
-- **At risk:** everything in your **pack and hotbar**. When you die it drops into a crate that any raider can loot. Disconnecting mid-raid counts as dying.
-- **Safe:** your 3-slot **secure pouch**, your equipped **suit** and your equipped **gadget**.
-- Stand in an **extraction zone** (West Gate, East Gate, Metro Exfil) for 6 seconds to go home with everything you're carrying.
-- **Supply drops** land every 90 seconds with high-tier loot (xenite, uranium rods, rail lances, Warborn Exo armor).
-- **AI scavengers** roam the map so a solo raid still has something to fight. They carry loot and drop it when killed.
+- Loot crates and the supply drops that land in the plaza.
+- Fight other commanders and AI raiders.
+- To keep what you found, hold position at a green **extraction** beacon for 6 seconds.
 
-The server owns health, deaths, crates, supply drops and extraction checks. Clients own their own movement and report the hits they land. The server sanity-checks each hit: damage is capped per weapon, distance is checked, and damage per second is rate-limited.
+If your fortress is destroyed there, you drop your cargo hold (except Vault slots), every spare weapon and one mounted weapon. The drop becomes a wreck that anyone can loot. Leaving mid-raid counts as dying.
 
-## Architecture
+The server owns health, damage, deaths, crates and extraction. It caps each reported hit by the weapon's maximum and each attacker's damage per second, and it rejects teleports.
+
+## Tech
+
+- **TypeScript + Vite**, **three.js** for rendering, **ws** for the server, **Vitest** for tests. No image or audio files: every texture, sprite, portrait, icon and sound is generated at startup.
+- **8-bit look:** the scene renders at 1/2–1/4 resolution into a render target. A post pass then draws 1-pixel depth outlines and posterizes with ordered dithering, and the result is upscaled with nearest-neighbour filtering.
+  - Terrain is voxel chunks built from a procedural 16×16 texture atlas.
+  - Tanks are voxel models generated from the deck layout: turrets rotate and treads scroll.
+  - Creatures are pixel billboards.
+  - Fog of war is a data texture sampled by every world material.
+- **Simulation:** fixed 60 Hz steps. Tanks are capsules pathing with A* over a clearance field, so big hulls only take routes they fit through. Weapons are projectiles, hitscan beams, chain lightning, homing missiles or lobbed artillery.
+- **Save:** localStorage (`ironcrawl3d-save-v1`), autosaved every 30 s.
 
 ```
-src/shared/     Pure simulation code, shared by the browser and the server
-  tiles.ts        tile + background-wall definitions (terrain type, hardness, light, hazards)
-  zones.ts        the six zones (+ the Dead Zone): palettes, hazards, requirements
-  items.ts        59 items: resources, weapons, tools, suits, gadgets, drive trains
-  worldgen.ts     seeded open-world generator (heightmaps, caves, ores, ruins, bunkers, outposts)
-  warzoneGen.ts   the Dead Zone city map (towers, metro, extraction points)
-  physics.ts      AABB-vs-tile-grid collision that works on the world *and* on moving rigs
-  protocol.ts     Dead Zone wire format
-src/game/       Client game logic
-  rig.ts          the tank: tile grid, modules, power/mass/thrust, terrain-aware driving, drilling, damage
-  rigDefs.ts      rig tiles (incl. glacis armor), facility modules and weapons, drive trains, chassis tiers
-  rigTemplates.ts starter tank, raider war-tanks, outposts
-  tech.ts         military tech tree: nodes, unlocks, per-family weapon and hull modifiers
-  crew.ts         crew roles, traits, levels, perks, station posting and the bonuses they produce
-  systems/        player, combat, enemies (threat, elites, titans), rigs (turrets/crew/raider AI), hazards, build mode, drops
-  warzone.ts      Dead Zone client
-src/render/     Canvas renderer: procedural pixel-art tiles, chunk cache, parallax, tile lighting, rig art
-src/ui/         DOM HUD and panels
-server/         Node WebSocket server for the Dead Zone (+ static hosting of dist/)
-tests/          Vitest suites
+src/shared/   map, world + arena generation, collision & A*, items, weapons, rarity, loot, protocol, Dead Zone server sim
+src/game/     Game state, tank, crew, tech, chests, actions, save, and systems/ (movement, weapons, projectiles, AI, world, crew, outrider, spawns)
+src/render/   three.js view + pixel post pass, terrain chunks, voxel models, sprites, particles, fog of war, overlay, minimap, icons
+src/ui/       HUD, BASE / CREW / TECH / CARGO / MAP panels, chests, title
+src/net/      Dead Zone client (WebSocket with an in-browser fallback)
+server/       Node host for the Dead Zone (serves dist/ too)
+legacy/2d/    the original side-view 2D prototype, kept for reference
 ```
 
-All art and sound are procedural (canvas drawing and WebAudio synthesis), so there are no asset files. Saves go to `localStorage`: the world seed plus your changes to it, and your rig, inventory and explored map.
-
-See [docs/DESIGN.md](docs/DESIGN.md) for the design notes and roadmap.
+See [docs/DESIGN.md](docs/DESIGN.md) for the design notes.

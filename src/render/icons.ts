@@ -1,283 +1,319 @@
-import { getItem, type ItemDef } from '../shared/items';
-import { tileArt } from './tileArt';
+import { getItem } from '../shared/items';
+import { RARITIES, type Rarity } from '../shared/rarity';
+import { WEAPONS } from '../shared/weapons';
+import { abilityOf, championDef, ROLES, type CrewMember } from '../game/crew';
+import { MODULES } from '../game/defs';
+import { MODULE_COLOR, getAtlas } from './textures';
+import { Pix, shade, seeded } from './pixel';
 
-const cache = new Map<string, HTMLCanvasElement>();
+/** Pixel-art icons for the DOM UI, rendered once and cached as data URLs. */
+
 const urls = new Map<string, string>();
-const S = 32;
 
-function drawIcon(ctx: CanvasRenderingContext2D, d: ItemDef): void {
-  const c1 = d.c1, c2 = d.c2;
-  const r = (x: number, y: number, w: number, h: number, c: string): void => {
-    ctx.fillStyle = c;
-    ctx.fillRect(x, y, w, h);
-  };
-  const circle = (x: number, y: number, rad: number, c: string): void => {
-    ctx.fillStyle = c;
-    ctx.beginPath();
-    ctx.arc(x, y, rad, 0, Math.PI * 2);
-    ctx.fill();
-  };
-  const outline = '#15161a';
-  switch (d.icon) {
-    case 'block': {
-      const tile = d.place ?? 0;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(tileArt().tiles[tile][0], 6, 6, 20, 20);
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-      ctx.strokeRect(6.5, 6.5, 19, 19);
-      break;
-    }
-    case 'ore':
-      circle(16, 18, 10, c2);
-      circle(12, 15, 4, c1);
-      circle(20, 20, 3, c1);
-      circle(18, 12, 2.5, c1);
-      r(11, 13, 2, 2, '#fff');
-      break;
-    case 'scrap':
-      r(6, 14, 12, 10, c1);
-      r(14, 8, 12, 8, c2);
-      r(10, 20, 14, 5, '#5a4a40');
-      r(15, 9, 2, 2, '#ddd');
-      break;
-    case 'plate':
-      r(6, 10, 20, 12, c2);
-      r(7, 11, 18, 10, c1);
-      r(8, 12, 2, 2, '#fff');
-      r(22, 18, 2, 2, '#fff');
-      break;
-    case 'alloy':
-      ctx.fillStyle = c1;
-      ctx.beginPath();
-      ctx.moveTo(6, 22);
-      ctx.lineTo(10, 12);
-      ctx.lineTo(26, 12);
-      ctx.lineTo(22, 22);
-      ctx.fill();
-      r(10, 13, 14, 2, '#fff');
-      r(8, 20, 14, 2, c2);
-      break;
-    case 'wire':
-      ctx.strokeStyle = c1;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(16, 16, 8, 0, Math.PI * 1.7);
-      ctx.stroke();
-      ctx.strokeStyle = c2;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(16, 16, 5, 0, Math.PI * 1.5);
-      ctx.stroke();
-      break;
-    case 'rod':
-      r(13, 5, 6, 22, c2);
-      r(14, 7, 4, 18, c1);
-      r(12, 4, 8, 3, '#666');
-      r(12, 25, 8, 3, '#666');
-      break;
-    case 'crystal':
-      ctx.fillStyle = c1;
-      ctx.beginPath();
-      ctx.moveTo(16, 4);
-      ctx.lineTo(22, 14);
-      ctx.lineTo(18, 27);
-      ctx.lineTo(12, 27);
-      ctx.lineTo(9, 14);
-      ctx.fill();
-      ctx.fillStyle = c2;
-      ctx.beginPath();
-      ctx.moveTo(22, 14);
-      ctx.lineTo(18, 27);
-      ctx.lineTo(16, 16);
-      ctx.fill();
-      r(13, 9, 2, 5, '#fff');
-      break;
-    case 'core':
-      circle(16, 16, 10, c2);
-      circle(16, 16, 6, c1);
-      circle(14, 14, 2, '#fff');
-      break;
-    case 'chip':
-      r(7, 8, 18, 16, c1);
-      r(11, 12, 10, 8, '#1b1b1b');
-      for (let i = 0; i < 4; i++) {
-        r(9 + i * 4, 5, 2, 3, c2);
-        r(9 + i * 4, 24, 2, 3, c2);
-      }
-      break;
-    case 'explosive':
-      r(9, 8, 14, 18, c1);
-      r(9, 14, 14, 3, c2);
-      r(15, 4, 2, 5, '#aaa');
-      circle(16, 4, 2, '#ffeb3b');
-      break;
-    case 'powder':
-      ctx.fillStyle = c1;
-      ctx.beginPath();
-      ctx.moveTo(5, 26);
-      ctx.quadraticCurveTo(16, 4, 27, 26);
-      ctx.fill();
-      r(10, 20, 3, 2, c2);
-      r(18, 17, 3, 2, c2);
-      break;
-    case 'biomass':
-      r(14, 16, 4, 11, '#d7ccc8');
-      ctx.fillStyle = c1;
-      ctx.beginPath();
-      ctx.ellipse(16, 15, 11, 7, 0, Math.PI, 0);
-      ctx.fill();
-      r(10, 11, 2, 2, c2);
-      r(19, 10, 2, 2, c2);
-      break;
-    case 'ammo':
-      for (let i = 0; i < 3; i++) {
-        r(8 + i * 6, 12, 4, 14, c1);
-        r(8 + i * 6, 8, 4, 5, c2);
-      }
-      break;
-    case 'rocket':
-      r(8, 13, 16, 6, c2);
-      ctx.fillStyle = c1;
-      ctx.beginPath();
-      ctx.moveTo(24, 13);
-      ctx.lineTo(29, 16);
-      ctx.lineTo(24, 19);
-      ctx.fill();
-      r(5, 11, 4, 10, c1);
-      break;
-    case 'cutter':
-      r(6, 14, 14, 6, c2);
-      r(8, 20, 5, 7, '#3a3a3a');
-      r(20, 15, 5, 4, '#9e9e9e');
-      r(25, 16, 4, 2, c1);
-      circle(28, 17, 2, c1);
-      break;
-    case 'pistol':
-      r(8, 12, 16, 5, c1);
-      r(8, 17, 5, 8, '#3a3a3a');
-      r(20, 11, 4, 2, c2);
-      break;
-    case 'smg':
-      r(5, 12, 20, 5, c1);
-      r(10, 17, 4, 8, '#3a3a3a');
-      r(16, 17, 3, 7, c2);
-      r(25, 13, 4, 2, '#9e9e9e');
-      break;
-    case 'shotgun':
-      r(3, 12, 26, 4, c2);
-      r(3, 16, 14, 4, c1);
-      r(3, 20, 6, 5, c1);
-      break;
-    case 'rifle':
-      r(3, 13, 26, 4, c2);
-      r(8, 11, 14, 8, c1);
-      r(5, 17, 5, 7, '#333');
-      r(27, 14, 3, 2, '#fff');
-      break;
-    case 'rail':
-      r(2, 13, 28, 3, c1);
-      r(2, 17, 28, 2, c1);
-      r(6, 11, 12, 10, c2);
-      r(8, 21, 4, 5, '#333');
-      break;
-    case 'launcher':
-      r(3, 11, 24, 8, c1);
-      r(26, 10, 4, 10, '#333');
-      r(10, 19, 4, 6, '#333');
-      r(6, 12, 3, 2, c2);
-      break;
-    case 'baton':
-      ctx.save();
-      ctx.translate(16, 16);
-      ctx.rotate(-0.7);
-      r(-3, -12, 6, 22, c1);
-      r(-3, -14, 6, 5, c2);
-      ctx.restore();
-      break;
-    case 'grenade':
-      circle(16, 18, 8, c1);
-      r(13, 7, 6, 4, '#777');
-      r(18, 6, 6, 2, c2);
-      r(12, 16, 8, 1, '#222');
-      break;
-    case 'suit':
-      r(10, 6, 12, 8, c2);
-      r(12, 8, 8, 3, '#6af0ff');
-      r(8, 14, 16, 12, c1);
-      r(6, 15, 3, 9, c1);
-      r(23, 15, 3, 9, c1);
-      r(14, 16, 4, 6, c2);
-      break;
-    case 'jetpack':
-      r(9, 6, 14, 18, c1);
-      r(8, 22, 6, 5, '#444');
-      r(18, 22, 6, 5, '#444');
-      r(9, 27, 4, 3, c2);
-      r(19, 27, 4, 3, c2);
-      break;
-    case 'medkit':
-      r(6, 8, 20, 16, c1);
-      r(14, 10, 4, 12, c2);
-      r(10, 14, 12, 4, c2);
-      break;
-    case 'ration':
-      r(8, 8, 16, 18, c1);
-      r(8, 12, 16, 4, c2);
-      break;
-    case 'stim':
-      ctx.save();
-      ctx.translate(16, 16);
-      ctx.rotate(0.7);
-      r(-3, -12, 6, 18, c2);
-      r(-2, -10, 4, 12, c1);
-      r(-1, 6, 2, 7, '#bbb');
-      ctx.restore();
-      break;
-    case 'wheel':
-    case 'chain':
-      circle(16, 16, 12, c1);
-      circle(16, 16, 5, c2);
-      if (d.icon === 'chain') for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2;
-        r(16 + Math.cos(a) * 12 - 1, 16 + Math.sin(a) * 12 - 1, 3, 3, c2);
-      }
-      break;
-    case 'track':
-    case 'magtrack':
-      ctx.fillStyle = c1;
-      ctx.beginPath();
-      ctx.roundRect(3, 9, 26, 14, 7);
-      ctx.fill();
-      for (let i = 0; i < 3; i++) circle(9 + i * 7, 16, 3, c2);
-      if (d.icon === 'magtrack') r(4, 21, 24, 2, '#ff6e28');
-      break;
-    case 'hover':
-      r(4, 12, 24, 8, c1);
-      r(6, 20, 20, 3, c2);
-      r(8, 24, 16, 2, 'rgba(106,240,255,0.5)');
-      break;
-  }
-  ctx.strokeStyle = outline;
-}
-
-export function itemIcon(id: string): HTMLCanvasElement {
-  let c = cache.get(id);
-  if (!c) {
-    c = document.createElement('canvas');
-    c.width = S;
-    c.height = S;
-    const ctx = c.getContext('2d')!;
-    drawIcon(ctx, getItem(id));
-    cache.set(id, c);
-  }
-  return c;
-}
-
-export function iconURL(id: string): string {
-  let u = urls.get(id);
-  if (!u) {
-    u = itemIcon(id).toDataURL();
-    urls.set(id, u);
-  }
+function make(key: string, w: number, h: number, draw: (p: Pix, ctx: CanvasRenderingContext2D) => void): string {
+  const hit = urls.get(key);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  draw(new Pix(ctx, 0, 0, w, h, key.length * 97), ctx);
+  const u = c.toDataURL();
+  urls.set(key, u);
   return u;
+}
+
+/* ---------------- items ---------------- */
+
+export function itemIcon(id: string): string {
+  return make(`item:${id}`, 16, 16, (p) => {
+    const d = getItem(id);
+    const a = d.c1, b = d.c2, dk = shade(d.c1, 0.55);
+    switch (d.icon) {
+      case 'ore':
+        p.circle(8, 9, 6, b);
+        p.circle(6, 7, 2, a);
+        p.circle(10, 11, 1.6, a);
+        p.circle(10, 6, 1.2, a);
+        p.set(5, 6, '#ffffff');
+        break;
+      case 'scrap':
+        p.rect(2, 7, 7, 6, a);
+        p.rect(7, 3, 7, 6, b);
+        p.rect(4, 11, 9, 3, dk);
+        p.set(8, 4, '#dddddd');
+        break;
+      case 'plate':
+        p.rect(2, 4, 12, 8, b);
+        p.rect(3, 5, 10, 6, a);
+        p.set(4, 6, '#ffffff');
+        break;
+      case 'wire':
+        p.ring(8, 8, 5, a);
+        p.ring(8, 8, 3, b);
+        break;
+      case 'alloy':
+        p.rect(3, 6, 10, 5, a);
+        p.rect(2, 10, 12, 2, b);
+        p.rect(4, 6, 8, 1, '#ffffff');
+        break;
+      case 'rod':
+        p.rect(6, 1, 4, 14, b);
+        p.rect(7, 2, 2, 12, a);
+        break;
+      case 'crystal':
+        p.rect(7, 2, 3, 12, a);
+        p.rect(4, 6, 3, 8, b);
+        p.rect(10, 5, 3, 9, b);
+        p.set(8, 3, '#ffffff');
+        break;
+      case 'core':
+        p.circle(8, 8, 6, b);
+        p.circle(8, 8, 3.5, a);
+        p.set(7, 6, '#ffffff');
+        break;
+      case 'chip':
+      case 'tech':
+        p.rect(3, 3, 10, 10, b);
+        p.rect(5, 5, 6, 6, a);
+        for (let i = 3; i < 13; i += 3) {
+          p.set(i, 1, '#bdbdbd');
+          p.set(i, 14, '#bdbdbd');
+          p.set(1, i, '#bdbdbd');
+          p.set(14, i, '#bdbdbd');
+        }
+        break;
+      case 'powder':
+        p.circle(8, 10, 5, b);
+        p.circle(8, 9, 4, a);
+        break;
+      case 'biomass':
+        p.rect(7, 8, 2, 6, '#e0d6c2');
+        p.circle(8, 7, 5, a);
+        p.set(6, 5, b);
+        p.set(10, 7, b);
+        break;
+      case 'explosive':
+        p.rect(3, 4, 10, 9, a);
+        p.rect(3, 7, 10, 2, b);
+        p.rect(7, 1, 1, 3, '#bdbdbd');
+        break;
+      case 'kit':
+        p.rect(2, 4, 12, 9, a);
+        p.rect(7, 5, 2, 7, '#e53935');
+        p.rect(5, 7, 6, 2, '#e53935');
+        p.rect(6, 2, 4, 2, b);
+        break;
+      case 'ration':
+        p.rect(3, 4, 10, 9, a);
+        p.rect(3, 4, 10, 3, b);
+        break;
+      case 'wheel':
+      case 'track':
+      case 'chain':
+      case 'magtrack':
+      case 'hover':
+        p.rect(1, 5, 14, 7, a);
+        for (let x = 2; x < 14; x += 3) p.rect(x, 5, 2, 7, b);
+        if (d.icon === 'hover') p.rect(1, 12, 14, 2, '#18ffff');
+        break;
+    }
+  });
+}
+
+/* ---------------- weapons ---------------- */
+
+export function weaponIcon(key: string, rarity: Rarity): string {
+  return make(`w:${key}:${rarity}`, 24, 24, (p) => {
+    const col = RARITIES[rarity].color;
+    p.fill('#15161b');
+    p.frame(0, 0, 24, 24, col);
+    p.frame(1, 1, 22, 22, shade(col, 0.4));
+    const d = WEAPONS[key];
+    const m = '#90a4ae', dk = '#37474f';
+    p.rect(5, 12, 9, 7, dk);
+    p.rect(6, 12, 7, 1, m);
+    switch (key) {
+      case 'autocannon': p.rect(12, 14, 9, 2, m); break;
+      case 'gatling': p.rect(12, 13, 9, 1, m); p.rect(12, 15, 9, 1, m); p.rect(12, 17, 9, 1, m); break;
+      case 'flak': p.rect(12, 13, 8, 2, m); p.rect(12, 17, 8, 2, m); break;
+      case 'laser': p.rect(12, 15, 9, 1, m); p.rect(20, 14, 2, 3, '#ff1744'); break;
+      case 'point_defense': p.rect(12, 14, 6, 1, m); p.rect(12, 16, 6, 1, m); p.circle(9, 10, 2, '#40c4ff'); break;
+      case 'missile_pod': case 'hydra': p.rect(8, 6, 12, 12, m); for (let i = 0; i < (key === 'hydra' ? 4 : 2); i++) p.rect(10 + i * 3 - (key === 'hydra' ? 1 : 0), 9, 2, 2, '#ff1744'); p.rect(10, 13, 8, 1, dk); break;
+      case 'mortar': case 'oblivion': p.rect(10, 4, 5, 10, dk); p.rect(10, 4, 5, 1, key === 'oblivion' ? '#e040fb' : m); break;
+      case 'tesla': case 'thunderhead': p.rect(10, 4, 3, 9, m); p.circle(11.5, 4, 3, key === 'tesla' ? '#b388ff' : '#40c4ff'); break;
+      case 'main_battery': p.rect(12, 13, 10, 3, m); p.rect(20, 12, 2, 5, dk); break;
+      case 'rail_cannon': p.rect(12, 12, 10, 1, m); p.rect(12, 16, 10, 1, m); p.rect(12, 14, 10, 1, '#ff7af0'); break;
+      case 'sunspear': p.rect(12, 13, 10, 3, '#ffee58'); p.rect(12, 14, 10, 1, '#ffffff'); break;
+      case 'maw': for (let i = 0; i < 3; i++) p.rect(12, 12 + i * 2, 6, 1, m); break;
+      default: p.rect(12, 14, 8, 2, m);
+    }
+    if (d?.exclusive) {
+      p.set(3, 3, '#ffea00');
+      p.set(4, 3, '#ffea00');
+      p.set(3, 4, '#ffea00');
+    }
+  });
+}
+
+/* ---------------- modules ---------------- */
+
+export function moduleIcon(key: string): string {
+  return make(`m:${key}`, 32, 32, (_p, ctx) => {
+    const atlas = getAtlas();
+    let r;
+    try {
+      r = atlas.get(`mod_${key}`);
+    } catch {
+      return;
+    }
+    const size = atlas.canvas.width;
+    const sx = r.u0 * size, sy = r.v1 * size;
+    ctx.drawImage(atlas.canvas, Math.round(sx), Math.round(sy), 16, 16, 0, 0, 32, 32);
+    ctx.strokeStyle = MODULE_COLOR[key] ?? '#90a4ae';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, 30, 30);
+    void MODULES;
+  });
+}
+
+/* ---------------- portraits ---------------- */
+
+const SKIN = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#a0785a'];
+const HAIR = ['#212121', '#4e342e', '#795548', '#ffb74d', '#e0e0e0', '#b71c1c', '#6a1b9a', '#1565c0'];
+
+export function portrait(c: CrewMember): string {
+  const ch = championDef(c);
+  const key = `pt:${c.face}:${c.role}:${c.rarity}:${ch?.id ?? ''}:${c.exclusive ?? ''}`;
+  return make(key, 24, 24, (p) => {
+    const r = seeded(c.face);
+    const rc = RARITIES[c.rarity].color;
+    const role = ROLES[c.role].color;
+    p.fill(shade(rc, 0.28));
+    for (let y = 0; y < 24; y += 2) p.rect(0, y, 24, 1, shade(rc, 0.34));
+    const skin = SKIN[Math.floor(r() * SKIN.length)];
+    const hair = ch ? ch.hair : HAIR[Math.floor(r() * HAIR.length)];
+    // Shoulders in role color
+    p.rect(3, 19, 18, 5, role);
+    p.rect(3, 19, 18, 1, shade(role, 1.3));
+    p.rect(10, 17, 4, 3, skin);
+    // Head
+    p.rect(7, 6, 10, 11, skin);
+    p.rect(7, 16, 10, 1, shade(skin, 0.8));
+    // Eyes
+    const eyeY = 10 + Math.floor(r() * 2);
+    p.rect(9, eyeY, 2, 2, '#1a1a1a');
+    p.rect(13, eyeY, 2, 2, '#1a1a1a');
+    p.set(9, eyeY, '#ffffff');
+    p.set(13, eyeY, '#ffffff');
+    p.rect(10, 14, 4, 1, shade(skin, 0.6));
+    // Hair / helmet
+    const style = Math.floor(r() * 4);
+    if (c.role === 'marine' || c.role === 'gunner') {
+      p.rect(6, 4, 12, 4, shade(role, 0.6));
+      p.rect(6, 7, 12, 1, shade(role, 0.4));
+    } else if (style === 0) {
+      p.rect(6, 4, 12, 4, hair);
+      p.rect(6, 4, 2, 8, hair);
+      p.rect(16, 4, 2, 8, hair);
+    } else if (style === 1) {
+      p.rect(7, 3, 10, 4, hair);
+    } else if (style === 2) {
+      p.rect(6, 4, 12, 3, hair);
+      p.rect(6, 7, 2, 12, hair);
+      p.rect(16, 7, 2, 12, hair);
+    } else {
+      p.rect(9, 2, 6, 5, hair);
+    }
+    if (c.role === 'scientist' || c.role === 'engineer') {
+      p.rect(8, eyeY - 1, 8, 4, '#263238');
+      p.rect(9, eyeY, 2, 2, '#4dd0e1');
+      p.rect(13, eyeY, 2, 2, '#4dd0e1');
+    }
+    if (c.role === 'medic') p.rect(4, 20, 3, 3, '#ffffff');
+    if (ch) {
+      // Crown / sigil for champions
+      p.rect(8, 1, 8, 2, ch.accent);
+      p.set(8, 0, ch.accent);
+      p.set(11, 0, ch.accent);
+      p.set(15, 0, ch.accent);
+      p.rect(18, 19, 3, 3, ch.accent);
+    }
+    if (c.exclusive) p.rect(18, 19, 3, 3, '#e040fb');
+    p.frame(0, 0, 24, 24, rc);
+  });
+}
+
+/* ---------------- abilities ---------------- */
+
+export function abilityIcon(c: CrewMember): string {
+  const a = abilityOf(c);
+  return make(`ab:${a.key}`, 24, 24, (p) => {
+    p.fill(shade(a.color, 0.25));
+    p.frame(0, 0, 24, 24, shade(a.color, 0.6));
+    const col = a.color, w = '#ffffff';
+    switch (a.key) {
+      case 'barrage': case 'deadeye':
+        for (let i = 0; i < 3; i++) p.rect(4 + i * 6, 6, 3, 12, col);
+        p.rect(4, 5, 15, 1, w);
+        if (a.key === 'deadeye') p.ring(12, 12, 8, w);
+        break;
+      case 'shield_surge': case 'meltdown':
+        p.ring(12, 12, 8, col);
+        p.ring(12, 12, 6, shade(col, 1.3));
+        p.circle(12, 12, 3, a.key === 'meltdown' ? '#ff6d00' : w);
+        break;
+      case 'weld': case 'nanite':
+        p.rect(5, 10, 14, 4, col);
+        p.rect(10, 5, 4, 14, col);
+        if (a.key === 'nanite') p.speck(w, 8);
+        break;
+      case 'triage': case 'miracle':
+        p.rect(9, 4, 6, 16, w);
+        p.rect(4, 9, 16, 6, w);
+        p.rect(10, 5, 4, 14, col);
+        p.rect(5, 10, 14, 4, col);
+        break;
+      case 'nitro': case 'charge':
+        for (let i = 0; i < 3; i++) {
+          p.rect(4 + i * 5, 6 + i * 2, 8, 2, col);
+          p.rect(4 + i * 5, 16 - i * 2, 8, 2, col);
+        }
+        p.rect(16, 10, 5, 4, w);
+        break;
+      case 'magnet': case 'treasure':
+        p.rect(5, 5, 4, 12, col);
+        p.rect(15, 5, 4, 12, col);
+        p.rect(5, 15, 14, 4, col);
+        p.rect(5, 5, 4, 3, w);
+        p.rect(15, 5, 4, 3, w);
+        break;
+      case 'artillery': case 'orbital':
+        p.ring(12, 14, 6, col);
+        p.rect(11, 2, 2, 10, w);
+        p.rect(9, 14, 6, 1, col);
+        p.rect(11, 12, 2, 5, col);
+        break;
+      case 'emp': case 'singularity':
+        p.ring(12, 12, 9, col);
+        p.ring(12, 12, 5, shade(col, 1.3));
+        p.circle(12, 12, 2, w);
+        break;
+      case 'squad': case 'legion':
+        for (let i = 0; i < 3; i++) {
+          p.rect(4 + i * 6, 8, 4, 4, '#e0ac69');
+          p.rect(3 + i * 6, 12, 6, 7, col);
+        }
+        break;
+    }
+  });
+}
+
+export function roleIcon(role: string): string {
+  return make(`role:${role}`, 12, 12, (p) => {
+    const c = ROLES[role as keyof typeof ROLES]?.color ?? '#fff';
+    p.circle(6, 6, 5, c);
+    p.circle(6, 6, 3, shade(c, 0.5));
+  });
 }

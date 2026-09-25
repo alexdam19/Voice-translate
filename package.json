@@ -1,7 +1,7 @@
 {
   "name": "ironcrawl",
-  "version": "0.1.0",
-  "description": "IRONCRAWL - a 2D open-world wasteland sandbox about fortifying a mobile base.",
+  "version": "0.3.0",
+  "description": "IRONCRAWL - an overhead 3D pixel-art wasteland game about commanding a giant tank-fortress.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,11 +14,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "three": "^0.186.1",
     "tsx": "^4.20.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "@types/three": "^0.186.0",
     "@types/ws": "^8.18.1",
     "concurrently": "^9.2.0",
     "typescript": "~5.9.3",

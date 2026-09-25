@@ -1,6 +1,6 @@
-import { countAcross, type Cost, type Inventory, type Stack } from '../shared/inventory';
+import { countAcross, type Cost, type Inventory } from '../shared/inventory';
 import { getItem } from '../shared/items';
-import { iconURL } from '../render/icons';
+import { itemIcon } from '../render/icons';
 
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -22,39 +22,40 @@ export function button(label: string, onClick: (e: MouseEvent) => void, cls = ''
   return b;
 }
 
-export function slotEl(stack: Stack | null, extra = ''): HTMLDivElement {
-  const d = h('div', `slot ${extra}`);
-  if (stack) {
-    const img = h('img');
-    img.src = iconURL(stack.id);
-    d.appendChild(img);
-    if (stack.n > 1) d.appendChild(h('span', 'n', String(stack.n)));
-    d.dataset.item = stack.id;
-  }
-  return d;
-}
-
 export function costHTML(cost: Cost, invs: Inventory[]): string {
   const parts = Object.entries(cost).map(([id, n]) => {
     const have = countAcross(invs, id);
     const cls = have >= n ? 'have' : 'lack';
-    return `<span class="${cls}"><img src="${iconURL(id)}">${n} ${esc(getItem(id).name)} <small>(${have})</small></span>`;
+    return `<span class="${cls}" title="${esc(getItem(id).name)} (you have ${have})"><img src="${itemIcon(id)}">${n}</span>`;
   });
-  return `<div class="cost">${parts.join('') || '<span>free</span>'}</div>`;
+  return `<span class="cost">${parts.join('') || '<span class="have">free</span>'}</span>`;
 }
 
-export function itemTooltip(id: string): string {
-  const d = getItem(id);
-  const lines: string[] = [`<h4>${esc(d.name)}</h4>`];
-  if (d.weapon) {
-    const w = d.weapon;
-    lines.push(`<div>${Math.round(w.dmg)}${w.pellets > 1 ? ` x${w.pellets}` : ''} dmg · ${w.rate}/s${w.explosive ? ' · explosive' : ''}${w.pierce ? ` · pierce ${w.pierce}` : ''}</div>`);
-    lines.push(`<div class="d">${w.ammo ? `Ammo: ${w.ammo === 'grenade' ? 'itself' : esc(getItem(w.ammo).name)}` : w.energy ? `Energy: ${w.energy}/shot` : 'No ammo'}</div>`);
-  }
-  if (d.tool) lines.push(`<div>Mining power ${d.tool.power} · tier ${d.tool.tier} · reach ${d.tool.reach}</div>`);
-  if (d.suit) lines.push(`<div>Armor ${d.suit.armor}${d.suit.protects.length ? ` · protects: ${d.suit.protects.join(', ')}` : ''}</div>`);
-  if (d.gadget) lines.push(`<div>Thrust ${d.gadget.thrust} · fuel ${d.gadget.fuel}s</div>`);
-  if (d.heal) lines.push(`<div>Heals ${d.heal}</div>`);
-  if (d.desc) lines.push(`<div class="d">${esc(d.desc)}</div>`);
-  return lines.join('');
+/* ---------------- tooltips ---------------- */
+
+let tip: HTMLDivElement | null = null;
+
+export function tooltip(el: HTMLElement, html: () => string): void {
+  el.addEventListener('mouseenter', () => {
+    if (!tip) {
+      tip = h('div', 'tooltip');
+      document.body.appendChild(tip);
+    }
+    tip.innerHTML = html();
+    tip.style.display = 'block';
+  });
+  el.addEventListener('mousemove', (e) => {
+    if (!tip) return;
+    const w = tip.offsetWidth, hh = tip.offsetHeight;
+    let x = e.clientX + 16, y = e.clientY + 16;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - 12;
+    if (y + hh > window.innerHeight - 8) y = e.clientY - hh - 12;
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  });
+  el.addEventListener('mouseleave', hideTip);
+}
+
+export function hideTip(): void {
+  if (tip) tip.style.display = 'none';
 }

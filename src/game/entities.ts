@@ -1,256 +1,185 @@
-import { INV_SLOTS, SECURE_SLOTS } from '../shared/constants';
-import { Inventory, type Stack } from '../shared/inventory';
-import { getItem, type ProjKind } from '../shared/items';
-import type { CollisionGrid } from '../shared/physics';
-import type { NetCrate } from '../shared/protocol';
-import type { Hazard, RGB } from '../shared/types';
-import type { World } from '../shared/world';
-import type { Rect } from '../shared/warzoneGen';
-import { Particles } from '../render/particles';
-import type { Rig } from './rig';
+import type { Stack } from '../shared/inventory';
+import type { Rarity } from '../shared/rarity';
+import type { ProjKind, WeaponItem } from '../shared/weapons';
+import type { CrewMember } from './crew';
 
-export class Player {
-  x = 0;
-  y = 0;
-  w = 14;
-  h = 30;
-  vx = 0;
-  vy = 0;
-  grounded = false;
-  groundGrid: CollisionGrid | null = null;
-  dropTimer = 0;
-  team = 'player';
+export type EnemyKind =
+  | 'rat' | 'drone' | 'raider' | 'bomber' | 'buggy' | 'stalker' | 'spitter' | 'brute' | 'rocketeer' | 'mech' | 'wraith' | 'guardian'
+  | 'titan_walker' | 'titan_beast' | 'titan_worm';
 
-  hp = 100;
-  maxHp = 100;
-  energy = 100;
-  maxEnergy = 100;
-  fuel = 0;
-  inv = new Inventory(INV_SLOTS);
-  secure = new Inventory(SECURE_SLOTS);
-  suit: string | null = 'scav_jacket';
-  gadget: string | null = null;
-  selected = 0;
-  facing = 1;
-  aim = 0;
-  fireCd = 0;
-  useCd = 0;
-  mining: { tx: number; ty: number; rig: Rig | null; progress: number } | null = null;
-  repairing = false;
-  invuln = 0;
-  dead = false;
-  deadTimer = 0;
-  driving: Rig | null = null;
-  climbing = false;
-  inLiquid = 0;
-  coyote = 0;
-  anim = 0;
-  hurtFlash = 0;
-  jetting = false;
-  exposure: Hazard | null = null;
-  regenDelay = 0;
-
-  get armor(): number {
-    return this.suit ? getItem(this.suit).suit?.armor ?? 0 : 0;
-  }
-
-  protects(h: Hazard): boolean {
-    return !!this.suit && !!getItem(this.suit).suit?.protects.includes(h);
-  }
-
-  get cx(): number {
-    return this.x + this.w / 2;
-  }
-  get cy(): number {
-    return this.y + this.h / 2;
-  }
-
-  held(): Stack | null {
-    return this.inv.slots[this.selected] ?? null;
-  }
-}
-
-export type EnemyKind = 'crawler' | 'gunner' | 'drone' | 'brute' | 'trooper' | 'titan';
-
-export type TitanStyle = 'walker' | 'beast' | 'worm';
-
-export interface TitanDef {
-  key: string;
-  name: string;
-  style: TitanStyle;
-  w: number;
-  h: number;
-  hp: number;
-  dmg: number;
-  speed: number;
-  body: string;
-  dark: string;
-  glow: string;
-  segments?: number;
-}
-
-export interface TitanState {
-  def: TitanDef;
-  mode: 'stalk' | 'charge' | 'recover' | 'burrow' | 'emerge';
-  t: number;
-  attackCd: number;
-  stompCd: number;
-  dir: number;
-  burrowed: boolean;
-  /** Worm body: past head positions the segments follow. */
-  trail: { x: number; y: number }[];
-  step: number;
-}
-
-export class Enemy {
-  x = 0;
-  y = 0;
-  w = 16;
-  h = 16;
-  vx = 0;
-  vy = 0;
-  grounded = false;
-  groundGrid: CollisionGrid | null = null;
-  dropTimer = 0;
-  team = 'hostile';
-
-  hp = 30;
-  maxHp = 30;
-  dmg = 10;
-  speed = 100;
-  name = '';
-  tint: RGB = [255, 255, 255];
-  flying = false;
-  fireCd = 1;
-  jumpCd = 0;
-  t = Math.random() * 10;
-  hurtFlash = 0;
-  facing = 1;
-  aim = 0;
-  dead = false;
-  homeRig: Rig | null = null;
-  loot = 'creature';
-  stuck = 0;
-  /** Threat level the enemy was spawned at (scales stats). */
-  threat = 1;
-  elite = false;
-  /** Player-rig module that last hit this enemy (gunner XP), or -1. */
-  lastHitMod = -1;
-  titan: TitanState | null = null;
-  /** Extra hit circles (worm segments). */
-  parts: { x: number; y: number; r: number }[] | null = null;
-
-  constructor(public kind: EnemyKind) {}
-
-  get cx(): number {
-    return this.x + this.w / 2;
-  }
-  get cy(): number {
-    return this.y + this.h / 2;
-  }
-}
-
-export interface Projectile {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  dmg: number;
-  team: string;
-  kind: ProjKind;
-  explosive: number;
-  pierce: number;
-  gravity: number;
-  tileDmg: number;
-  color: string;
-  knock: number;
-  /** Visual-only (remote players / server bots): never deals damage locally. */
-  visual: boolean;
-  hits: Set<unknown> | null;
-  homing: { x: number; y: number } | null;
-  sourceRig: Rig | null;
-  /** Id of the player-rig module that fired this (for gunner XP), or -1. */
-  srcMod: number;
-  /** Homing turn-rate multiplier. */
-  turn: number;
-  weapon: string;
-  dead: boolean;
-}
-
-/** Short-lived lightning / tracer lines (tesla coils, point defense). */
-export interface Arc {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  life: number;
-  color: string;
-  jag: boolean;
-}
-
-export interface ItemDrop {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  vx: number;
-  vy: number;
-  grounded: boolean;
-  groundGrid: CollisionGrid | null;
-  dropTimer: number;
-  team: string;
-  stack: Stack;
-  age: number;
-}
-
-export interface Cache {
+export interface Enemy {
   id: number;
+  kind: EnemyKind;
   x: number;
   y: number;
-  table: string;
-  opened: boolean;
-}
-
-export interface RemotePlayer {
-  id: number;
-  name: string;
-  x: number;
-  y: number;
-  tx: number;
-  ty: number;
   vx: number;
   vy: number;
-  facing: number;
-  aim: number;
-  weapon: string;
+  face: number;
   hp: number;
   maxHp: number;
-  suit: string | null;
-  bot: boolean;
+  r: number;
+  speed: number;
+  dmg: number;
+  range: number;
+  atkCd: number;
+  atkRate: number;
+  threat: number;
+  elite: boolean;
+  flying: boolean;
+  state: string;
+  stateT: number;
+  targetId: number;
+  /** Home position (camps leash back to it). */
+  homeX: number;
+  homeY: number;
+  leash: number;
+  /** Rune altar id for guardians. */
+  camp: number;
+  stun: number;
+  slow: number;
+  burn: number;
+  burnDps: number;
+  hitFlash: number;
   anim: number;
-  w: number;
-  h: number;
-  hurtFlash: number;
+  burrowed: boolean;
+  lastHitBy: number;
+  aggro: boolean;
+  /** Titan part circles (e.g. worm segments). */
+  parts: { x: number; y: number; r: number }[];
+  loot: string;
+  xp: number;
+  titan: boolean;
+  name: string;
+  z: number;
 }
 
-/** One simulated space: the open world, or a Warzone instance. */
-export class Sim {
-  rigs: Rig[] = [];
-  enemies: Enemy[] = [];
-  projectiles: Projectile[] = [];
-  drops: ItemDrop[] = [];
-  caches: Cache[] = [];
-  remotes = new Map<number, RemotePlayer>();
-  crates = new Map<number, NetCrate>();
-  extracts: Rect[] = [];
-  arcs: Arc[] = [];
-  particles = new Particles();
-  time = 0;
+export type Team = 'player' | 'enemy';
 
-  constructor(
-    public kind: 'world' | 'warzone',
-    public world: World,
-  ) {}
+export interface Projectile {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vy: number;
+  vz: number;
+  team: Team;
+  kind: ProjKind;
+  dmg: number;
+  splash: number;
+  pierce: number;
+  life: number;
+  maxLife: number;
+  color: string;
+  homing: number;
+  targetId: number;
+  arc: boolean;
+  /** Arc shots land here. */
+  tx: number;
+  ty: number;
+  burn: number;
+  crit: boolean;
+  lifesteal: number;
+  srcTank: number;
+  /** Already-hit entity ids (pierce). */
+  hit: number[];
+  flyer: number;
+  /** Can be shot down by point defense. */
+  interceptable: boolean;
+  hp: number;
+  size: number;
+  /** Weapon that fired it (for Dead Zone hit validation). */
+  wkey?: string;
+  wr?: number;
+  /** Purely cosmetic (other players' shots in the Dead Zone). */
+  visual?: boolean;
+}
+
+export type PickupKind = 'stack' | 'weapon' | 'chest';
+
+export type ChestKind = 'supply' | 'rune' | 'choice' | 'titan';
+
+export interface Pickup {
+  id: number;
+  x: number;
+  y: number;
+  kind: PickupKind;
+  stack?: Stack;
+  weapon?: WeaponItem;
+  chest?: ChestKind;
+  chestThreat?: number;
+  rarity?: Rarity;
+  life: number;
+  /** Seconds before it can be picked up (spawn animation). */
+  delay: number;
+  vx: number;
+  vy: number;
+  z: number;
+  vz: number;
+}
+
+export type Reward =
+  | { type: 'items'; stacks: Stack[] }
+  | { type: 'weapon'; item: WeaponItem }
+  | { type: 'crew'; crew: CrewMember }
+  | { type: 'tech'; n: number };
+
+export interface Telegraph {
+  id: number;
+  x: number;
+  y: number;
+  shape: 'circle' | 'line';
+  r: number;
+  /** For lines: angle and length. */
+  a: number;
+  len: number;
+  t: number;
+  total: number;
+  color: string;
+  team: Team;
+  dmg: number;
+  onDone?: () => void;
+}
+
+export interface Ally {
+  id: number;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  life: number;
+  dmg: number;
+  range: number;
+  cd: number;
+  heavy: boolean;
+  face: number;
+  anim: number;
+  targetId: number;
+}
+
+/** Burning ground and gravity wells. */
+export interface Zone {
+  id: number;
+  x: number;
+  y: number;
+  r: number;
+  t: number;
+  kind: 'fire' | 'well' | 'acid';
+  dps: number;
+  team: Team;
+}
+
+export interface FloatText {
+  x: number;
+  y: number;
+  z: number;
+  text: string;
+  color: string;
+  t: number;
+  big: boolean;
+}
+
+let nextId = 100000;
+export function eid(): number {
+  return nextId++;
 }
