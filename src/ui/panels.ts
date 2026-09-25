@@ -711,7 +711,7 @@ export class Panels {
       menu.appendChild(button('SAVE', () => { g.save(); g.toast('Saved.', '#69f0ae'); }));
       menu.appendChild(button('SAVE & QUIT TO TITLE', () => g.quitToTitle()));
     } else {
-      menu.appendChild(button('ABANDON RAID (lose your pack)', () => { if (confirm('Abandon the raid? Your pack stays in the Dead Zone.')) g.warzone?.abandon(); }, 'danger'));
+      menu.appendChild(button('ABANDON RAID (lose your pack)', () => this.ui.ask('ABANDON THE RAID?', 'Your pack stays in the Dead Zone for others to loot.', 'ABANDON', () => g.warzone?.abandon(), true), 'danger'));
     }
     menu.appendChild(button(g.settings.muted ? 'SOUND: OFF' : 'SOUND: ON', () => {
       g.settings.muted = !g.settings.muted;
@@ -865,10 +865,12 @@ export class Panels {
       card.appendChild(perks);
       if (pts > 0) card.appendChild(h('div', 'good', `▲ ${pts} perk point${pts > 1 ? 's' : ''} to spend`));
       const dismiss = button('DISMISS', () => {
-        if (!confirm(`Dismiss ${c.name}? They will leave the rig for good.`)) return;
-        r.crew.splice(r.crew.indexOf(c), 1);
-        g.timers.bonus = 0;
-        this.render();
+        this.ui.ask(`DISMISS ${c.name.toUpperCase()}?`, 'They will leave the rig for good.', 'DISMISS', () => {
+          const i = r.crew.indexOf(c);
+          if (i >= 0) r.crew.splice(i, 1);
+          g.timers.bonus = 0;
+          this.render();
+        }, true);
       }, 'danger');
       dismiss.style.marginTop = '6px';
       dismiss.style.fontSize = '10px';

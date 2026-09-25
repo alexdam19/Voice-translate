@@ -110,10 +110,13 @@ export class UI {
     const menu = h('div', 'menu frame');
     if (g.hasSave()) menu.appendChild(button('▶ CONTINUE RUN', () => g.loadGame(), 'primary'));
     menu.appendChild(button('✚ NEW RUN', () => {
-      if (g.hasSave() && !confirm('Start a new run? Your current save will be overwritten.')) return;
-      const seedStr = (menu.querySelector('#seed') as HTMLInputElement | null)?.value.trim();
-      const seed = seedStr ? Number.parseInt(seedStr, 10) || hashString(seedStr) : undefined;
-      g.newGame(seed);
+      const start = (): void => {
+        const seedStr = (menu.querySelector('#seed') as HTMLInputElement | null)?.value.trim();
+        const seed = seedStr ? Number.parseInt(seedStr, 10) || hashString(seedStr) : undefined;
+        g.newGame(seed);
+      };
+      if (g.hasSave()) this.ask('START A NEW RUN?', 'Your current save will be overwritten.', 'OVERWRITE & START', start, true);
+      else start();
     }, g.hasSave() ? '' : 'primary'));
     const nameLbl = h('label', 'field', 'CALLSIGN');
     const name = h('input', 'text') as HTMLInputElement;
@@ -130,7 +133,28 @@ export class UI {
     menu.append(nameLbl, name, seedLbl, seed);
     menu.appendChild(button('⌨ CONTROLS', () => this.panels.showHelpOverlay()));
     this.title.appendChild(menu);
+    this.title.appendChild(h('div', 'touch-note', 'IRONCRAWL is played with a keyboard and mouse. Open it in a desktop browser.'));
     this.title.appendChild(h('div', 'foot', 'Single-player runs in the browser. The Dead Zone (multiplayer) needs the server: <kbd>npm run dev</kbd>'));
+  }
+
+  /** In-page yes/no prompt (browser confirm() dialogs are not always available). */
+  ask(title: string, body: string, okLabel: string, onOk: () => void, danger = false): void {
+    const shade = h('div', 'ask-shade');
+    const box = h('div', 'ask frame');
+    box.appendChild(h('h2', '', esc(title)));
+    box.appendChild(h('div', 'note', esc(body)));
+    const row = h('div', 'row');
+    row.style.gap = '8px';
+    row.style.marginTop = '12px';
+    const close = (): void => shade.remove();
+    row.appendChild(button(okLabel, () => {
+      close();
+      onOk();
+    }, danger ? 'danger' : 'primary'));
+    row.appendChild(button('CANCEL', close));
+    box.appendChild(row);
+    shade.appendChild(box);
+    this.root.appendChild(shade);
   }
 
   /* ---------------- Panels ---------------- */
