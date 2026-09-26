@@ -15,7 +15,7 @@ import type { ModuleInst } from '../game/tank';
 import { techLevel } from '../game/progress';
 import { TECH_BY_ID, weaponCraftable } from '../game/tech';
 import { weaponIcon } from '../render/icons';
-import { button, costHTML, esc, h, tooltip } from './dom';
+import { button, clickWord, costHTML, esc, h, tooltip } from './dom';
 import type { PanelCtx } from './panels';
 
 /** Selection survives re-renders: a weapon uid, or an empty hardpoint id. */
@@ -95,7 +95,7 @@ export function renderArsenal(ctx: PanelCtx): void {
   const wrap = h('div', 'arsenal-wrap');
   const list = h('div', 'ars-list');
   // Mounted weapons and empty hardpoints.
-  list.appendChild(h('div', 'cat', 'MOUNTED <small>click to open</small>'));
+  list.appendChild(h('div', 'cat', `MOUNTED <small>${clickWord()} to open</small>`));
   const hps = p.hardpoints();
   if (!st.uid && !st.hp) {
     const first = hps.find((m) => m.weapon);
@@ -110,7 +110,7 @@ export function renderArsenal(ctx: PanelCtx): void {
     if (w) {
       el.style.borderLeftColor = RARITIES[w.rarity].color;
       el.innerHTML = `<img src="${weaponIcon(w.key, w.rarity)}"><div><div>${weaponTitle(w)} ${g.forgeJob?.uid === w.uid ? '<span class="chip forge">FORGING</span>' : ''}</div>${starsHTML(w)} <small class="d">${size} · DPS ${weaponScore(w)}</small></div>`;
-    } else el.innerHTML = `<div class="noimg">+</div><div><i>Empty ${size} hardpoint</i><br><small class="d">click to mount a weapon</small></div>`;
+    } else el.innerHTML = `<div class="noimg">+</div><div><i>Empty ${size} hardpoint</i><br><small class="d">${clickWord()} to mount a weapon</small></div>`;
     el.addEventListener('click', () => {
       if (w) selectArsenalWeapon(w.uid);
       else selectArsenalHardpoint(m.id);
@@ -219,7 +219,7 @@ function renderWeapon(ctx: PanelCtx, box: HTMLElement, w: WeaponItem): void {
   const pts = treePoints(w);
   const used = (w.tree ?? []).length;
   const tb = h('div', 'ars-box');
-  tb.appendChild(h('div', 'bt', `UPGRADE TREE <small>${used}/${pts} points used · 1 point per star · click a node to install it</small>`));
+  tb.appendChild(h('div', 'bt', `UPGRADE TREE <small>${used}/${pts} points used · 1 point per star · ${clickWord()} a node to install it</small>`));
   const grid = h('div', 'wtree');
   TREE_BRANCHES.forEach((br, bi) => {
     const col = h('div', 'wt-col');

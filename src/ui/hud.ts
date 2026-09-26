@@ -17,7 +17,8 @@ import { activeSquads, setSquadOrder, squadBuilding, squadStatus, squadUnits } f
 import type { TrackInfo } from '../game/systems/tracking';
 import { itemIcon, moduleIcon, portrait } from '../render/icons';
 import { cardEl } from './cardView';
-import { button, esc, h, hideTip, tooltip } from './dom';
+import { button, esc, h, hideTip, isTouch, tooltip } from './dom';
+import { Joystick } from './joystick';
 import { OBJECTIVES } from './objectives';
 import { fmtTime } from './village';
 
@@ -67,6 +68,7 @@ const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls
   { key: 'cargo', label: 'CARGO', sub: 'I' },
   { key: 'map', label: 'MAP', sub: 'M' },
   { key: 'help', label: '?', sub: 'H' },
+  { key: 'menu', label: '☰', sub: 'Esc' },
 ];
 
 export class Hud {
@@ -109,8 +111,10 @@ export class Hud {
   private bottom = h('div', 'hud-bottom');
   minimap: HTMLCanvasElement;
   private mmWrap = h('div', 'minimap');
+  /** Touch driving stick (bottom left, touch screens only). */
+  joy: Joystick;
   private badges = new Map<string, HTMLDivElement>();
-  private lastObjective = -1;
+  private lastObjective = '';
   private game: Game | null = null;
   /** Hand slot armed by a tap (waiting for a tap on the battlefield). */
   armed = -1;
@@ -124,6 +128,8 @@ export class Hud {
   constructor(parent: HTMLElement, private act: HudActions) {
     this.root = h('div', 'hud');
     parent.appendChild(this.root);
+    // First, so every other HUD element sits on top of its touch area.
+    this.joy = new Joystick(this.root);
     const tl = h('div', 'hud-tl');
     tl.append(this.cmd, this.zone, this.obj, this.track, this.jobs);
     this.cmd.addEventListener('click', (e) => {
@@ -153,7 +159,7 @@ export class Hud {
       act.openPanel('progress');
     });
     for (const m of MENU) {
-      const b = h('div', `menu-btn ${m.cls ?? ''}`, `<b>${m.label}</b><small>${m.sub}</small>`);
+      const b = h('div', `menu-btn ${m.key} ${m.cls ?? ''}`, `<b>${m.label}</b><small>${m.sub}</small>`);
       const badge = h('span', 'badge');
       b.appendChild(badge);
       this.badges.set(m.key, b);
@@ -204,8 +210,9 @@ export class Hud {
     this.minimap.height = 220;
     this.mmWrap.appendChild(this.minimap);
     this.mmWrap.appendChild(h('div', 'mm-hint', 'click: drive there'));
-    this.minimap.addEventListener('mousedown', (e) => {
+    this.minimap.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       const r = this.minimap.getBoundingClientRect();
       act.minimapClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, e.button === 2);
     });
@@ -214,45 +221,73 @@ export class Hud {
     for (const el of [tl, tr, this.bottom, this.squads, this.perkBox, this.rider, this.mmWrap]) el.addEventListener('mousedown', (e) => e.stopPropagation());
   }
 
-  /* ---------------- drag and drop ---------------- */
-
-  /** Drag a card out of the hand and drop it on the battlefield, Clash Royale style. Tap to arm it instead. */
-  private bindCardDrag(el: HTMLDivElement, slot: number): void {
-    el.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
+  /**
+   * Press on a HUD element and drag it out onto the battlefield (mouse or finger). A press that
+   * doesn't travel is a tap.
+   */
+  private bindDrag(el: HTMLElement, o: { ok(e: PointerEvent): boolean; start(): void; move(x: number, y: number, over: boolean): void; drop(x: number, y: number, over: boolean): void; tap?(): void }): void {
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || !o.ok(e)) return;
       e.preventDefault();
       e.stopPropagation();
       hideTip();
-      const g = this.game;
-      if (!g || !g.hand[slot]) return;
-      const sx = e.clientX, sy = e.clientY;
+      const id = e.pointerId, sx = e.clientX, sy = e.clientY;
+      const slop = e.pointerType === 'mouse' ? 8 : 12;
+      try {
+        el.setPointerCapture(id);
+      } catch {
+        /* synthetic events can't be captured */
+      }
       let dragging = false;
-      const move = (ev: MouseEvent): void => {
-        if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 8) {
+      const move = (ev: PointerEvent): void => {
+        if (ev.pointerId !== id) return;
+        if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > slop) {
           dragging = true;
-          this.armed = -1;
-          this.dragGhost.innerHTML = '';
-          this.dragGhost.appendChild(cardEl(g, g.hand[slot], { mini: true }));
+          this.dragGhost.classList.toggle('finger', ev.pointerType !== 'mouse');
+          o.start();
           this.dragGhost.style.display = 'block';
-          el.classList.add('dragging');
         }
         if (!dragging) return;
         this.dragGhost.style.left = `${ev.clientX}px`;
         this.dragGhost.style.top = `${ev.clientY}px`;
         const over = this.overUI(ev);
         this.dragGhost.classList.toggle('cancel', over);
-        this.act.cardAim(slot, ev.clientX, ev.clientY, over);
+        o.move(ev.clientX, ev.clientY, over);
       };
-      const up = (ev: MouseEvent): void => {
-        window.removeEventListener('mousemove', move);
-        window.removeEventListener('mouseup', up);
-        el.classList.remove('dragging');
+      const up = (ev: PointerEvent): void => {
+        if (ev.pointerId !== id) return;
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
         this.dragGhost.style.display = 'none';
-        if (dragging) this.act.cardDrop(slot, ev.clientX, ev.clientY, this.overUI(ev));
-        else this.act.cardTap(slot);
+        if (dragging) o.drop(ev.clientX, ev.clientY, ev.type === 'pointercancel' || this.overUI(ev));
+        else if (ev.type === 'pointerup') o.tap?.();
       };
-      window.addEventListener('mousemove', move);
-      window.addEventListener('mouseup', up);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+    });
+  }
+
+  /* ---------------- drag and drop ---------------- */
+
+  /** Drag a card out of the hand and drop it on the battlefield, Clash Royale style. Tap to arm it instead. */
+  private bindCardDrag(el: HTMLDivElement, slot: number): void {
+    this.bindDrag(el, {
+      ok: () => !!this.game?.hand[slot],
+      start: () => {
+        const g = this.game!;
+        this.armed = -1;
+        this.dragGhost.innerHTML = '';
+        this.dragGhost.appendChild(cardEl(g, g.hand[slot], { mini: true }));
+        el.classList.add('dragging');
+      },
+      move: (x, y, over) => this.act.cardAim(slot, x, y, over),
+      drop: (x, y, over) => {
+        el.classList.remove('dragging');
+        this.act.cardDrop(slot, x, y, over);
+      },
+      tap: () => this.act.cardTap(slot),
     });
     tooltip(el, () => {
       const g = this.game;
@@ -264,42 +299,22 @@ export class Hud {
   }
 
   private bindSquadDrag(el: HTMLDivElement, type: SquadType): void {
-    el.addEventListener('mousedown', (e) => {
-      if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
-      e.preventDefault();
-      e.stopPropagation();
-      hideTip();
-      const sx = e.clientX, sy = e.clientY;
-      let dragging = false;
-      const move = (ev: MouseEvent): void => {
-        if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 8) {
-          dragging = true;
-          this.dragGhost.innerHTML = `<div class="sq-ghost" style="border-color:${SQUADS[type].color}">⚑ ${esc(SQUADS[type].name)}<br><small>drop to guard here</small></div>`;
-          this.dragGhost.style.display = 'block';
-        }
-        if (!dragging) return;
-        this.dragGhost.style.left = `${ev.clientX}px`;
-        this.dragGhost.style.top = `${ev.clientY}px`;
-        const over = this.overUI(ev);
-        this.dragGhost.classList.toggle('cancel', over);
-        this.act.squadAim(type, ev.clientX, ev.clientY, over);
-      };
-      const up = (ev: MouseEvent): void => {
-        window.removeEventListener('mousemove', move);
-        window.removeEventListener('mouseup', up);
-        this.dragGhost.style.display = 'none';
-        if (dragging) this.act.squadDrop(type, ev.clientX, ev.clientY, this.overUI(ev));
-      };
-      window.addEventListener('mousemove', move);
-      window.addEventListener('mouseup', up);
+    this.bindDrag(el, {
+      ok: (e) => !(e.target as HTMLElement).closest('button'),
+      start: () => {
+        this.dragGhost.innerHTML = `<div class="sq-ghost" style="border-color:${SQUADS[type].color}">⚑ ${esc(SQUADS[type].name)}<br><small>drop to guard here</small></div>`;
+      },
+      move: (x, y, over) => this.act.squadAim(type, x, y, over),
+      drop: (x, y, over) => this.act.squadDrop(type, x, y, over),
     });
   }
 
-  /** Is the pointer over HUD chrome rather than the battlefield? */
+  /** Is the pointer over HUD chrome rather than the battlefield? (The joystick's corner counts as battlefield.) */
   private overUI(ev: MouseEvent): boolean {
     const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
     if (!el) return true;
     if (el.tagName === 'CANVAS' && !el.closest('.minimap')) return false;
+    if (el.closest('.joy')) return false;
     return !!el.closest('.hud-bottom, .hud-tl, .hud-tr, .squads, .minimap, .perk-box, .panel-backdrop, .rider-card, .village .v-card, .village .v-top');
   }
 
@@ -329,7 +344,7 @@ export class Hud {
     if (r.relicSlot) items.push('<span class="feat">◈ Relic slot</span>');
     if (r.builder) items.push('<span class="feat">🔨 Extra builder</span>');
     items.push(`<span style="color:${PACK_INFO[r.pack].color}">▣ ${esc(PACK_INFO[r.pack].name)}</span>`);
-    this.lvlBanner.innerHTML = `<div class="lb-t">COMMANDER LEVEL ${r.level}!</div><div class="lb-s">+3% hull · +2% damage · fully repaired</div><div class="lb-i">${items.join('')}</div>${r.features.map((f) => `<div class="lb-f"><b>${esc(f.name)}:</b> ${esc(f.desc)}</div>`).join('')}<div class="lb-c">click for the Level Road</div>`;
+    this.lvlBanner.innerHTML = `<div class="lb-t">COMMANDER LEVEL ${r.level}!</div><div class="lb-s">+3% hull · +2% damage · fully repaired</div><div class="lb-i">${items.join('')}</div>${r.features.map((f) => `<div class="lb-f"><b>${esc(f.name)}:</b> ${esc(f.desc)}</div>`).join('')}<div class="lb-c">${isTouch() ? 'tap' : 'click'} for the Level Road</div>`;
     this.lvlBanner.style.display = 'block';
     this.lvlBanner.classList.remove('pop');
     void this.lvlBanner.offsetWidth;
@@ -373,10 +388,11 @@ export class Hud {
     // Objective
     if (g.mode === 'world' && g.objective < OBJECTIVES.length) {
       const o = OBJECTIVES[g.objective];
-      if (this.lastObjective !== g.objective) {
-        this.lastObjective = g.objective;
+      const okey = `${g.objective}:${isTouch()}`;
+      if (this.lastObjective !== okey) {
+        this.lastObjective = okey;
         const rw = Object.entries(o.reward).map(([id, n]) => `<img src="${itemIcon(id)}">${n}`).join(' ');
-        setHTML(this.obj, `<div class="ot">GOAL ${g.objective + 1}/${OBJECTIVES.length}</div><div class="on">${esc(o.title)}</div><div class="oh">${esc(o.hint)}</div><div class="or">Reward: ${rw}</div>`);
+        setHTML(this.obj, `<div class="ot">GOAL ${g.objective + 1}/${OBJECTIVES.length}</div><div class="on">${esc(o.title)}</div><div class="oh">${esc((isTouch() && o.touch) || o.hint)}</div><div class="or">Reward: ${rw}</div>`);
       }
       this.obj.style.display = 'block';
     } else this.obj.style.display = 'none';
@@ -431,7 +447,7 @@ export class Hud {
     for (const [k, v] of p.buffs) if (names[k]) b.push(`<span>${names[k]} ${Math.ceil(v.t)}s</span>`);
     if (g.chestBonus > 0) b.push('<span style="color:#ffd23f">Next chest +1 rarity</span>');
     if (g.timeStop > 0) b.push(`<span style="color:#18ffff">TIME STOP ${Math.ceil(g.timeStop)}s</span>`);
-    if (g.orbital) b.push(`<span style="color:#ff1744">ORBITAL LASER ${Math.ceil(g.orbital.t)}s · steer with the mouse</span>`);
+    if (g.orbital) b.push(`<span style="color:#ff1744">ORBITAL LASER ${Math.ceil(g.orbital.t)}s · steer with ${isTouch() ? 'your finger' : 'the mouse'}</span>`);
     if (g.storm) b.push(`<span style="color:#82b1ff">CATACLYSM ${Math.ceil(g.storm.t)}s</span>`);
     this.tint.style.display = g.timeStop > 0 ? 'block' : 'none';
     setHTML(this.buffs, b.join(''));
@@ -541,7 +557,7 @@ export class Hud {
     }
     this.track.style.display = 'block';
     const rows = t.needs.map((n) => `<div class="tr-n ${n.have >= n.need ? 'ok' : ''}">${n.id === 'shards' ? '<span class="tr-card">▣</span>' : `<img src="${itemIcon(n.id)}">`}<span>${esc(n.name)}</span><b>${n.have}/${n.need}</b></div>`).join('');
-    setHTML(this.track, `<div class="tr-h">◎ TRACKING <span class="tr-x" title="Stop tracking">✕</span></div><div class="tr-t">${esc(t.title)}</div>${rows}<div class="tr-hint ${t.ready ? 'good' : ''}">${esc(t.hint)}</div><div class="tr-c">${t.ready ? 'Click to open your base' : t.target && t.target.kind !== 'base' ? 'Follow the yellow marker' : ''}</div>`);
+    setHTML(this.track, `<div class="tr-h">◎ TRACKING <span class="tr-x" title="Stop tracking">✕</span></div><div class="tr-t">${esc(t.title)}</div>${rows}<div class="tr-hint ${t.ready ? 'good' : ''}">${esc(t.hint)}</div><div class="tr-c">${t.ready ? `${isTouch() ? 'Tap' : 'Click'} to open your base` : t.target && t.target.kind !== 'base' ? 'Follow the yellow marker' : ''}</div>`);
     this.track.classList.toggle('ready', t.ready);
   }
 
@@ -583,7 +599,7 @@ export class Hud {
       return;
     }
     this.perkBox.style.display = 'block';
-    this.perkBox.appendChild(h('div', 'pk-head', `<img src="${portrait(c)}"><div><b>CREW LEVEL UP!</b><br>${esc(c.name)} <small>L${c.level} ${esc(ROLES[c.role].name)}</small><br><small>Click a perk${pending > 1 ? ` · ${pending - 1} more waiting` : ''}</small></div>`));
+    this.perkBox.appendChild(h('div', 'pk-head', `<img src="${portrait(c)}"><div><b>CREW LEVEL UP!</b><br>${esc(c.name)} <small>L${c.level} ${esc(ROLES[c.role].name)}</small><br><small>${isTouch() ? 'Tap' : 'Click'} a perk${pending > 1 ? ` · ${pending - 1} more waiting` : ''}</small></div>`));
     c.draft!.forEach((pk, i) => {
       const d = PERK_BY_ID.get(pk.id);
       if (!d) return;

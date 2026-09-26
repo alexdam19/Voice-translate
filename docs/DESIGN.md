@@ -134,6 +134,16 @@ The view shows a beacon beam at the target, and the overlay adds a bobbing marke
 - The server owns health, shields, deaths, wreck drops, crates, supply drops, extraction timing and bot AI. It caps each hit at the weapon's maximum, keeps a per-attacker damage budget, caps heals, and speed-limits movement. Player fortress sizes use one unit per cell, and bot fortresses crush rubble too.
 - Your card deck, relics and energy come with you. Commander XP doesn't accrue there.
 
+## Touch and small screens
+
+- **Input** (`game/input.ts`) keeps the mouse on mouse events and handles touch and pen with pointer events on the battlefield canvas. A touch that lifts within 450 ms and 14 px is a **tap** (`mouse.tap`). A finger held longer or moved further is a **drag** (`mouse.drag`). Two fingers pinch into `mouse.wheel`. The first touch anywhere adds `touch` to `<html>`, and a coarse-pointer device starts that way.
+- **Taps** reuse the mouse code. In the base view, with a card armed, or on your own hull, a tap is a left click; anywhere else it's the right click (move, attack, drill, interact). A drag on the ground re-orders a move toward the finger every 0.25 s, like holding the right button. Picking radii grow 1.7× for fingers. Touch has no hover, so the info line shows for 2.5 s after a tap, and tooltips are off.
+- **The stick** (`ui/joystick.ts`) is a floating stick in the bottom-left corner that feeds `driveInput` like WASD. Deflection past a small dead zone scales the throttle (`manualDrive` multiplies by the input's magnitude, so keys stay at full speed). It hides in the base view and behind panels.
+- **HUD drags** (cards, squad badges) use pointer events with pointer capture, so the same code serves mouse and fingers. On touch, the dragged card floats above the finger so the landing ring stays visible.
+- **Base view placement** is two taps on touch: the first previews the ghost at that cell (`VillageUI.pending`), and the second tap inside it, or **PLACE**, builds. While placing, the hint strip takes the building card's place at the bottom, so the whole deck stays tappable.
+- **Layout:** one compact breakpoint (`max-width: 900px` or `max-height: 560px`) shrinks the HUD, puts the hull bar over the hand, moves Cargo, Map and Help into the ☰ menu, and makes panels full-screen. Extra rules cover landscape phones (under 460 px tall) and portrait phones. Portrait stacks the menu buttons and materials down the right edge, and the camera pulls back by `clamp(√(1.3 / aspect), 1, 1.7)` so a tall, narrow screen still shows the fortress's surroundings. Safe-area insets keep controls clear of notches.
+- **Rendering on phones:** about 300 rendered lines on the short side, with each game pixel a whole number of device pixels, and a 1024² shadow map instead of 2048².
+
 ## Rendering
 
 - Low-resolution render target (1/2–1/4 of the screen) → post pass (1-pixel depth outlines, 4×4 Bayer dithering, posterize) → nearest-neighbour upscale.

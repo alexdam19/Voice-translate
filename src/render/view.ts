@@ -156,7 +156,9 @@ export class View {
     this.hemi = new HemisphereLight('#e8b48a', '#5a3a2a', 1.9);
     this.sun = new DirectionalLight('#ffe0b8', 2.6);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    // Phones and tablets get a lighter shadow map.
+    const mobile = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 900;
+    this.sun.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
     const sc = this.sun.shadow.camera;
     sc.left = -48;
     sc.right = 48;
@@ -235,7 +237,14 @@ export class View {
     const w = window.innerWidth, h = window.innerHeight;
     this.width = w;
     this.height = h;
-    const ps = w * h > 2200000 ? 4 : w * h > 900000 ? 3 : 2;
+    let ps = w * h > 2200000 ? 4 : w * h > 900000 ? 3 : 2;
+    const dpr = window.devicePixelRatio || 1;
+    if (Math.min(w, h) < 560 && dpr > 1) {
+      // Phones: small CSS screens with dense pixels. Aim for ~300 rendered lines on the short side,
+      // with each game pixel a whole number of device pixels.
+      const k = Math.max(2, Math.round((Math.min(w, h) * dpr) / 300));
+      ps = k / dpr;
+    }
     this.pixelScale = ps;
     this.rw = Math.max(64, Math.floor(w / ps));
     this.rh = Math.max(64, Math.floor(h / ps));

@@ -163,7 +163,7 @@ export class Overlay {
       const col = vs.ghost.ok ? 'rgba(118,255,3,' : 'rgba(255,23,68,';
       this.deckRect(t, vs.ghost.cx, vs.ghost.cy, d.w, d.h, `${col}0.95)`, `${col}0.28)`, 2.5);
       const mid = this.deckPt(t, vs.ghost.cx + d.w / 2, vs.ghost.cy + d.h / 2);
-      this.text(vs.ghost.ok ? `${d.name} · click to place` : "Doesn't fit here", mid.x, mid.y, vs.ghost.ok ? '#ccff90' : '#ff8a80', 10);
+      this.text(vs.ghost.ok ? `${d.name} · ${document.documentElement.classList.contains('touch') ? 'tap PLACE' : 'click to place'}` : "Doesn't fit here", mid.x, mid.y, vs.ghost.ok ? '#ccff90' : '#ff8a80', 10);
     }
   }
 

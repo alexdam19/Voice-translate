@@ -9,7 +9,7 @@ import { installDrive } from '../game/actions';
 import { DRIVE_INFO, MODULES } from '../game/defs';
 import { FEATURES } from '../game/progress';
 import { itemIcon } from '../render/icons';
-import { button, esc, h, hideTip } from './dom';
+import { button, esc, h, hideTip, isTouch } from './dom';
 import { renderCrew } from './crewPanel';
 import { renderCargo } from './cargoPanel';
 import { renderArsenal } from './arsenalPanel';
@@ -52,7 +52,7 @@ export class Panels {
     this.root = h('div', 'panel-backdrop');
     this.win = h('div', 'panel');
     this.root.appendChild(this.win);
-    this.root.addEventListener('mousedown', (e) => {
+    this.root.addEventListener('pointerdown', (e) => {
       if (e.target === this.root) this.close();
     });
     parent.appendChild(this.root);
@@ -212,7 +212,8 @@ export class Panels {
     const draw = (): void => this.app.minimap.draw(cx, size, size, g, this.app.view, true);
     draw();
     c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('mousedown', (e) => {
+    c.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
       const r = c.getBoundingClientRect();
       const x = ((e.clientX - r.left) / r.width) * g.map.size, y = ((e.clientY - r.top) / r.height) * g.map.size;
       if (orderMove(g, x, y)) {
@@ -227,7 +228,7 @@ export class Panels {
       const ok = (!d.hazard || g.player.stats.protects.has(d.hazard)) && (!d.drive || g.player.drive === d.drive || g.player.drive === 'hover');
       return `<div class="zrow"><i style="background:${d.color}"></i><b>${esc(d.name)}</b> <span class="${ok ? 'good' : 'bad'}">${ok ? '✔ ready' : '✖ gear needed'}</span><div class="d">${esc(d.desc)} <br>Resource: ${esc(d.resource)}.<br><b>Needs:</b> ${esc(d.need)}${d.drive ? ` (${DRIVE_INFO[d.drive].name})` : ''}</div></div>`;
     });
-    side.innerHTML = `<div class="legend"><span><i class="lg site"></i>Loot area</span><span><i class="lg rune"></i>Rune altar</span><span><i class="lg fort"></i>Outpost</span><span><i class="lg gate"></i>Dead Zone</span><span><i class="lg you"></i>You</span></div>${zones.join('')}<div class="d">Click anywhere to drive there.</div>`;
+    side.innerHTML = `<div class="legend"><span><i class="lg site"></i>Loot area</span><span><i class="lg rune"></i>Rune altar</span><span><i class="lg fort"></i>Outpost</span><span><i class="lg gate"></i>Dead Zone</span><span><i class="lg you"></i>You</span></div>${zones.join('')}<div class="d">${isTouch() ? 'Tap' : 'Click'} anywhere to drive there.</div>`;
     wrap.appendChild(side);
     ctx.body.appendChild(wrap);
   }
@@ -240,14 +241,16 @@ export class Panels {
   <div class="help-col">
     <h3>THE BASICS</h3>
     <ul>
-      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive your fortress. It rolls straight over rocks, ruins and wrecks. Right-click also drives, attacks, harvests.</li>
+      ${isTouch()
+        ? '<li><b>Push the stick</b> (bottom left) to drive. It rolls straight over rocks, ruins and wrecks. <b>Tap the ground</b> to drive there, <b>hold a finger</b> down to keep steering, tap an enemy to focus fire, tap a node to drill it. <b>Pinch</b> to zoom.</li>'
+        : '<li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive your fortress. It rolls straight over rocks, ruins and wrecks. Right-click also drives, attacks, harvests.</li>'}
       <li>Your guns <b>aim and fire on their own</b>.</li>
       <li><b>Park on a resource node</b> to drill it.</li>
       <li>If your fortress goes down, it's towed to camp and comes back <b>fully repaired</b>.</li>
     </ul>
     <h3>CARDS <kbd>C</kbd></h3>
     <ul>
-      <li>You hold <b>4 cards</b> from a deck of 8. <b>Drag one onto the battlefield</b> to play it there (or tap it, then tap the ground; keys <kbd>1</kbd>-<kbd>4</kbd>).</li>
+      <li>You hold <b>4 cards</b> from a deck of 8. <b>Drag one onto the battlefield</b> to play it there (or tap it, then tap the ground${isTouch() ? '' : '; keys <kbd>1</kbd>-<kbd>4</kbd>'}).</li>
       <li>Cards cost <b>energy</b> (the purple bar), which refills over time. Played cards go to the back of the deck.</li>
       <li><b>Card packs</b> drop from elites, raider tanks, outposts, runes and titans. Duplicates level cards up. <b>Relics</b> are permanent bonuses.</li>
     </ul>
@@ -277,7 +280,7 @@ export class Panels {
       <li><b class="bad">■ Outposts</b> and raider tanks drop Salvaged Tech and card packs. Titans drop Mythic Essence.</li>
       <li>Further from camp: tougher enemies and better loot. The <b class="bad">Dead Zone</b> (NE) is multiplayer.</li>
     </ul>
-    <p class="d"><kbd>V</kbd> Arsenal · <kbd>K</kbd> Crew · <kbd>I</kbd> Cargo · <kbd>M</kbd> Map · <kbd>5</kbd> Repair kit · <kbd>Esc</kbd> Menu</p>
+    ${isTouch() ? '<p class="d">Tap your own fortress to open the base. ☰ (top right) has Cargo, the Map, this page and fullscreen.</p>' : '<p class="d"><kbd>V</kbd> Arsenal · <kbd>K</kbd> Crew · <kbd>I</kbd> Cargo · <kbd>M</kbd> Map · <kbd>5</kbd> Repair kit · <kbd>Esc</kbd> Menu</p>'}
   </div>
 </div>`;
   }
@@ -321,9 +324,29 @@ export class Panels {
   private renderMenu(ctx: PanelCtx): void {
     const a = this.app;
     const col = h('div', 'menu-col');
+    // Screens that don't have their own HUD button on a phone.
+    const quick = h('div', 'menu-quick');
+    quick.append(
+      button('CARGO', () => this.open('cargo')),
+      button('MAP', () => this.open('map')),
+      button('LEVEL ROAD', () => this.open('progress')),
+      button('HELP', () => this.open('help')),
+    );
+    col.append(button('Resume', () => this.close(), 'primary'), quick);
+    const doc = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+    if (document.fullscreenEnabled || doc.webkitRequestFullscreen) {
+      const full = !!document.fullscreenElement;
+      col.append(button(full ? 'Exit fullscreen' : 'Fullscreen', () => {
+        if (full) void document.exitFullscreen?.();
+        else {
+          const p = doc.requestFullscreen?.() ?? (doc.webkitRequestFullscreen?.(), undefined);
+          // Phones play best sideways; not every browser allows locking it.
+          void p?.then(() => (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> }).lock?.('landscape')).catch(() => undefined);
+        }
+        setTimeout(() => this.render(), 300);
+      }));
+    }
     col.append(
-      button('Resume', () => this.close(), 'primary'),
-      button('How to play', () => this.open('help')),
       button('Save now', () => {
         if (a.game.mode === 'world' && saveGame(a.game)) ctx.msg('Saved.');
         else ctx.msg("Couldn't save here.", false);
@@ -336,7 +359,7 @@ export class Panels {
         a.view.outlines = !a.view.outlines;
         this.render();
       }),
-      button(`WASD: ${a.game.tankControls ? 'TANK-STYLE (W/S throttle, A/D turn)' : 'SCREEN-RELATIVE (W = up)'}`, () => {
+      button(`${a.touch ? 'Stick' : 'WASD'}: ${a.game.tankControls ? `TANK-STYLE (${a.touch ? 'up/down throttle, left/right turn' : 'W/S throttle, A/D turn'})` : `SCREEN-RELATIVE (${a.touch ? 'push where you want to go' : 'W = up'})`}`, () => {
         a.game.tankControls = !a.game.tankControls;
         this.render();
       }),

@@ -77,6 +77,8 @@ export class VillageUI {
   /** Building key being placed from the shop, or module id being moved. */
   placing = '';
   moving = 0;
+  /** Touch placement is two taps: the first previews the spot here, the second (or PLACE) builds. */
+  pending: [number, number] | null = null;
   private cat: ModuleCat = 'weapon';
   private cardKey = '';
   private topKey = '';
@@ -91,6 +93,10 @@ export class VillageUI {
       this.toggleShop();
     });
     for (const el of [this.top, this.card, this.shop, this.shopBtn, this.placeHint]) el.addEventListener('mousedown', (e) => e.stopPropagation());
+  }
+
+  private get touch(): boolean {
+    return this.app.input.touchMode;
   }
 
   get game(): Game {
@@ -121,7 +127,9 @@ export class VillageUI {
     const was = !!this.placing || !!this.moving;
     this.placing = '';
     this.moving = 0;
+    this.pending = null;
     this.placeHint.style.display = 'none';
+    this.root.classList.remove('placing');
     return was;
   }
 
@@ -145,23 +153,53 @@ export class VillageUI {
   startPlace(key: string): void {
     this.placing = key;
     this.moving = 0;
+    this.pending = null;
     this.shop.style.display = 'none';
     this.selected = 0;
-    this.placeHint.style.display = 'block';
-    this.placeHint.innerHTML = `Placing <b>${esc(MODULES[key].name)}</b>: tap a green spot on your fortress · right-click or Esc to cancel`;
+    this.renderPlaceHint();
   }
 
   startMove(id: number): void {
     this.moving = id;
     this.placing = '';
-    this.placeHint.style.display = 'block';
-    this.placeHint.innerHTML = `Moving <b>${esc(MODULES[this.game.player.moduleById(id)?.key ?? 'armor'].name)}</b>: tap a new spot · right-click or Esc to cancel`;
+    this.pending = null;
+    this.renderPlaceHint();
   }
 
-  /** A deck cell was clicked. */
-  click(cx: number, cy: number): void {
+  /** The strip under the top bar while placing or moving: what to do, plus PLACE / CANCEL buttons. */
+  private renderPlaceHint(): void {
+    const key = this.placing || this.game.player.moduleById(this.moving)?.key;
+    if (!key) return;
+    const verb = this.placing ? 'Placing' : 'Moving';
+    const g = this.pending ? this.ghost(this.pending) : null;
+    const what = this.touch
+      ? this.pending ? (g?.ok ? `tap PLACE (or the same spot again) to ${this.placing ? 'build' : 'move it'} here` : "<span class=\"bad\">doesn't fit there</span>: tap another spot") : 'tap a spot on your fortress to preview it'
+      : `click a green spot on your fortress · right-click or Esc to cancel`;
+    this.placeHint.style.display = 'flex';
+    this.root.classList.add('placing');
+    this.placeHint.innerHTML = `<span>${verb} <b>${esc(MODULES[key].name)}</b>: ${what}</span>`;
+    if (this.pending && g?.ok) this.placeHint.appendChild(button('PLACE', () => this.click(this.pending![0], this.pending![1], true), 'primary'));
+    this.placeHint.appendChild(button('CANCEL', () => this.cancelPlace(), 'small'));
+  }
+
+  /** A deck cell was clicked (tapped). */
+  click(cx: number, cy: number, confirm = false): void {
     const g = this.game;
     const p = g.player;
+    if ((this.placing || this.moving) && this.touch && !confirm) {
+      // First tap previews; tapping inside the preview again confirms.
+      const gh = this.pending ? this.ghost(this.pending) : null;
+      const d = gh ? MODULES[gh.key] : null;
+      const inside = gh && d && cx >= gh.cx && cy >= gh.cy && cx < gh.cx + d.w && cy < gh.cy + d.h;
+      if (!inside || !gh?.ok) {
+        this.pending = [cx, cy];
+        this.renderPlaceHint();
+        this.app.sound('ui');
+        return;
+      }
+      [cx, cy] = this.pending!;
+    }
+    this.pending = null;
     if (this.placing) {
       const d = MODULES[this.placing];
       const ox = cx - Math.floor((d.w - 1) / 2), oy = cy - Math.floor((d.h - 1) / 2);
@@ -179,6 +217,8 @@ export class VillageUI {
         this.app.hud.toast(r.msg, '#ff8a80');
         this.app.sound('error');
       }
+      // Walls and plates keep placing.
+      if (this.placing) this.renderPlaceHint();
       return;
     }
     if (this.moving) {
@@ -193,6 +233,7 @@ export class VillageUI {
         } else {
           this.app.hud.toast("Doesn't fit there.", '#ff8a80');
           this.app.sound('error');
+          this.renderPlaceHint();
         }
       }
       return;
@@ -204,6 +245,7 @@ export class VillageUI {
 
   /** Ghost for placing/moving at the hovered cell. */
   ghost(cell: [number, number] | null): { key: string; cx: number; cy: number; ok: boolean } | null {
+    if (this.pending) cell = this.pending;
     if (!cell) return null;
     const p = this.game.player;
     const key = this.placing || (this.moving ? p.moduleById(this.moving)?.key : '');
@@ -329,7 +371,7 @@ export class VillageUI {
           setSquadOrder(g, type, 'scavenge');
           this.cardKey = '';
         }, sq.order === 'scavenge' ? 'on small' : 'small'));
-        fn.appendChild(h('div', 'd', 'To guard a spot: drag the squad badge (bottom right) onto the map.'));
+        fn.appendChild(h('div', 'd', 'To guard a spot: leave the base and drag the squad badge (right side) onto the map.'));
       }
     }
     if (!d.required && !job) {

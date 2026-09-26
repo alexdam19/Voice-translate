@@ -8,7 +8,8 @@ import { computeCrewBonus, giveXp, makeCrew, pickPerk, CHAMPIONS } from '../src/
 import { Game } from '../src/game/game';
 import { deserialize, serialize } from '../src/game/save';
 import { installHandlers, stepWorld } from '../src/game/systems/step';
-import { orderHarvest } from '../src/game/systems/orders';
+import { manualDrive } from '../src/game/systems/movement';
+import { orderHarvest, orderMove } from '../src/game/systems/orders';
 import { ccTo, levelTo } from './helpers';
 import { launchOutrider, outriderDestroyed } from '../src/game/systems/outrider';
 import { TECH, TECH_BY_ID } from '../src/game/tech';
@@ -222,5 +223,36 @@ describe('simulation', () => {
     expect(h.player.modules.some((m) => m.weapon?.key === 'laser')).toBe(true);
     expect(h.commander.level).toBeGreaterThanOrEqual(3);
     expect(h.packs.length).toBeGreaterThan(0);
+  });
+});
+
+describe('driving', () => {
+  it('scales throttle with how far the touch stick is pushed', () => {
+    const g = game();
+    const p = g.player;
+    p.rot = -Math.PI / 2;
+    // Keys: always full throttle, diagonals included.
+    expect(manualDrive(p, 0, -1, false).throttle).toBeCloseTo(1);
+    expect(manualDrive(p, 1, -1, false).wantRot).toBeCloseTo(-Math.PI / 4);
+    // Stick: half way is half throttle, in the pushed direction.
+    const half = manualDrive(p, 0, -0.5, false);
+    expect(half.throttle).toBeCloseTo(0.5);
+    expect(half.wantRot).toBeCloseTo(-Math.PI / 2);
+    expect(manualDrive(p, 0, -0.5, true).throttle).toBeCloseTo(0.5);
+    expect(manualDrive(p, 0, 0.5, true).throttle).toBeCloseTo(-0.25);
+  });
+
+  it('drives off a node it was drilling when told to go somewhere else', () => {
+    const g = game(4242);
+    const p = g.player;
+    const n = g.gen.nodes.slice().sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
+    p.x = n.x;
+    p.y = n.y;
+    for (let i = 0; i < 30; i++) stepWorld(g, 1 / 60);
+    expect(g.harvestId).toBe(n.id);
+    const x0 = p.x, y0 = p.y;
+    expect(orderMove(g, p.x + 30, p.y)).toBe(true);
+    for (let i = 0; i < 60 * 3; i++) stepWorld(g, 1 / 60);
+    expect(Math.hypot(p.x - x0, p.y - y0)).toBeGreaterThan(5);
   });
 });

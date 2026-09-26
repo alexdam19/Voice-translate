@@ -23,7 +23,8 @@ const harvestTimer = { t: 0 };
 /** The fortress drills any node it parks on or next to, without being told. */
 function autoHarvest(g: Game): void {
   const p = g.player;
-  if (Math.abs(p.speed) > 1.2) return;
+  // Not while driving somewhere you were sent: it would cancel the order to drive off a node.
+  if (Math.abs(p.speed) > 1.2 || p.path.length) return;
   let best = 0;
   let bd = 1.5;
   for (const n of g.gen.nodes) {

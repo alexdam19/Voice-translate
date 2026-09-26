@@ -534,31 +534,6 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 .lvlrow { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #3a3526; }
 .seat.locked { opacity: 0.6; border-style: dashed; }
 
-/* small screens: keep the HUD usable on tablets and phones */
-@media (max-width: 1500px) {
-  .command-bar { transform: translateX(-50%) scale(0.8); transform-origin: bottom center; }
-}
-@media (max-width: 1100px) {
-  .command-bar { transform: translateX(-50%) scale(0.72); transform-origin: bottom center; }
-  .hover-hint { bottom: 140px; }
-}
-@media (max-width: 760px) {
-  .command-bar { transform: translateX(-50%) scale(0.56); }
-  .hud-tl { width: 200px; }
-  .objective, .rider-card, .mm-hint, .menu-btn small, .resources span:nth-child(n+4) { display: none !important; }
-  .menu-btn { min-width: 0; padding: 3px 6px; }
-  .menu-btn.big b { font-size: 13px; }
-  .minimap canvas { width: 110px; height: 110px; }
-  .hud-tc { width: 92vw; }
-  .bossbar { width: 90vw; }
-  .panel.wide { width: 98vw; height: 96vh; }
-  .deck-wrap, .armory-wrap, .chassis-wrap, .help-grid, .rider-cols, .recruit-row, .officer-grid, .arsenal-wrap, .wtree, .res-head { grid-template-columns: 1fr; }
-  .perk-box { top: auto; bottom: 150px; transform: none; width: 200px; }
-  .roster-row { grid-template-columns: 1fr; }
-  .map-wrap { flex-direction: column; }
-  .title-btns .btn { min-width: 0; width: 80vw; }
-}
-
 /* ======================================================================
    v0.5: commander, cards, squads, tracker, base (village) view
    ====================================================================== */
@@ -791,4 +766,287 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 .vs-item.poor .vs-name { color: #bcaaa4; }
 .vs-lock { color: #ffab40; font-size: 11px; }
 .vs-why { color: var(--bad); font-size: 11px; }
-.v-place { display: none; position: absolute; left: 50%; top: 162px; transform: translateX(-50%); background: rgba(20, 40, 10, 0.92); border: 2px solid var(--good); padding: 6px 14px; font-size: 14px; }
+.v-place { display: none; position: absolute; left: 50%; top: 162px; transform: translateX(-50%); align-items: center; gap: 10px; background: rgba(20, 40, 10, 0.92); border: 2px solid var(--good); padding: 6px 14px; font-size: 14px; }
+
+/* ======================================================================
+   Touch screens and phones
+   ====================================================================== */
+
+html, body { overscroll-behavior: none; -webkit-touch-callout: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+/* The battlefield and HUD take every touch themselves; only real scroll areas pan. */
+#game, #ui { touch-action: none; }
+.panel-body, .v-shop, .vs-grid, .title-screen, .chest-screen, .map-side, .palette, .deck-info, .hp-list, .wlist, .choices, .tech-scroll, .ars-list, .ars-detail, .tracker, .v-card, .perk-box { touch-action: pan-x pan-y; }
+html.touch .tooltip { display: none !important; }
+html.touch .hand-slot:hover { transform: none; }
+html.touch .hand-slot.armed { transform: translateY(-12px); }
+html.touch .pk-card:hover, html.touch .reward-card.pickable:hover { transform: none; }
+html.touch .drag-ghost.finger { transform: translate(-50%, -135%) rotate(-4deg) scale(0.9); }
+
+/* Driving stick: its corner of the screen is the touch area; the ring centres under the thumb. */
+.joy { display: none; position: absolute; left: 0; bottom: 0; width: min(38vw, 300px); height: min(62vh, 280px); }
+html.touch .joy { display: block; }
+.joy-base { position: absolute; left: 96px; top: calc(100% - 100px); width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; background: radial-gradient(rgba(255, 236, 179, 0.05), rgba(255, 236, 179, 0.14)); border: 2px solid rgba(255, 215, 120, 0.5); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35); opacity: 0.6; pointer-events: none; }
+.joy-base::after { content: 'DRIVE'; position: absolute; left: 0; right: 0; top: -16px; text-align: center; font-family: var(--px); font-size: 9px; color: rgba(255, 236, 179, 0.7); text-shadow: 1px 1px 0 #000; }
+.joy.on .joy-base { opacity: 0.95; }
+.joy.on .joy-base::after { display: none; }
+.joy-knob { position: absolute; left: 50%; top: 50%; width: 50px; height: 50px; margin: -25px 0 0 -25px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #ffe082, #b8860b 70%); border: 2px solid #000; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6); }
+
+.menu-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+/* ---------------- compact: phones (either way round) and small windows ---------------- */
+@media (max-width: 900px), (max-height: 560px) {
+  body { font-size: 13px; }
+  .btn { font-size: 11px; padding: 6px 10px; }
+  .btn.small { padding: 4px 8px; font-size: 10px; }
+
+  /* top left: commander, zone, goal, tracker, builders */
+  .hud-tl { left: 6px; top: 6px; width: 200px; gap: 3px; }
+  .cmdr { padding: 3px 6px; gap: 6px; }
+  .cm-lvl { width: 26px; height: 26px; font-size: 13px; }
+  .cm-t, .cm-t small { font-size: 9px; }
+  .cm-bar { height: 7px; margin-top: 2px; }
+  .zone-banner { padding: 1px 6px; border-width: 1px; border-left-width: 3px; }
+  .zone-banner .zn { font-size: 10px; }
+  .zone-banner .tier { font-size: 8px; }
+  .zone-banner .need { font-size: 10px; }
+  .objective { padding: 3px 6px; border-width: 1px; }
+  .objective .ot { font-size: 8px; }
+  .objective .on { font-size: 12px; }
+  .objective .oh { font-size: 10px; line-height: 1.25; }
+  .objective .or { display: none; }
+  .tracker { padding: 3px 6px; font-size: 10px; max-height: 40vh; overflow-y: auto; }
+  .tr-t { font-size: 11px; margin: 0; }
+  .tr-n img { width: 12px; height: 12px; }
+  .tr-hint { font-size: 10px; margin-top: 1px; }
+  .tr-c { font-size: 8px; }
+  .jobs { padding: 2px 6px; border-width: 1px; }
+  .jobs .rw { font-size: 10px; padding: 1px 0; }
+  .jobs .rw .bar { height: 4px; margin: 1px 0; }
+
+  /* top right: menu and materials */
+  .hud-tr { right: 6px; top: 6px; gap: 3px; }
+  .menu-buttons { gap: 3px; }
+  .menu-btn, .menu-btn.big { min-width: 0; padding: 6px 8px; }
+  .menu-btn b, .menu-btn.big b { font-size: 11px; }
+  .menu-btn small { display: none; }
+  .menu-btn.cargo, .menu-btn.map, .menu-btn.help { display: none !important; }
+  .menu-btn .badge { top: -6px; right: -6px; font-size: 9px; min-width: 15px; height: 15px; line-height: 12px; }
+  .resources { gap: 6px; padding: 2px 6px; font-size: 10px; border-width: 1px; }
+  .resources img { width: 13px; height: 13px; }
+  .resources span:nth-child(4), .resources span:nth-child(5) { display: none; }
+
+  /* top centre: messages */
+  .hud-tc { top: 50px; width: min(420px, 48vw); gap: 3px; }
+  .toast { font-size: 11px; padding: 3px 8px; max-width: 100%; }
+  .toasts { gap: 2px; }
+  .lvl-banner { width: 100%; padding: 5px 8px; border-width: 2px; }
+  .lb-t { font-size: 15px; }
+  .lb-s { font-size: 10px; }
+  .lb-f { display: none; }
+  .lb-i { margin: 3px 0; gap: 3px; }
+  .lb-i span { font-size: 10px; padding: 1px 4px; }
+  .bossbar { width: 100%; padding: 2px 6px; }
+  .bossbar .bn { font-size: 10px; }
+  .bossbar .bb { height: 8px; }
+  .buffbar { font-size: 9px; gap: 3px; }
+  .hazard-warn { font-size: 10px; padding: 2px 6px; }
+  .hover-hint { bottom: 146px; font-size: 11px; white-space: normal; max-width: 64vw; text-align: center; }
+
+  /* bottom centre: hull bar over the hand */
+  .hud-bottom { bottom: 3px; flex-direction: column; align-items: center; gap: 2px; }
+  .hp-box { width: auto; align-self: stretch; padding: 2px 3px; gap: 0; border-width: 1px; }
+  .hp-box .tank-info { display: none; }
+  .hp-bar { height: 13px; border-width: 1px; }
+  .hp-bar .txt { font-size: 8px; line-height: 11px; }
+  .hp-bar .shield { height: 3px; }
+  .hp-box .kit-btn { top: auto; bottom: -1px; right: -44px; width: 40px; height: 32px; }
+  .hp-box .kit-btn img { width: 20px; height: 20px; }
+  .hp-box .kit-btn .k { display: none; }
+  .hand-wrap { gap: 2px; }
+  .hand-row { gap: 4px; }
+  .hand { gap: 4px; }
+  .hand-slot, .hand-slot .mcard { width: 60px; height: 82px; }
+  .hand-slot .mcard { padding: 3px; }
+  .hand-slot .mcard .mc-cost { width: 18px; height: 18px; font-size: 10px; left: 1px; top: 1px; }
+  .hand-slot .mcard .mc-name { font-size: 7px; margin-top: 2px; }
+  .hand-slot .hk { display: none; }
+  .next-card { width: 38px; }
+  .next-card small { font-size: 7px; }
+  .next-card .mcard { width: 38px; height: 52px; padding: 2px; }
+  .next-card .mcard .mc-name { display: none; }
+  .next-card .mcard .mc-cost { width: 14px; height: 14px; font-size: 8px; }
+  .energy { min-width: 0; height: 12px; }
+  .en-num { width: 20px; height: 20px; left: -22px; top: -6px; font-size: 10px; }
+  .pack-btn { font-size: 10px; padding: 4px 10px; }
+  .drag-ghost .mcard { width: 60px; height: 82px; }
+
+  /* bottom right: minimap and squads */
+  .minimap { right: 6px; bottom: 6px; padding: 1px; }
+  .minimap canvas { width: 100px; height: 100px; }
+  .mm-hint { display: none; }
+  .squads { right: 6px; bottom: 116px; width: 150px; gap: 3px; }
+  .sq-chip { padding: 2px 4px; border-width: 1px; }
+  .sq-top { gap: 4px; }
+  .sq-top img { width: 18px; height: 18px; }
+  .sq-top b { font-size: 8px; }
+  .sq-top small { font-size: 9px; }
+  .sq-btns { margin-top: 2px; }
+  .sq-btns .btn { padding: 4px 7px; font-size: 9px; }
+  .sq-drag { font-size: 8px; }
+  .rider-card { left: 6px; bottom: auto; top: 58%; width: 150px; padding: 3px 5px; font-size: 10px; }
+  .rider-card .rd { display: none; }
+  .rider-card .btn { padding: 4px 5px; font-size: 9px; }
+
+  /* crew level-up: over the top-left boxes, clear of the fortress in the middle */
+  .perk-box { left: 6px; top: 6px; transform: none; width: 220px; padding: 5px; max-height: calc(100% - 180px); overflow-y: auto; z-index: 2; }
+  .pk-head { font-size: 10px; margin-bottom: 2px; gap: 6px; }
+  .pk-head img { width: 26px; height: 26px; }
+  .pk-head b { font-size: 11px; }
+  .pk-card { margin-top: 3px; padding: 4px 6px; font-size: 10px; }
+
+  .death h2 { font-size: 22px; }
+  .death p { font-size: 13px; }
+
+  /* the base view */
+  .hud.in-village .hud-tl { display: none; }
+  .hud.in-village .hud-tc { top: 96px; }
+  .v-top { top: 6px; gap: 8px; padding: 3px 8px; border-width: 1px; max-width: calc(100vw - 260px); }
+  .vt-title { font-size: 11px; white-space: nowrap; }
+  .vt-title small { display: none; }
+  .vt-builders { font-size: 11px; white-space: nowrap; }
+  .v-top .btn { padding: 6px 8px; font-size: 10px; white-space: nowrap; }
+  .v-card { width: min(640px, calc(100vw - 230px)); bottom: 6px; padding: 5px 8px; font-size: 11px; max-height: 46vh; overflow-y: auto; border-width: 1px; }
+  .vc-head { gap: 6px; }
+  .vc-head img { width: 32px; height: 32px; }
+  .vc-name { font-size: 12px; }
+  .vc-lvl { font-size: 11px; }
+  .vc-stats { font-size: 10px; }
+  .vc-row { margin-top: 3px; padding-top: 3px; gap: 6px; }
+  .vc-fn { margin-top: 3px; gap: 4px; }
+  .v-shop-btn { left: 6px; bottom: 6px; width: 84px; height: 62px; border-width: 2px; }
+  .v-shop-btn b { font-size: 16px; }
+  .v-shop-btn small { font-size: 9px; }
+  .v-shop { top: 46px; width: 96vw; max-height: calc(100% - 56px); padding: 6px 8px; gap: 4px; }
+  .vs-head { font-size: 14px; }
+  .vs-head small { font-size: 10px; }
+  .vs-grid { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 5px; }
+  .vs-item { padding: 4px; font-size: 10px; }
+  .vs-item img { width: 32px; height: 32px; }
+  .vs-name { font-size: 9px; }
+  .vs-meta, .vs-lock, .vs-why { font-size: 9px; }
+  /* while placing, the hint takes the building card's place so the whole deck stays in view */
+  .v-place { top: auto; bottom: 6px; display: none; align-items: center; gap: 8px; padding: 4px 8px; font-size: 11px; max-width: calc(100vw - 230px); margin-bottom: env(safe-area-inset-bottom); }
+  .village.placing .v-card { display: none; }
+
+  /* panels fill the screen */
+  .panel.wide, .panel.base, .panel.crew, .panel.arsenal, .panel.cards, .panel.progress { width: 100vw; height: 100%; max-height: 100%; border-width: 0; box-shadow: none; }
+  .panel { max-height: 100%; }
+  .panel-head { padding: 4px 56px 4px 10px; }
+  .panel-head .pt { font-size: 15px; }
+  .panel-head .ps { font-size: 11px; }
+  .panel-head .close { top: 4px; right: 4px; padding: 6px 12px; }
+  .switcher .sw { font-size: 10px; padding: 7px 4px; }
+  .tabs { padding: 4px 6px 0; }
+  .tabs .tab { font-size: 10px; padding: 6px 8px; }
+  .panel-body { padding: 6px 8px; }
+  .panel-msg { font-size: 12px; }
+  .help-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .help-col { font-size: 12px; }
+  .deck-wrap, .armory-wrap, .chassis-wrap, .rider-cols, .recruit-row, .officer-grid, .wtree, .res-head { grid-template-columns: 1fr; }
+  .roster-row { grid-template-columns: 1fr 1fr; }
+  .roster-act { flex-direction: row; flex-wrap: wrap; grid-column: 1 / -1; }
+  .arsenal-wrap { grid-template-columns: minmax(200px, 38%) 1fr; }
+  .cards-wrap { grid-template-columns: 1fr 220px; gap: 8px; }
+  .card-detail .mcard { width: 200px; }
+  .coll-grid { grid-template-columns: repeat(auto-fill, 72px); gap: 5px; }
+  .coll-grid .mcard.mini, .deck-slots .mcard.mini { width: 72px; height: 98px; }
+  .level-road .lr-step { padding: 3px 6px; }
+  .lr-items { font-size: 11px; }
+  .craft-grid, .recipe-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .hold-grid { grid-template-columns: repeat(auto-fill, 46px); }
+  .hold-grid .slot { width: 46px; height: 46px; }
+
+  /* card packs and chests */
+  .chest-screen { align-items: flex-start; overflow-y: auto; }
+  .chest-box { margin: auto; padding: 8px; }
+  .chest-box .ct { font-size: 20px; }
+  .chest-box .cs { font-size: 12px; margin-bottom: 6px; }
+  .reward-row { gap: 8px; margin-bottom: 8px; }
+  .reward-card { width: 170px; min-height: 0; font-size: 11px; padding: 6px; }
+  .reward-card .big { width: 48px; height: 48px; margin: 4px auto; }
+  .reward-card .rn { font-size: 12px; }
+  .reward-card.card-reveal .mcard { width: 150px; }
+  .reward-card.card-reveal .mcard .mc-text { font-size: 10px; min-height: 0; }
+  .reward-card.card-reveal .mcard .mc-flavor { display: none; }
+
+  /* title */
+  .title-screen { align-items: flex-start; overflow-y: auto; }
+  .title-card { margin: auto; padding: 12px; }
+  .logo { font-size: clamp(32px, 8vw, 60px); }
+  .tag { font-size: 14px; margin-bottom: 8px; }
+  .pitch { font-size: 13px; line-height: 1.35; margin-bottom: 10px; padding-left: 18px; }
+  .title-btns .btn { font-size: 15px; padding: 10px 20px; min-width: 240px; }
+  .foot { margin-top: 8px; font-size: 11px; }
+  .modal { padding: 10px; }
+  .menu-col { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .menu-col > .btn.primary, .menu-col > .menu-quick { grid-column: 1 / -1; }
+  .menu-quick { grid-template-columns: repeat(4, 1fr); }
+  .menu-col > .btn { padding: 8px 6px; }
+  .dz-status { width: 180px; font-size: 11px; left: 6px; bottom: auto; top: 110px; }
+}
+
+/* landscape phones: very little height */
+@media (max-height: 460px) {
+  .lb-s { display: none; }
+  .vc-desc { display: none; }
+  .vc-fn > .d { font-size: 10px; }
+  .objective .oh { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .zone-banner .need { display: none; }
+  .tracker { max-height: 34vh; }
+  .panel-head .ps { display: none; }
+  .map-wrap { flex-direction: row; }
+}
+
+/* portrait phones */
+@media (max-width: 600px) and (orientation: portrait) {
+  .hud-tl { width: calc(100vw - 132px); }
+  .hud-tr { flex-direction: row-reverse; align-items: flex-start; }
+  .menu-buttons { flex-direction: column; }
+  .menu-btn, .menu-btn.big { padding: 7px 6px; }
+  .resources { flex-direction: column; gap: 1px; padding: 3px 5px; }
+  .hud-tc { top: 34vh; width: 92vw; }
+  .hover-hint { bottom: 330px; max-width: 90vw; }
+  .hand-slot, .hand-slot .mcard { width: 70px; height: 96px; }
+  .hand-slot .mcard .mc-name { font-size: 8px; }
+  .drag-ghost .mcard { width: 70px; height: 96px; }
+  .joy { bottom: 152px; height: min(40vh, 260px); width: 62vw; }
+  .minimap { bottom: 156px; }
+  .minimap canvas { width: 92px; height: 92px; }
+  .squads { bottom: 256px; width: 140px; }
+  .perk-box { bottom: 160px; }
+  .rider-card { top: auto; bottom: 380px; }
+  .v-top { left: 6px; transform: none; max-width: calc(100vw - 80px); flex-wrap: wrap; gap: 4px 8px; }
+  .v-card { width: calc(100vw - 12px); max-height: 42vh; }
+  .v-shop-btn { bottom: auto; top: 78px; width: 72px; height: 50px; }
+  .v-shop-btn b { font-size: 14px; }
+  .v-shop-btn small { display: none; }
+  .hud.in-village .minimap { display: none; }
+  .v-shop { top: 90px; max-height: calc(100% - 100px); }
+  .v-place { left: 6px; right: 6px; transform: none; max-width: none; bottom: 6px; }
+  .hud.in-village .hud-tc { top: 26vh; }
+  .help-grid, .cards-wrap, .arsenal-wrap, .roster-row { grid-template-columns: 1fr; }
+  .card-detail { position: static; }
+  .map-wrap { flex-direction: column; }
+  .perk-box { width: calc(100vw - 132px); }
+  .reward-card.card-reveal { max-width: 46vw; padding: 2px; }
+  .reward-card.card-reveal .rk { font-size: 8px; }
+  .reward-card.card-reveal .mcard { width: 44vw; }
+  .reward-row { gap: 4px; }
+  .reward-card { width: 46vw; }
+  .menu-quick { grid-template-columns: 1fr 1fr; }
+}
+
+/* notches and home bars */
+.hud-tl, .joy, .rider-card, .v-shop-btn { margin-left: env(safe-area-inset-left); }
+.hud-tr, .minimap, .squads { margin-right: env(safe-area-inset-right); }
+.hud-bottom, .minimap, .joy, .v-card, .v-shop-btn { margin-bottom: env(safe-area-inset-bottom); }

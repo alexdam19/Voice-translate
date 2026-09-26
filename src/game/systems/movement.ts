@@ -114,12 +114,16 @@ export interface ManualDrive {
   turn?: number;
 }
 
-/** WASD input -> manual drive command. Screen-relative by default: W is up the screen. */
+/**
+ * WASD / stick input -> manual drive command. Screen-relative by default: W is up the screen.
+ * Analog input (the touch stick) scales the throttle; keys are always full throttle.
+ */
 export function manualDrive(t: Tank, ix: number, iy: number, tankStyle: boolean): ManualDrive {
-  if (tankStyle) return { throttle: iy < 0 ? 1 : iy > 0 ? -0.5 : 0, wantRot: t.rot, turn: ix };
+  if (tankStyle) return { throttle: iy < 0 ? Math.min(1, -iy) : iy > 0 ? -0.5 * Math.min(1, iy) : 0, wantRot: t.rot, turn: Math.max(-1, Math.min(1, ix)) };
+  const mag = Math.min(1, Math.hypot(ix, iy));
   const want = Math.atan2(iy, ix);
   const diff = Math.abs(wrapAngle(want - t.rot));
-  return { throttle: diff > 1.1 ? 0.08 : Math.cos(diff) ** 2, wantRot: want };
+  return { throttle: (diff > 1.1 ? 0.08 : Math.cos(diff) ** 2) * mag, wantRot: want };
 }
 
 export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: ManualDrive): void {

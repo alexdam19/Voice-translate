@@ -1,6 +1,6 @@
 # IRONCRAWL
 
-An overhead 3D, pixel-art wasteland game about commanding a **whole facility on treads**. Drive it with **WASD**: it rolls straight over rocks, ruins and wrecks, and its guns aim and fire on their own. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
+An overhead 3D, pixel-art wasteland game about commanding a **whole facility on treads**. It plays with mouse and keyboard or on a **phone** (touch stick, taps, drag-and-drop cards). Drive it with **WASD** or the stick: it rolls straight over rocks, ruins and wrecks, and its guns aim and fire on their own. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
 
 The pieces:
 - **Battle cards**, in the spirit of Magic: The Gathering. There are 42 cards in five schools (Iron, Volt, Rust, Void, Aegis) and six rarities, plus 12 permanent **relics**. You hold 4 cards from a deck of 8 and spend energy to play them: artillery, rocket salvos, drop squads, EMP, lightning storms, a dragon, a mech, a nuke. **Card packs** drop from elites, raider tanks, outposts, runes and titans. Duplicates level your cards up.
@@ -60,6 +60,23 @@ Everything works with the mouse. The camera always follows your fortress.
 | **J** | Send the Outrider to the node or loot area under the cursor |
 
 Menu buttons only appear once their feature unlocks, so there's never much to learn at once.
+
+### On a phone or tablet
+
+![Playing on a phone: the stick bottom left, a card being dragged out of the hand](docs/screenshots/phone.jpg)
+
+The first touch switches the game to touch controls (phones and tablets start in them). Sideways is best, but portrait works too. On small screens the HUD compacts: smaller cards, a hull bar above the hand, and full-screen panels.
+
+| Touch | Action |
+|---|---|
+| **Stick** (bottom left) | Drive. Press anywhere in that corner and the stick centres under your thumb. How far you push it sets the speed. |
+| **Tap** the battlefield | What right-click does: drive there, focus fire on an enemy, drill a node, use a rune, loot area or the gate. |
+| **Hold a finger** on the ground | Keep steering toward it. |
+| **Drag a card** out of the hand | Play it where you let go. Or tap the card, then tap the ground (tap the card again to cancel). |
+| **Pinch** | Zoom |
+| **Tap your fortress** or **BASE** | The base view. Tap a building to see it. To place one, tap a spot to preview it, then tap **PLACE** (or the same spot again). |
+| **☰** | The menu: Cargo, Map, Level Road, Help, fullscreen, sound. |
+| **Drag a squad badge** | Guard that spot. |
 
 ## How it plays
 
@@ -154,7 +171,7 @@ Drive into the gate north-east of camp. Loot crates and supply drops, fight othe
 ## Tech
 
 - **TypeScript + Vite**, **three.js** for rendering, **ws** for the server, **Vitest** for tests. No image or audio files: every texture, sprite, portrait, card illustration, icon and sound is generated at startup.
-- **8-bit look:** the scene renders at 1/2–1/4 resolution into a render target. A post pass draws 1-pixel depth outlines and posterizes with ordered dithering, and the result is upscaled with nearest-neighbour filtering.
+- **8-bit look:** the scene renders at 1/2–1/4 resolution into a render target (on phones, about 300 lines on the short side, each game pixel a whole number of device pixels). A post pass draws 1-pixel depth outlines and posterizes with ordered dithering, and the result is upscaled with nearest-neighbour filtering.
 - **Simulation:** fixed 60 Hz steps.
   - Your fortress is one world unit per deck cell (enemy rigs are smaller). It paths with A* over a "crush" clearance field where only cliffs, pillars and liquids block, and it flattens obstacles and props under its hull. The terrain chunks it touches are rebuilt in the same frame.
   - Squads and summons are `Ally` entities with anchors: follow the fortress, guard a point, or scavenge a target.
@@ -166,7 +183,7 @@ src/game/     Game state, tank, cards, progress (Level Road), squads, crew, arse
               (movement + crushing, weapons, projectiles, cards, squads, builds, tracking, allies, AI, world, crew, outrider, spawns)
 src/render/   three.js view (camera follow, base view, aim ring, beacon), pixel post pass, terrain chunks, voxel models, sprites, particles,
               fog of war, overlay (bars, base grid, tracking arrow), minimap, icons and card art
-src/ui/       HUD (commander, hand, energy, squads, tracker), base view, CARDS / LEVEL ROAD / ARSENAL / CREW / CARGO / MAP panels, chests, title
+src/ui/       HUD (commander, hand, energy, squads, tracker, touch stick), base view, CARDS / LEVEL ROAD / ARSENAL / CREW / CARGO / MAP panels, chests, title
 src/net/      Dead Zone client (WebSocket with an in-browser fallback)
 server/       Node host for the Dead Zone (serves dist/ too)
 legacy/2d/    the original side-view 2D prototype, kept for reference

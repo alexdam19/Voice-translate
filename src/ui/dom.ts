@@ -2,6 +2,17 @@ import { countAcross, type Cost, type Inventory } from '../shared/inventory';
 import { getItem } from '../shared/items';
 import { itemIcon } from '../render/icons';
 
+/** The UI is in touch mode (the first touch, or a phone/tablet at startup, sets it). */
+export function isTouch(): boolean {
+  return document.documentElement.classList.contains('touch');
+}
+
+/** "tap" on touch screens, "click" with a mouse. */
+export function clickWord(cap = false): string {
+  const w = isTouch() ? 'tap' : 'click';
+  return cap ? w[0].toUpperCase() + w.slice(1) : w;
+}
+
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -37,6 +48,8 @@ let tip: HTMLDivElement | null = null;
 
 export function tooltip(el: HTMLElement, html: () => string): void {
   el.addEventListener('mouseenter', () => {
+    // Touch screens have no hover; a tap would leave the tooltip stuck on screen.
+    if (isTouch()) return;
     if (!tip) {
       tip = h('div', 'tooltip');
       document.body.appendChild(tip);

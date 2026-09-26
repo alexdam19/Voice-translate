@@ -1,11 +1,26 @@
-/** Keyboard + mouse state with per-frame edge detection. */
+/**
+ * Keyboard, mouse and touch state with per-frame edge detection.
+ * Touch: a quick tap on the battlefield sets `mouse.tap` (the app decides what it means), a finger
+ * held down or dragged sets `mouse.drag` (steer toward it), and two fingers pinch to zoom
+ * (reported through `mouse.wheel`).
+ */
 export class Input {
   private held = new Set<string>();
   private pressed = new Set<string>();
   mouse = {
     x: 0, y: 0, left: false, right: false, middle: false, leftPressed: false, rightPressed: false, leftReleased: false,
     wheel: 0, overUI: false, inside: true,
+    /** A touch tap landed on the battlefield this frame. */
+    tap: false,
+    /** One finger is held (or dragged) on the battlefield: not a tap, not a pinch. */
+    drag: false,
   };
+  /** True once the player has touched the screen (switches the UI to touch mode). */
+  touchMode = false;
+  onTouchMode?: () => void;
+  private touches = new Map<number, { x: number; y: number; sx: number; sy: number; t: number }>();
+  private pinchDist = 0;
+  private tapOk = false;
 
   constructor(target: HTMLElement) {
     window.addEventListener('keydown', (e) => {
@@ -18,7 +33,10 @@ export class Input {
     window.addEventListener('blur', () => {
       this.held.clear();
       this.mouse.left = this.mouse.right = this.mouse.middle = false;
+      this.touches.clear();
+      this.mouse.drag = false;
     });
+    // Mouse (touch pointers call preventDefault, so no emulated mouse events arrive from the battlefield).
     window.addEventListener('mousemove', (e) => {
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
@@ -29,6 +47,7 @@ export class Input {
     target.addEventListener('mousedown', (e) => {
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
+      this.mouse.overUI = false;
       if (e.button === 0) {
         this.mouse.left = true;
         this.mouse.leftPressed = true;
@@ -56,16 +75,84 @@ export class Input {
       },
       { passive: false },
     );
-    // Basic touch: tap = move, long-press = attack/fire.
-    target.addEventListener('touchstart', (e) => {
-      const t = e.touches[0];
-      if (!t) return;
-      this.mouse.x = t.clientX;
-      this.mouse.y = t.clientY;
-      this.mouse.rightPressed = true;
-      this.mouse.overUI = false;
+    // Touch and pen. Anything touching the page (HUD included) switches the UI to touch mode.
+    window.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch' && !this.touchMode) this.setTouchMode();
+    }, true);
+    target.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') return;
       e.preventDefault();
-    }, { passive: false });
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
+      if (this.touches.size === 1) {
+        this.tapOk = true;
+        this.mouse.x = e.clientX;
+        this.mouse.y = e.clientY;
+        this.mouse.overUI = false;
+        this.mouse.inside = true;
+      } else {
+        // A second finger: pinch, not a tap or a drag.
+        this.tapOk = false;
+        this.mouse.drag = false;
+        this.pinchDist = this.spread();
+      }
+    });
+    target.addEventListener('pointermove', (e) => {
+      const t = this.touches.get(e.pointerId);
+      if (!t) return;
+      t.x = e.clientX;
+      t.y = e.clientY;
+      if (this.touches.size >= 2) {
+        const d = this.spread();
+        if (this.pinchDist > 0 && d > 0) this.mouse.wheel += Math.log(this.pinchDist / d) * 10;
+        this.pinchDist = d;
+        return;
+      }
+      if (Math.hypot(t.x - t.sx, t.y - t.sy) > 14) {
+        this.tapOk = false;
+        this.mouse.drag = true;
+      }
+      this.mouse.x = t.x;
+      this.mouse.y = t.y;
+    });
+    const end = (e: PointerEvent): void => {
+      const t = this.touches.get(e.pointerId);
+      if (!t) return;
+      this.touches.delete(e.pointerId);
+      if (this.touches.size === 0) {
+        if (this.tapOk && e.type === 'pointerup' && performance.now() - t.t < 450) {
+          this.mouse.tap = true;
+          this.mouse.x = t.x;
+          this.mouse.y = t.y;
+        }
+        this.tapOk = false;
+        this.mouse.drag = false;
+      }
+      this.pinchDist = this.touches.size >= 2 ? this.spread() : 0;
+    };
+    target.addEventListener('pointerup', end);
+    target.addEventListener('pointercancel', end);
+    if (matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches) this.setTouchMode();
+  }
+
+  /** Called every frame: a finger held still for a moment becomes a drag (steering). */
+  update(): void {
+    if (this.touches.size !== 1 || !this.tapOk) return;
+    const t = this.touches.values().next().value!;
+    if (performance.now() - t.t > 450) {
+      this.tapOk = false;
+      this.mouse.drag = true;
+    }
+  }
+
+  private setTouchMode(): void {
+    this.touchMode = true;
+    document.documentElement.classList.add('touch');
+    this.onTouchMode?.();
+  }
+
+  private spread(): number {
+    const pts = [...this.touches.values()];
+    return pts.length >= 2 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0;
   }
 
   private isTyping(e: KeyboardEvent): boolean {
@@ -93,5 +180,6 @@ export class Input {
     this.mouse.rightPressed = false;
     this.mouse.leftReleased = false;
     this.mouse.wheel = 0;
+    this.mouse.tap = false;
   }
 }

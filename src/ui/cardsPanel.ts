@@ -2,7 +2,7 @@ import { canUpgradeCard, openPack, swapDeck, toggleDeck, toggleRelic, trackCard,
 import { CARD_LIST, CARDS, DECK_SIZE, MAX_CARD_LEVEL, PACK_INFO, SCHOOLS, shardsNeeded, upgradeCost, type School } from '../game/cards';
 import { RARITIES } from '../shared/rarity';
 import { cardEl } from './cardView';
-import { button, costHTML, esc, h } from './dom';
+import { button, clickWord, costHTML, esc, h } from './dom';
 import type { PanelCtx } from './panels';
 
 const st = { sel: '', swapIn: '', school: 'all' as School | 'all' };
@@ -43,7 +43,7 @@ function detail(ctx: PanelCtx, id: string): HTMLElement {
     row.appendChild(button(inDeck ? 'Remove from deck' : 'Add to deck', () => {
       if (!inDeck && g.deck.length >= DECK_SIZE) {
         st.swapIn = id;
-        ctx.msg('Deck full: click a deck card above to swap it out.', true);
+        ctx.msg(`Deck full: ${clickWord()} a deck card above to swap it out.`, true);
         ctx.rerender();
         return;
       }
@@ -74,7 +74,7 @@ function detail(ctx: PanelCtx, id: string): HTMLElement {
 function renderDeck(ctx: PanelCtx): void {
   const g = ctx.app.game;
   const top = h('div', 'deck-row');
-  top.appendChild(h('div', 'cat', `YOUR DECK <small>${g.deck.length}/${DECK_SIZE} · you hold 4 at a time and draw the next one when you play a card${st.swapIn ? ` · <b class="y">click a card to swap in ${esc(CARDS[st.swapIn].name)}</b>` : ''}</small>`));
+  top.appendChild(h('div', 'cat', `YOUR DECK <small>${g.deck.length}/${DECK_SIZE} · you hold 4 at a time and draw the next one when you play a card${st.swapIn ? ` · <b class="y">${clickWord()} a card to swap in ${esc(CARDS[st.swapIn].name)}</b>` : ''}</small>`));
   const slots = h('div', 'deck-slots');
   for (let i = 0; i < DECK_SIZE; i++) {
     const id = g.deck[i];
@@ -162,7 +162,7 @@ function renderRelics(ctx: PanelCtx): void {
   wrap.appendChild(grid);
   const right = h('div', 'coll-side');
   if (st.sel && CARDS[st.sel]?.type === 'relic') right.appendChild(detail(ctx, st.sel));
-  else right.appendChild(h('div', 'd', 'Click a relic to see it.'));
+  else right.appendChild(h('div', 'd', `${clickWord(true)} a relic to see it.`));
   wrap.appendChild(right);
   ctx.body.appendChild(wrap);
 }

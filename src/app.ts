@@ -64,6 +64,8 @@ export class App {
   private last = 0;
   private hover: Hover | null = null;
   private rmbT = 0;
+  /** Touch: how long the info line for the last tapped thing stays up. */
+  private tapHintT = 0;
   sendMode = false;
   private objT = 0;
   private saveT = 30;
@@ -105,8 +107,8 @@ export class App {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.save();
     });
-    canvas.addEventListener('mousedown', () => this.audio.unlock());
-    window.addEventListener('keydown', () => this.audio.unlock());
+    // Browsers only start audio from a user gesture (iOS wants touchend).
+    for (const ev of ['pointerdown', 'touchend', 'keydown']) window.addEventListener(ev, () => this.audio.unlock(), true);
     requestAnimationFrame((t) => this.frame(t));
   }
 
@@ -116,7 +118,7 @@ export class App {
 
   newGame(seed = Math.floor(Math.random() * 1e9)): void {
     this.start(new Game(seed));
-    this.hud.toast('Welcome, Commander. Drive with WASD. Your guns fire on their own. Drag a card onto the battlefield to play it.', '#ffd740');
+    this.hud.toast(`Welcome, Commander. ${this.touch ? 'Drive with the stick (bottom left) or tap the ground' : 'Drive with WASD'}. Your guns fire on their own. Drag a card onto the battlefield to play it.`, '#ffd740');
   }
 
   continueGame(): boolean {
@@ -168,6 +170,11 @@ export class App {
     this.chest.show(kind, rewards, choice);
   }
 
+  /** Playing with a touch screen (set by the first touch, or a phone/tablet at startup). */
+  get touch(): boolean {
+    return this.input.touchMode;
+  }
+
   get uiBlocking(): boolean {
     return this.panels.isOpen || this.chest.isOpen || this.title.isOpen;
   }
@@ -192,10 +199,12 @@ export class App {
     this.view.aim = null;
   }
 
-  /** Automatic camera distance: a bigger fortress needs a wider view. */
+  /** Automatic camera distance: a bigger fortress needs a wider view, and so does a tall narrow (portrait) screen. */
   private autoZoom(): number {
     const p = this.game.player;
-    return this.village ? (p.stats.length * 1.95 + 10) * this.villageZoomMul : (20 + p.stats.length * 2.4) * this.zoomMul;
+    const aspect = this.view.width / Math.max(1, this.view.height);
+    const narrow = Math.max(1, Math.min(1.7, Math.sqrt(1.3 / aspect)));
+    return (this.village ? (p.stats.length * 1.95 + 10) * this.villageZoomMul : (20 + p.stats.length * 2.4) * this.zoomMul) * narrow;
   }
 
   /* ---------------------------------------------------------------- */
@@ -253,7 +262,7 @@ export class App {
       return;
     }
     this.hud.armed = slot;
-    this.hud.toast(`${CARDS[id].name}: tap the battlefield to play it (right-click cancels).`, this.cardColor(id));
+    this.hud.toast(`${CARDS[id].name}: tap the battlefield to play it (${this.touch ? 'tap the card again' : 'right-click'} to cancel).`, this.cardColor(id));
     this.sound('draw');
   }
 
@@ -365,7 +374,7 @@ export class App {
     else if (c === 'hold') g.outriderOrder = { mode: 'hold', x: g.outrider.x, y: g.outrider.y };
     else {
       this.sendMode = true;
-      this.hud.toast('Right-click a resource node or loot area to send the Outrider there.', '#26c6da');
+      this.hud.toast(`${this.touch ? 'Tap' : 'Right-click'} a resource node or loot area to send the Outrider there.`, '#26c6da');
     }
   }
 
@@ -409,8 +418,10 @@ export class App {
     }
     const g = this.game;
     this.handleKeys();
+    this.input.update();
     this.readDrive();
     if (!this.uiBlocking) this.handleMouse(dt);
+    this.handleZoom();
     const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen;
     if (!paused) {
       this.acc += dt;
@@ -466,16 +477,19 @@ export class App {
     }
   }
 
+  /** Mouse wheel or pinch: zoom on top of the automatic distance (read before the input frame ends). */
+  private handleZoom(): void {
+    const m = this.input.mouse;
+    if (!m.wheel || m.overUI || this.uiBlocking) return;
+    if (this.village) this.villageZoomMul = Math.max(0.55, Math.min(1.6, this.villageZoomMul + m.wheel * 0.08));
+    else this.zoomMul = Math.max(0.6, Math.min(1.5, this.zoomMul + m.wheel * 0.07));
+  }
+
   /** The camera always follows your fortress; inside the base it turns so the front is up. */
   private updateCamera(dt: number): void {
     const g = this.game;
     const v = this.view;
-    const m = this.input.mouse;
     const p = g.player;
-    if (m.wheel && !m.overUI && !this.uiBlocking) {
-      if (this.village) this.villageZoomMul = Math.max(0.55, Math.min(1.6, this.villageZoomMul + m.wheel * 0.08));
-      else this.zoomMul = Math.max(0.6, Math.min(1.5, this.zoomMul + m.wheel * 0.07));
-    }
     const k = 1 - Math.pow(0.002, dt);
     let tx = p.x, ty = p.y;
     if (this.village) {
@@ -492,17 +506,23 @@ export class App {
     v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;
   }
 
-  /** WASD / arrow keys drive the fortress (screen-relative, or tank-style from the menu). */
+  /** WASD / arrow keys / the touch stick drive the fortress (screen-relative, or tank-style from the menu). */
   private readDrive(): void {
     const g = this.game;
     const i = this.input;
     const di = g.driveInput;
+    const joy = this.hud.joy;
+    joy.visible = this.touch && !this.village && !this.uiBlocking && !g.player.dead;
     if (this.uiBlocking || g.player.dead) {
       di.active = false;
       return;
     }
-    const x = (i.down('KeyD') || i.down('ArrowRight') ? 1 : 0) - (i.down('KeyA') || i.down('ArrowLeft') ? 1 : 0);
-    const y = (i.down('KeyS') || i.down('ArrowDown') ? 1 : 0) - (i.down('KeyW') || i.down('ArrowUp') ? 1 : 0);
+    let x = (i.down('KeyD') || i.down('ArrowRight') ? 1 : 0) - (i.down('KeyA') || i.down('ArrowLeft') ? 1 : 0);
+    let y = (i.down('KeyS') || i.down('ArrowDown') ? 1 : 0) - (i.down('KeyW') || i.down('ArrowUp') ? 1 : 0);
+    if (!x && !y && joy.active) {
+      x = joy.x;
+      y = joy.y;
+    }
     // Driving off leaves the base view.
     if (this.village) {
       if (x || y) this.setVillage(false);
@@ -572,13 +592,15 @@ export class App {
     const v = this.view;
     const m = this.input.mouse;
     const scale = 34 / v.cam.zoom;
+    // Fingers are less precise than a mouse pointer.
+    const slop = this.touch ? 1.7 : 1;
     let best: Hover | null = null;
     let bd = Infinity;
     for (const e of g.enemies) {
       if (e.burrowed || (g.mode === 'world' && !g.isVisible(e.x, e.y))) continue;
       const hgt = (e.flying ? 1.6 : 0) + e.r * 1.4;
       const p = v.worldToScreen(e.x, e.y, hgt);
-      const r = Math.max(16, e.r * 42 * scale);
+      const r = Math.max(16 * slop, e.r * 42 * scale);
       const d = Math.hypot(p.x - m.x, p.y - m.y);
       if (d < r && d < bd) {
         bd = d;
@@ -588,15 +610,15 @@ export class App {
     if (best) return best;
     for (const t of g.tanks) {
       if (t.dead || (g.mode === 'world' && !g.isVisible(t.x, t.y))) continue;
-      if (t.hits(wx, wy, 0.6)) return { kind: 'tank', id: t.id, x: t.x, y: t.y, label: t.kind === 'outpost' ? 'Outpost' : t.name };
+      if (t.hits(wx, wy, 0.6 * slop)) return { kind: 'tank', id: t.id, x: t.x, y: t.y, label: t.kind === 'outpost' ? 'Outpost' : t.name };
     }
-    for (const k of g.pickups) if (k.kind !== 'stack' && Math.hypot(k.x - wx, k.y - wy) < 1.4) return { kind: 'pickup', id: k.id, x: k.x, y: k.y, label: k.kind === 'chest' ? 'Chest' : 'Weapon crate' };
+    for (const k of g.pickups) if (k.kind !== 'stack' && Math.hypot(k.x - wx, k.y - wy) < 1.4 * slop) return { kind: 'pickup', id: k.id, x: k.x, y: k.y, label: k.kind === 'chest' ? 'Chest' : 'Weapon crate' };
     if (g.mode === 'world') {
       for (const n of g.gen.nodes) {
-        if (n.respawnAt || Math.abs(n.x - wx) > 1.6 || Math.abs(n.y - wy) > 1.6) continue;
-        if (Math.hypot(n.x - wx, n.y - wy) < 1.5) return { kind: 'node', id: n.id, x: n.x, y: n.y, label: NODE_INFO[n.type].name };
+        if (n.respawnAt || Math.abs(n.x - wx) > 1.6 * slop || Math.abs(n.y - wy) > 1.6 * slop) continue;
+        if (Math.hypot(n.x - wx, n.y - wy) < 1.5 * slop) return { kind: 'node', id: n.id, x: n.x, y: n.y, label: NODE_INFO[n.type].name };
       }
-      for (const r of g.gen.runes) if (Math.hypot(r.x - wx, r.y - wy) < 2.6) return { kind: 'rune', id: r.id, x: r.x, y: r.y, label: RUNE_INFO[r.rune].name };
+      for (const r of g.gen.runes) if (Math.hypot(r.x - wx, r.y - wy) < 2.6 * slop) return { kind: 'rune', id: r.id, x: r.x, y: r.y, label: RUNE_INFO[r.rune].name };
       if (Math.hypot(g.gen.gate.x - wx, g.gen.gate.y - wy) < 6) return { kind: 'gate', id: 0, x: g.gen.gate.x, y: g.gen.gate.y, label: 'Dead Zone Gate' };
       for (const s of g.gen.sites) if (Math.hypot(s.x - wx, s.y - wy) < 7.5) return { kind: 'site', id: s.id, x: s.x, y: s.y, label: s.name };
     }
@@ -618,7 +640,8 @@ export class App {
     const l = p.toLocal(w.x, w.y);
     const cx = Math.floor(l.lz / p.cell + p.cols / 2), cy = Math.floor(p.rows / 2 - l.lx / p.cell);
     const inside = cx >= 0 && cy >= 0 && cx < p.cols && cy < p.rows;
-    this.vstate.hover = inside ? [cx, cy] : null;
+    // Touch has no hover; the placement preview comes from the pending tap instead.
+    this.vstate.hover = inside && !this.touch ? [cx, cy] : null;
     this.canvas.style.cursor = inside ? CURSORS.interact : CURSORS.default;
     if (m.rightPressed) {
       if (!this.villageUI.cancelPlace()) this.villageUI.select(0);
@@ -636,6 +659,13 @@ export class App {
     const w = this.view.screenToWorld(m.x, m.y);
     g.aim.x = w.x;
     g.aim.y = w.y;
+    if (m.tap) {
+      // A tap is a left click in the base, with a card armed, or on your own fortress (opens the base);
+      // anywhere else it's the right-click: drive there, attack, drill, interact.
+      if (this.village || this.hud.armed >= 0 || (g.mode === 'world' && !g.player.dead && g.player.hits(w.x, w.y, 0.5))) m.leftPressed = true;
+      else m.rightPressed = true;
+      this.tapHintT = 2.5;
+    }
     if (this.village) {
       this.handleVillageMouse();
       return;
@@ -667,10 +697,11 @@ export class App {
     this.hover = hv;
     const own = g.mode === 'world' && g.player.hits(w.x, w.y, 0.5);
     this.canvas.style.cursor = this.hud.armed >= 0 ? CURSORS.attack : this.sendMode ? CURSORS.send : hv.kind === 'enemy' || hv.kind === 'tank' ? CURSORS.attack : hv.kind === 'node' ? CURSORS.harvest : own ? CURSORS.interact : hv.kind === 'ground' ? CURSORS.default : CURSORS.interact;
-    if (own && hv.kind === 'ground') {
-      this.hud.setHint('<b>Your fortress</b> · click to open your base (B)');
-    }
-    if (!(own && hv.kind === 'ground')) this.hud.setHint(this.hintFor(hv));
+    // Touch has no hover: the line describes what you just tapped, for a moment.
+    this.tapHintT -= dt;
+    if (this.touch && (this.tapHintT <= 0 || m.drag)) this.hud.setHint('');
+    else if (own && hv.kind === 'ground') this.hud.setHint(`<b>Your fortress</b> · ${this.touch ? 'tap' : 'click'} to open your base${this.touch ? '' : ' (B)'}`);
+    else this.hud.setHint(this.hintFor(hv));
     if (m.rightPressed) {
       this.rmbT = 0.25;
       hideTip();
@@ -705,9 +736,13 @@ export class App {
           if (orderMove(g, hv.x, hv.y)) this.view.moveMarker(hv.x, hv.y, '#ffd740');
           break;
         default:
-          if (orderMove(g, hv.x, hv.y)) this.view.moveMarker(hv.x, hv.y);
+          if (orderMove(g, hv.x, hv.y)) {
+            this.view.moveMarker(hv.x, hv.y);
+            this.objCounters('wasd');
+          } else this.view.moveMarker(hv.x, hv.y, '#ff5252');
       }
-    } else if (m.right && hv.kind === 'ground' && !g.player.dead) {
+    } else if ((m.right || (m.drag && this.hud.armed < 0 && !this.sendMode)) && hv.kind === 'ground' && !g.player.dead) {
+      // Hold the right button (or a finger) on the ground to keep steering toward it.
       this.rmbT -= dt;
       if (this.rmbT <= 0) {
         this.rmbT = 0.25;
@@ -718,16 +753,17 @@ export class App {
 
   private hintFor(hv: Hover): string {
     const g = this.game;
-    if (this.sendMode) return hv.kind === 'node' || hv.kind === 'site' ? `Right-click: send Outrider to <b>${hv.label}</b>` : 'Pick a resource node or loot area for the Outrider (Esc cancels)';
+    const rc = this.touch ? 'tap' : 'right-click';
+    if (this.sendMode) return hv.kind === 'node' || hv.kind === 'site' ? `${this.touch ? 'Tap' : 'Right-click'}: send Outrider to <b>${hv.label}</b>` : `Pick a resource node or loot area for the Outrider${this.touch ? '' : ' (Esc cancels)'}`;
     switch (hv.kind) {
       case 'enemy':
       case 'tank':
-        return `<b class="bad">${hv.label}</b> · right-click: focus fire`;
+        return `<b class="bad">${hv.label}</b> · ${rc}: focus fire`;
       case 'node': {
         const n = g.gen.nodes.find((k) => k.id === hv.id)!;
         const info = NODE_INFO[n.type];
         const ok = info.tier <= g.player.stats.drill;
-        return `<b>${info.name}</b> (${n.amount} left) · ${ok ? 'park on it or right-click to drill' : `<span class="bad">needs Mk${info.tier} Drill Rig</span>`}${g.outrider ? ' · J: send Outrider' : ''}`;
+        return `<b>${info.name}</b> (${n.amount} left) · ${ok ? `park on it or ${rc} to drill` : `<span class="bad">needs Mk${info.tier} Drill Rig</span>`}${g.outrider && !this.touch ? ' · J: send Outrider' : ''}`;
       }
       case 'site': {
         const s = g.gen.sites.find((k) => k.id === hv.id)!;
@@ -738,7 +774,7 @@ export class App {
         return `<b style="color:${RUNE_INFO[r.rune].color}">${hv.label}</b> · ${RUNE_INFO[r.rune].buff} + a Rune Chest. Defeat its guardians, then park beside it.`;
       }
       case 'gate':
-        return '<b class="bad">Dead Zone Gate</b> · right-click to enter the multiplayer warzone';
+        return `<b class="bad">Dead Zone Gate</b> · ${rc} to enter the multiplayer warzone`;
       case 'pickup':
         return `<b>${hv.label}</b> · drive over it to collect`;
       default:
