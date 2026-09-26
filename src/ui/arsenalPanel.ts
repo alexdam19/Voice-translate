@@ -12,7 +12,8 @@ import { MODULES } from '../game/defs';
 import type { Game } from '../game/game';
 import { forgeSpeed } from '../game/systems/arsenal';
 import type { ModuleInst } from '../game/tank';
-import { BRANCHES, TECH_BY_ID, TIER_NAMES, weaponCraftable } from '../game/tech';
+import { techLevel } from '../game/progress';
+import { TECH_BY_ID, weaponCraftable } from '../game/tech';
 import { weaponIcon } from '../render/icons';
 import { button, costHTML, esc, h, tooltip } from './dom';
 import type { PanelCtx } from './panels';
@@ -117,7 +118,7 @@ export function renderArsenal(ctx: PanelCtx): void {
     });
     list.appendChild(el);
   }
-  if (!hps.length) list.appendChild(h('div', 'hint', 'No hardpoints yet: build Light / Medium / Heavy Hardpoints in BASE (B).'));
+  if (!hps.length) list.appendChild(h('div', 'hint', 'No turret mounts yet: build Light / Medium / Heavy Turret Mounts in BASE (B) > Shop.'));
   list.appendChild(h('div', 'cat', `SPARE (${g.armory.length})`));
   const spare = [...g.armory].sort((a, b) => b.rarity - a.rarity || weaponScore(b) - weaponScore(a));
   for (const w of spare) {
@@ -308,14 +309,12 @@ function renderCodex(ctx: PanelCtx): void {
     }, `small ${st.fam === f ? 'on' : ''}`));
   }
   ctx.body.appendChild(filters);
-  ctx.body.appendChild(h('div', 'hint', `Build 1★ copies at a Workshop ${p.stats.workshop ? '<span class="good">(you have one)</span>' : '<span class="bad">(build a Workshop in BASE)</span>'}, then forge them to more stars. Higher research tiers unlock stronger, stranger weapons: the deeper the tier, the longer it takes and the stronger it is.`));
+  ctx.body.appendChild(h('div', 'hint', `Build 1★ copies at a Workshop ${p.stats.workshop ? '<span class="good">(you have one)</span>' : '<span class="bad">(build a Workshop in BASE)</span>'}, then forge them to more stars. Commander levels unlock stronger, stranger weapons.`));
   const grid = h('div', 'codex-grid');
   const owned = new Map<string, number>();
   for (const w of [...g.armory, ...p.weapons().map((m) => m.weapon!)]) owned.set(w.key, (owned.get(w.key) ?? 0) + 1);
-  const list = WEAPON_LIST.filter((d) => st.fam === 'all' || d.family === st.fam).slice().sort((a, b) => {
-    const ta = a.exclusive ? 9 : TECH_BY_ID.get(a.tech ?? '')?.tier ?? 0, tb = b.exclusive ? 9 : TECH_BY_ID.get(b.tech ?? '')?.tier ?? 0;
-    return ta - tb;
-  });
+  const lvlOf = (k: string | undefined): number => (k && TECH_BY_ID.has(k) ? techLevel(k) : 1);
+  const list = WEAPON_LIST.filter((d) => st.fam === 'all' || d.family === st.fam).slice().sort((a, b) => (a.exclusive ? 99 : lvlOf(a.tech)) - (b.exclusive ? 99 : lvlOf(b.tech)));
   for (const d of list) {
     const node = d.tech ? TECH_BY_ID.get(d.tech) : undefined;
     const ok = weaponCraftable(g.tech, d.key);
@@ -325,7 +324,7 @@ function renderCodex(ctx: PanelCtx): void {
       ? '<span class="y">Rune Chests only (5★+)</span>'
       : ok
         ? costHTML(d.cost, [p.cargo])
-        : `🔒 ${esc(node?.name ?? '?')} <small>(${esc(BRANCHES.find((b) => b.key === node?.branch)?.name ?? '')} ${TIER_NAMES[node?.tier ?? 0]})</small>`;
+        : `🔒 Commander level ${lvlOf(d.tech)} <small>(${esc(node?.name ?? '')})</small>`;
     el.innerHTML = `<img src="${weaponIcon(d.key, d.exclusive ? 4 : 0)}"><div><b>${esc(d.name)}</b> <small>${d.size}${n ? ` · <span class="good">own ${n}</span>` : ''}</small><div class="d">${esc(d.desc)}</div><div>${how}</div></div>`;
     tooltip(el, () => `<h4>${esc(d.name)}</h4><div>${esc(d.desc)}</div><div class="d">${FAMILY_INFO[d.family].name} · ${d.size} · base ${d.dmg} dmg · ${d.rate}/s · range ${d.range}</div>`);
     if (ok) el.appendChild(button('Build 1★', () => {
@@ -333,7 +332,7 @@ function renderCodex(ctx: PanelCtx): void {
       ctx.msg(r.msg ?? '', r.ok);
       ctx.rerender();
     }, 'small primary'));
-    else if (node && !d.exclusive) el.appendChild(button('Research', () => ctx.app.panels.open('tech', node.tree), 'small'));
+    else if (node && !d.exclusive) el.appendChild(button('Level Road', () => ctx.app.panels.open('progress'), 'small'));
     grid.appendChild(el);
   }
   ctx.body.appendChild(grid);

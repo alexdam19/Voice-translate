@@ -5,8 +5,10 @@ import { ZONE } from '../../shared/map';
 import { NODE_INFO, RUNE_INFO, SITE_INFO, threatAt } from '../../shared/mapgen';
 import { HAZARD_INFO } from '../../shared/types';
 import { ZONES } from '../../shared/zones';
+import { PACK_INFO } from '../cards';
 import { makeRecruit } from '../crew';
 import { rollChest } from '../chests';
+import { isPack } from '../entities';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
 import { buildOutpost, newWeapon } from '../templates';
@@ -18,7 +20,26 @@ import { healPlayer, injureRandomCrew, damageTank } from './damage';
 
 const harvestTimer = { t: 0 };
 
+/** The fortress drills any node it parks on or next to, without being told. */
+function autoHarvest(g: Game): void {
+  const p = g.player;
+  if (Math.abs(p.speed) > 1.2) return;
+  let best = 0;
+  let bd = 1.5;
+  for (const n of g.gen.nodes) {
+    if (n.respawnAt > 0 || NODE_INFO[n.type].tier > p.stats.drill) continue;
+    if (Math.abs(n.x - p.x) > p.stats.length || Math.abs(n.y - p.y) > p.stats.length) continue;
+    const d = p.edgeDist(n.x, n.y);
+    if (d < bd) {
+      bd = d;
+      best = n.id;
+    }
+  }
+  if (best && !Object.values(g.squads).some((s) => s?.target?.kind === 'node' && s.target.id === best)) g.harvestId = best;
+}
+
 export function updateHarvest(g: Game, dt: number): void {
+  if (!g.harvestId) autoHarvest(g);
   if (!g.harvestId) return;
   const n = g.gen.nodes.find((k) => k.id === g.harvestId);
   if (!n || n.respawnAt > 0) {
@@ -27,13 +48,17 @@ export function updateHarvest(g: Game, dt: number): void {
   }
   const p = g.player;
   const info = NODE_INFO[n.type];
-  if (p.edgeDist(n.x, n.y) > 3.2) return; // still driving there
+  if (p.edgeDist(n.x, n.y) > 3.2) {
+    // Still driving there (ordered), or drove away from a node it was drilling on its own.
+    if (!p.goal) g.harvestId = 0;
+    return;
+  }
   if (info.tier > p.stats.drill) {
-    g.hooks.toast(`${info.name} needs a Mk${info.tier} Drill Rig (BASE > Build, unlocked in RESEARCH).`, '#ff8a80');
+    g.hooks.toast(`${info.name} needs a Mk${info.tier} Drill Rig (BASE > Shop > Resources).`, '#ff8a80');
     g.harvestId = 0;
     return;
   }
-  if (p.path.length) {
+  if (p.path.length && p.edgeDist(n.x, n.y) < 1) {
     p.path = [];
     p.goal = null;
   }
@@ -54,12 +79,11 @@ export function updateHarvest(g: Game, dt: number): void {
   g.stats.harvested += amt;
   g.objectiveCounters.harvest = (g.objectiveCounters.harvest ?? 0) + amt;
   g.hooks.sound('harvest', n.x, n.y, 0.4);
-  g.crewXp(0.4);
+  g.gainXp(0.3);
   if (n.amount <= 0) {
     n.respawnAt = g.time + 360;
     g.harvestId = 0;
     g.fx.push({ t: 'boom', x: n.x, y: n.y, r: 1, color: info.color });
-    g.hooks.toast(`${info.name} depleted.`, '#bdbdbd');
   }
 }
 
@@ -122,9 +146,10 @@ export function updateSites(g: Game, dt: number): void {
     const roll = Math.random();
     if (roll < 0.3) g.dropPickup(s.x, s.y, { kind: 'chest', chest: 'choice', chestThreat: s.threat });
     else if (roll < 0.55) g.dropPickup(s.x, s.y, { kind: 'chest', chest: 'supply', chestThreat: s.threat });
+    if (Math.random() < 0.35) g.dropPickup(s.x, s.y, { kind: 'chest', chest: 'pack', chestThreat: s.threat });
     g.hooks.toast(`${s.name} scavenged!${roll < 0.3 ? ' A This-or-That chest turned up!' : ''}`, '#76ff03');
     g.hooks.sound('chest');
-    g.crewXp(20 + s.threat * 6);
+    g.gainXp(25 + s.threat * 10);
   }
 }
 
@@ -208,10 +233,11 @@ export function updateRunes(g: Game, dt: number): void {
         g.stats.runes++;
         g.objectiveCounters.runes = (g.objectiveCounters.runes ?? 0) + 1;
         g.dropPickup(r.x, r.y, { kind: 'chest', chest: 'rune', chestThreat: r.threat });
+        g.dropPickup(r.x, r.y, { kind: 'chest', chest: 'rare_pack', chestThreat: r.threat });
         g.hooks.toast(`${RUNE_INFO[r.rune].name} claimed: ${RUNE_INFO[r.rune].buff} for 90s. A Rune Chest dropped!`, RUNE_INFO[r.rune].color);
         g.hooks.sound('rune');
         g.fx.push({ t: 'ring', x: r.x, y: r.y, r: 8, color: RUNE_INFO[r.rune].color });
-        g.crewXp(40 + r.threat * 8);
+        g.gainXp(50 + r.threat * 15);
       }
     } else if (g.runeClaim.id === r.id) g.runeClaim = { id: 0, t: 0 };
   }
@@ -268,6 +294,7 @@ export function onTankDestroyed(g: Game, t: Tank): void {
     g.objectiveCounters.outposts = (g.objectiveCounters.outposts ?? 0) + 1;
     g.dropLoot(t.x, t.y, 'outpost', 4);
     g.dropPickup(t.x, t.y, { kind: 'chest', chest: 'choice', chestThreat: threat });
+    g.dropPickup(t.x, t.y, { kind: 'chest', chest: threat >= 5 ? 'epic_pack' : 'rare_pack', chestThreat: threat });
     const ws = t.weapons().filter(() => Math.random() < 0.35);
     for (const m of ws) if (m.weapon) g.dropPickup(t.x, t.y, { kind: 'weapon', weapon: m.weapon });
     // A prisoner always escapes the outpost cells.
@@ -275,12 +302,13 @@ export function onTankDestroyed(g: Game, t: Tank): void {
     c.level = Math.min(10, c.level + 1);
     if (g.addCrew(c)) g.hooks.toast(`Freed a prisoner: ${c.name} joins your crew!`, '#76ff03');
     g.hooks.toast('Outpost destroyed!', '#ffab40');
-    g.crewXp(80 + threat * 20);
+    g.gainXp(100 + threat * 35);
   } else {
     g.stats.raiders++;
     g.objectiveCounters.raiders = (g.objectiveCounters.raiders ?? 0) + 1;
     g.dropLoot(t.x, t.y, 'raider', 2 + Math.floor(threat / 2));
     if (threat >= 2 || Math.random() < 0.4) g.dropStacks(t.x, t.y, [{ id: 'tech_parts', n: 1 + Math.floor(threat / 2.5) }]);
+    g.dropPickup(t.x, t.y, { kind: 'chest', chest: threat >= 4 && Math.random() < 0.4 ? 'rare_pack' : 'pack', chestThreat: threat });
     const ws = t.weapons();
     if (ws.length && Math.random() < 0.45) {
       const m = ws[Math.floor(Math.random() * ws.length)];
@@ -290,7 +318,7 @@ export function onTankDestroyed(g: Game, t: Tank): void {
       const c = makeRecruit(Math.random, threat);
       if (g.addCrew(c)) g.hooks.toast(`${c.name} climbed out of the wreck and joined you!`, '#76ff03');
     }
-    g.crewXp(30 + threat * 10);
+    g.gainXp(40 + threat * 15);
   }
 }
 
@@ -352,9 +380,18 @@ function collect(g: Game, k: import('../entities').Pickup): boolean {
   }
   if (k.kind === 'weapon' && k.weapon) {
     g.addWeapon(k.weapon);
-    g.hooks.toast(`Got a weapon! Mount it in BASE > Armory.`, '#ffd740');
+    g.hooks.toast(`Got a weapon! Mount it in ARSENAL (V), or tap a turret in your base.`, '#ffd740');
     g.hooks.sound('chest');
     g.objectiveCounters.weapons = (g.objectiveCounters.weapons ?? 0) + 1;
+    return true;
+  }
+  if (k.kind === 'chest' && k.chest && isPack(k.chest)) {
+    // Card packs go to your stash: open them from the HUD when it suits you.
+    g.packs.push(k.chest);
+    g.stats.chests++;
+    g.objectiveCounters.packs_found = (g.objectiveCounters.packs_found ?? 0) + 1;
+    g.float(g.player.x, g.player.y, `+${PACK_INFO[k.chest].name}`, PACK_INFO[k.chest].color, true);
+    g.hooks.sound('chest');
     return true;
   }
   if (k.kind === 'chest' && k.chest) {

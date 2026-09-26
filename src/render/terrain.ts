@@ -49,7 +49,7 @@ export class TerrainView {
       for (let cx = Math.max(0, c0x); cx <= Math.min(n - 1, c1x); cx++) {
         const k = this.key(cx, cy);
         if (this.chunks.has(k)) continue;
-        if (built >= 3) continue; // spread the work over frames
+        if (built >= 4) continue; // spread the work over frames
         const g = this.build(cx, cy);
         this.chunks.set(k, g);
         this.group.add(g);
@@ -69,6 +69,23 @@ export class TerrainView {
     }
     this.lavaTex.offset.set(time * 0.03, time * 0.02);
     this.acidTex.offset.set(-time * 0.02, time * 0.015);
+  }
+
+  /** Rebuilds one chunk (a fortress flattened something in it). */
+  invalidate(cx: number, cy: number): void {
+    const k = this.key(cx, cy);
+    const props = this.propsByChunk.get(k);
+    if (props) this.propsByChunk.set(k, props.filter((p) => !p.gone));
+    const g = this.chunks.get(k);
+    if (!g) return;
+    // Swap in the rebuilt chunk in the same frame so the ground never flickers.
+    const fresh = this.build(cx, cy);
+    this.group.remove(g);
+    g.traverse((o) => {
+      if (o instanceof Mesh) o.geometry.dispose();
+    });
+    this.chunks.set(k, fresh);
+    this.group.add(fresh);
   }
 
   /** Forces every loaded chunk to rebuild (e.g. after switching maps). */
@@ -176,6 +193,7 @@ export class TerrainView {
     if (!props) return;
     const a = getAtlas();
     for (const p of props) {
+      if (p.gone) continue;
       const s = p.s;
       const x = p.x, z = p.y;
       const turn = Math.round(p.rot / (Math.PI / 2)) % 2 === 1;

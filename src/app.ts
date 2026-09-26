@@ -1,18 +1,24 @@
-import { ACTIVE_KEYS, CENTER, KIT_KEY, OFFICER_KEYS, ULT_KEY } from './shared/constants';
+import { CENTER, KIT_KEY } from './shared/constants';
 import { NODE_INFO, RUNE_INFO, SITE_INFO } from './shared/mapgen';
+import { wrapAngle } from './shared/types';
 import { Audio } from './game/audio';
+import { CARDS, HAND_SIZE, SCHOOLS } from './game/cards';
 import type { ChestKind, Reward } from './game/entities';
 import { Game } from './game/game';
 import { Input } from './game/input';
 import { deserialize, loadSave, saveGame } from './game/save';
-import { choosePerk } from './game/actions';
-import { castActive, castUltimate } from './game/systems/arsenal';
-import { castAbility } from './game/systems/crewsys';
+import { choosePerk, openPack, untrack } from './game/actions';
+import { featureLevel } from './game/progress';
+import { SQUADS, type SquadType } from './game/squads';
+import { CAST_RANGE, cardBlock, clampCast, playCard } from './game/systems/cards';
 import { orderAttack, orderHarvest, orderInteract, orderMove } from './game/systems/orders';
 import { launchOutrider, OUTRIDER_COST, sendOutrider } from './game/systems/outrider';
+import { setSquadOrder } from './game/systems/squads';
 import { installHandlers, stepWorld } from './game/systems/step';
+import { trackInfo } from './game/systems/tracking';
 import { Minimap } from './render/minimap';
-import { Overlay } from './render/overlay';
+import { deckHeight } from './render/models';
+import { Overlay, type VillageState } from './render/overlay';
 import { View } from './render/view';
 import { ChestUI } from './ui/chest';
 import { CURSORS, initCursors } from './ui/cursors';
@@ -21,6 +27,7 @@ import { Hud } from './ui/hud';
 import { OBJECTIVES } from './ui/objectives';
 import { Panels } from './ui/panels';
 import { Title } from './ui/title';
+import { VillageUI } from './ui/village';
 import { DeadZoneClient } from './net/deadzone';
 
 const STEP = 1 / 60;
@@ -44,8 +51,15 @@ export class App {
   panels: Panels;
   chest: ChestUI;
   title: Title;
-  camLocked = true;
+  villageUI: VillageUI;
+  /** Inside the base (the village view). */
+  village = false;
   paused = false;
+  /** Wheel zoom on top of the automatic zoom. */
+  private zoomMul = 1;
+  private villageZoomMul = 1;
+  private vstate: VillageState = { hover: null, selected: 0, ghost: null };
+  private trackT = 0;
   private acc = 0;
   private last = 0;
   private hover: Hover | null = null;
@@ -64,18 +78,22 @@ export class App {
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, {
       openPanel: (n, t) => this.panels.open(n, t),
-      cast: (i) => this.cast(i),
-      castActive: (i) => this.castActive(i),
-      castUlt: () => this.castUlt(),
       pickPerk: (crewId, idx) => this.pickPerk(crewId, idx),
-      toggleWeapon: (id) => this.toggleWeapon(id),
-      toggleAutoFire: () => this.toggleAutoFire(),
       useKit: () => this.useKit(),
       outrider: (c) => this.outriderCmd(c),
-      hoverWeapon: (r) => (this.view.rangeR = r),
       minimapClick: (x, y, right) => this.minimapClick(x, y, right),
+      cardAim: (slot, x, y, over) => this.cardAim(slot, x, y, over),
+      cardDrop: (slot, x, y, over) => this.cardDrop(slot, x, y, over),
+      cardTap: (slot) => this.cardTap(slot),
+      squadAim: (t, x, y, over) => this.squadAim(t, x, y, over),
+      squadDrop: (t, x, y, over) => this.squadDrop(t, x, y, over),
+      openPack: () => this.openNextPack(),
+      village: (on) => this.setVillage(on),
+      trackClick: () => this.trackClick(),
+      untrack: () => this.game && untrack(this.game),
     });
     this.mapCtx = this.hud.minimap.getContext('2d')!;
+    this.villageUI = new VillageUI(uiRoot, this);
     this.panels = new Panels(uiRoot, this);
     this.chest = new ChestUI(uiRoot, this);
     this.title = new Title(uiRoot, this);
@@ -98,8 +116,7 @@ export class App {
 
   newGame(seed = Math.floor(Math.random() * 1e9)): void {
     this.start(new Game(seed));
-    this.hud.toast('Welcome, Commander. Drive with WASD (or right-click). Your guns fire on their own.', '#ffd740');
-    this.panels.open('help');
+    this.hud.toast('Welcome, Commander. Drive with WASD. Your guns fire on their own. Drag a card onto the battlefield to play it.', '#ffd740');
   }
 
   continueGame(): boolean {
@@ -117,12 +134,18 @@ export class App {
       toast: (t, c) => this.hud.toast(t, c),
       sound: (n, x, y, v) => this.sound(n, x, y, v),
       chest: (k, r, choice) => this.openChest(k, r, choice),
-      died: () => this.sound('alarm'),
+      levelUp: (r) => this.hud.levelUp(r),
+      died: () => {
+        this.sound('alarm');
+        this.setVillage(false);
+      },
       enterDeadZone: () => this.enterDeadZone(),
     };
     this.view.setWorld(g);
     this.view.cam.x = g.player.x;
     this.view.cam.y = g.player.y;
+    this.view.cam.zoom = this.autoZoom();
+    this.setVillage(false);
     this.running = true;
     this.title.hide();
     this.saveT = 30;
@@ -149,52 +172,164 @@ export class App {
     return this.panels.isOpen || this.chest.isOpen || this.title.isOpen;
   }
 
+  /** Enters or leaves the base (village) view. The world keeps running; the fortress parks. */
+  setVillage(on: boolean): void {
+    const g = this.game;
+    if (on && (!g || g.mode !== 'world' || g.player.dead)) {
+      if (g?.mode === 'raid') this.hud.toast("You can't build in the Dead Zone.", '#ff8a80');
+      return;
+    }
+    if (on === this.village) return;
+    this.village = on;
+    this.cancelArmed();
+    if (on) {
+      g.resetOrders();
+      g.driveInput.active = false;
+      this.panels.close();
+      this.villageUI.enter();
+      this.sound('ui');
+    } else this.villageUI.exit();
+    this.view.aim = null;
+  }
+
+  /** Automatic camera distance: a bigger fortress needs a wider view. */
+  private autoZoom(): number {
+    const p = this.game.player;
+    return this.village ? (p.stats.length * 1.95 + 10) * this.villageZoomMul : (20 + p.stats.length * 2.4) * this.zoomMul;
+  }
+
   /* ---------------------------------------------------------------- */
   /* Actions                                                           */
   /* ---------------------------------------------------------------- */
 
-  cast(slot: number): void {
-    const g = this.game;
-    if (!g || g.player.dead) return;
-    if (castAbility(g, slot, g.aim.x, g.aim.y)) this.view.moveMarker(g.aim.x, g.aim.y, '#ea80fc');
+  /* ---------------- cards ---------------- */
+
+  private cardColor(id: string): string {
+    return SCHOOLS[CARDS[id]?.school ?? 'iron'].color;
   }
 
-  castActive(slot: number): void {
+  /** Shows where the card in `slot` would land. */
+  cardAim(slot: number, sx: number, sy: number, overUI: boolean): void {
     const g = this.game;
-    if (!g || g.player.dead) return;
-    if (castActive(g, slot, g.aim.x, g.aim.y)) this.view.moveMarker(g.aim.x, g.aim.y, '#ff4081');
-  }
-
-  castUlt(): void {
-    const g = this.game;
-    if (!g || g.player.dead) return;
-    if (castUltimate(g, g.aim.x, g.aim.y)) {
-      this.view.moveMarker(g.aim.x, g.aim.y, '#ff1744');
-      this.sound('ability');
+    const id = g?.hand[slot];
+    if (!id || overUI) {
+      this.view.aim = null;
+      return;
     }
+    const d = CARDS[id];
+    if (d.target === 'self') {
+      this.view.aim = { x: g.player.x, y: g.player.y, r: g.player.stats.length * 0.6, color: this.cardColor(id) };
+      return;
+    }
+    const w = this.view.screenToWorld(sx, sy);
+    const [x, y] = clampCast(g, w.x, w.y);
+    this.view.aim = { x, y, r: Math.max(1.5, d.radius), color: cardBlock(g, slot) ? '#9e9e9e' : this.cardColor(id) };
+  }
+
+  cardDrop(slot: number, sx: number, sy: number, overUI: boolean): void {
+    this.view.aim = null;
+    if (overUI) return;
+    const w = this.view.screenToWorld(sx, sy);
+    this.play(slot, w.x, w.y);
+  }
+
+  /** Tapping a card: self cards play right away; area cards wait for a tap on the battlefield. */
+  cardTap(slot: number): void {
+    const g = this.game;
+    const id = g?.hand[slot];
+    if (!id) return;
+    if (CARDS[id].target === 'self') {
+      this.play(slot, g.player.x, g.player.y);
+      return;
+    }
+    if (this.hud.armed === slot) {
+      this.cancelArmed();
+      return;
+    }
+    const block = cardBlock(g, slot);
+    if (block) {
+      this.hud.toast(block, '#ff8a80');
+      this.sound('nope');
+      return;
+    }
+    this.hud.armed = slot;
+    this.hud.toast(`${CARDS[id].name}: tap the battlefield to play it (right-click cancels).`, this.cardColor(id));
+    this.sound('draw');
+  }
+
+  cancelArmed(): void {
+    this.hud.armed = -1;
+    this.view.aim = null;
+  }
+
+  private play(slot: number, x: number, y: number): void {
+    const g = this.game;
+    if (!g) return;
+    if (this.village) this.setVillage(false);
+    const id = g.hand[slot];
+    const r = playCard(g, slot, x, y);
+    this.cancelArmed();
+    if (!r.ok) {
+      this.hud.toast(r.msg, '#ff8a80');
+      this.sound('nope');
+      return;
+    }
+    if (id && CARDS[id].target === 'area') {
+      const [cx, cy] = clampCast(g, x, y);
+      this.view.moveMarker(cx, cy, this.cardColor(id));
+    }
+  }
+
+  /* ---------------- squads ---------------- */
+
+  squadAim(type: SquadType, sx: number, sy: number, overUI: boolean): void {
+    if (overUI || !this.game) {
+      this.view.aim = null;
+      return;
+    }
+    const w = this.view.screenToWorld(sx, sy);
+    this.view.aim = { x: w.x, y: w.y, r: 5, color: SQUADS[type].color };
+  }
+
+  squadDrop(type: SquadType, sx: number, sy: number, overUI: boolean): void {
+    this.view.aim = null;
+    if (overUI || !this.game) return;
+    const w = this.view.screenToWorld(sx, sy);
+    const err = setSquadOrder(this.game, type, 'guard', w.x, w.y);
+    if (err) this.hud.toast(err, '#ff8a80');
+    else {
+      this.view.moveMarker(w.x, w.y, SQUADS[type].color);
+      this.hud.toast(`${SQUADS[type].name} will guard that spot. Tap ⌂ on its badge to call it back.`, SQUADS[type].color);
+      this.sound('ui');
+    }
+  }
+
+  openNextPack(): void {
+    const g = this.game;
+    if (!g) return;
+    const r = openPack(g, 0);
+    if (r) this.openChest(r.kind, r.rewards, false);
+  }
+
+  /** Clicking the tracker box: jump to where the tracked thing gets built or levelled. */
+  trackClick(): void {
+    const t = this.hud.trackInfo;
+    const tr = this.game?.tracked;
+    if (!t || !tr) return;
+    if (tr.kind === 'card') {
+      if (t.ready) this.panels.open('cards');
+      return;
+    }
+    if (!t.ready && t.target?.kind !== 'base') return;
+    this.setVillage(true);
+    if (t.modId) this.villageUI.select(t.modId);
+    else this.villageUI.toggleShop(true);
   }
 
   pickPerk(crewId: number, idx: number): void {
     const r = choosePerk(this.game, crewId, idx);
     if (r.ok) this.sound('levelup');
     else this.hud.toast(r.msg, '#ff8a80');
-  }
-
-  toggleWeapon(id: number): void {
-    const m = this.game.player.moduleById(id);
-    if (!m) return;
-    if (!this.game.autoFire) {
-      this.game.autoFire = true;
-      for (const w of this.game.player.weapons()) w.mode = w.id === id ? 'auto' : 'manual';
-    } else m.mode = m.mode === 'auto' ? 'manual' : 'auto';
-    this.sound('ui');
-  }
-
-  toggleAutoFire(): void {
-    this.game.autoFire = !this.game.autoFire;
-    if (this.game.autoFire) for (const w of this.game.player.weapons()) w.mode = 'auto';
-    this.hud.toast(this.game.autoFire ? 'Auto-fire ON (Y): guns pick their own targets.' : 'Manual fire (Y): guns aim at your cursor. Hold left mouse to shoot.', '#4dd0e1');
-    this.sound('ui');
   }
 
   useKit(): void {
@@ -234,20 +369,20 @@ export class App {
     }
   }
 
-  minimapClick(fx: number, fy: number, right: boolean): void {
+  minimapClick(fx: number, fy: number, _right: boolean): void {
     const g = this.game;
-    if (!g) return;
+    if (!g || g.player.dead) return;
     const x = fx * g.map.size, y = fy * g.map.size;
-    if (right) {
-      if (orderMove(g, x, y)) this.view.moveMarker(x, y);
-    } else {
-      this.camLocked = false;
-      this.view.cam.x = x;
-      this.view.cam.y = y;
-    }
+    this.setVillage(false);
+    if (orderMove(g, x, y)) this.view.moveMarker(x, y);
   }
 
   enterDeadZone(): void {
+    const need = featureLevel('deadzone');
+    if (this.game.commander.level < need) {
+      this.hud.toast(`The Dead Zone opens at commander level ${need}. Keep fighting!`, '#ff8a80');
+      return;
+    }
     this.panels.confirm(
       'Enter the Dead Zone?',
       'Multiplayer warzone. If your fortress is destroyed there, you drop your cargo hold (except Vault slots), all spare weapons in your armory and one mounted weapon for other players to loot. Extract to keep everything you find.',
@@ -290,11 +425,26 @@ export class App {
       if (steps === 0) this.input.endFrame();
       if (this.acc > STEP * 5) this.acc = 0;
     } else this.input.endFrame();
+    if (this.village && (g.player.dead || g.mode !== 'world')) this.setVillage(false);
     this.updateCamera(dt);
+    // Objective tracker: what's still needed, and where to get it.
+    this.trackT -= dt;
+    if (this.trackT <= 0) {
+      this.trackT = 0.3;
+      this.hud.trackInfo = g.mode === 'world' ? trackInfo(g) : null;
+      const tgt = this.hud.trackInfo?.target;
+      this.view.beacon = tgt && tgt.kind !== 'base' ? { x: tgt.x, y: tgt.y, color: '#ffd740' } : null;
+    }
     this.view.render(g, paused ? 0 : dt);
     this.overlay.draw(g, this.hover?.kind === 'enemy' ? this.hover.id : 0);
+    if (this.village) {
+      this.vstate.selected = this.villageUI.selected;
+      this.vstate.ghost = this.villageUI.ghost(this.vstate.hover);
+      this.overlay.drawVillage(g, this.vstate);
+    } else if (g.mode === 'world') this.overlay.drawMarkers(g, this.hud.trackInfo?.target ?? null, this.hud.trackInfo?.target?.label ?? '');
     this.minimap.draw(this.mapCtx, 220, 220, g, this.view, false);
-    this.hud.update(g);
+    this.hud.update(g, dt, this.village);
+    this.villageUI.update();
     this.panels.tick();
     this.audio.engine(g.player.speed, !g.player.dead && !paused);
     // Objectives & autosave
@@ -316,28 +466,30 @@ export class App {
     }
   }
 
+  /** The camera always follows your fortress; inside the base it turns so the front is up. */
   private updateCamera(dt: number): void {
     const g = this.game;
     const v = this.view;
     const m = this.input.mouse;
-    if (m.wheel && !m.overUI) v.cam.zoom = Math.max(20, Math.min(62, v.cam.zoom + m.wheel * 3));
-    const center = this.input.down('Space');
-    if (this.camLocked || center) {
-      const k = 1 - Math.pow(0.0005, dt);
-      v.cam.x += (g.player.x - v.cam.x) * k;
-      v.cam.y += (g.player.y - v.cam.y) * k;
-    } else {
-      const sp = v.cam.zoom * 1.4 * dt;
-      const edge = 14;
-      if (!this.uiBlocking && m.inside) {
-        if (m.x < edge) v.cam.x -= sp;
-        if (m.x > v.width - edge) v.cam.x += sp;
-        if (m.y < edge) v.cam.y -= sp;
-        if (m.y > v.height - edge) v.cam.y += sp;
-      }
-      v.cam.x = Math.max(0, Math.min(g.map.size, v.cam.x));
-      v.cam.y = Math.max(0, Math.min(g.map.size, v.cam.y));
+    const p = g.player;
+    if (m.wheel && !m.overUI && !this.uiBlocking) {
+      if (this.village) this.villageZoomMul = Math.max(0.55, Math.min(1.6, this.villageZoomMul + m.wheel * 0.08));
+      else this.zoomMul = Math.max(0.6, Math.min(1.5, this.zoomMul + m.wheel * 0.07));
     }
+    const k = 1 - Math.pow(0.002, dt);
+    let tx = p.x, ty = p.y;
+    if (this.village) {
+      // Nudge the view so the building card at the bottom doesn't cover the fortress.
+      const back = p.toWorld(-p.stats.length * 0.07, 0);
+      tx = back.x;
+      ty = back.y;
+    }
+    v.cam.x += (tx - v.cam.x) * (this.village ? k : 1 - Math.pow(0.0005, dt));
+    v.cam.y += (ty - v.cam.y) * (this.village ? k : 1 - Math.pow(0.0005, dt));
+    v.cam.zoom += (this.autoZoom() - v.cam.zoom) * k;
+    const wantYaw = this.village ? p.rot : -Math.PI / 2;
+    v.cam.yaw = wrapAngle(v.cam.yaw + wrapAngle(wantYaw - v.cam.yaw) * k);
+    v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;
   }
 
   /** WASD / arrow keys drive the fortress (screen-relative, or tank-style from the menu). */
@@ -351,6 +503,14 @@ export class App {
     }
     const x = (i.down('KeyD') || i.down('ArrowRight') ? 1 : 0) - (i.down('KeyA') || i.down('ArrowLeft') ? 1 : 0);
     const y = (i.down('KeyS') || i.down('ArrowDown') ? 1 : 0) - (i.down('KeyW') || i.down('ArrowUp') ? 1 : 0);
+    // Driving off leaves the base view.
+    if (this.village) {
+      if (x || y) this.setVillage(false);
+      else {
+        di.active = false;
+        return;
+      }
+    }
     di.x = x;
     di.y = y;
     const was = di.active;
@@ -371,27 +531,25 @@ export class App {
       if (this.sendMode) this.sendMode = false;
       else if (this.chest.isOpen) this.chest.escape();
       else if (this.panels.isOpen) this.panels.close();
+      else if (this.hud.armed >= 0) this.cancelArmed();
+      else if (this.village && this.villageUI.cancelPlace()) {
+        /* placement cancelled */
+      } else if (this.village && this.villageUI.shopOpen) this.villageUI.toggleShop(false);
+      else if (this.village) this.setVillage(false);
       else this.panels.open('menu');
     }
     if (this.chest.isOpen) return;
+    if (i.consume('KeyB')) {
+      if (this.panels.isOpen) this.panels.close();
+      this.setVillage(!this.village);
+    }
     const panelKeys: [string, string][] = [
-      ['KeyB', 'base'], ['KeyV', 'arsenal'], ['KeyC', 'crew'], ['KeyT', 'tech'], ['KeyK', 'abilities'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'],
+      ['KeyC', 'cards'], ['KeyV', 'arsenal'], ['KeyK', 'crew'], ['KeyL', 'progress'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'],
     ];
     for (const [k, p] of panelKeys) if (i.consume(k)) this.panels.toggle(p);
     if (this.panels.isOpen) return;
-    OFFICER_KEYS.forEach((k, slot) => {
-      if (i.consume(k)) this.cast(slot);
-    });
-    ACTIVE_KEYS.forEach((k, slot) => {
-      if (i.consume(k)) this.castActive(slot);
-    });
-    if (i.consume(ULT_KEY)) this.castUlt();
+    for (let s = 0; s < HAND_SIZE; s++) if (i.consume(`Digit${s + 1}`)) this.cardTap(s);
     if (i.consume(KIT_KEY)) this.useKit();
-    if (i.consume('KeyY')) this.toggleAutoFire();
-    if (i.consume('KeyL')) {
-      this.camLocked = !this.camLocked;
-      this.hud.toast(this.camLocked ? 'Camera locked to your fortress (L).' : 'Camera unlocked (L): move the mouse to the screen edge to pan. Hold Space to recenter.', '#4dd0e1');
-    }
     if (i.consume('KeyP')) this.paused = !this.paused;
     if (i.consume('KeyJ')) {
       if (this.hover && (this.hover.kind === 'node' || this.hover.kind === 'site')) this.trySend(this.hover);
@@ -445,23 +603,74 @@ export class App {
     return { kind: 'ground', id: 0, x: wx, y: wy, label: '' };
   }
 
+  /** Base view: hover and tap deck cells. */
+  private handleVillageMouse(): void {
+    const g = this.game;
+    const m = this.input.mouse;
+    const p = g.player;
+    this.hud.setHint('');
+    if (m.overUI) {
+      this.vstate.hover = null;
+      this.canvas.style.cursor = CURSORS.default;
+      return;
+    }
+    const w = this.view.screenToPlane(m.x, m.y, deckHeight(p));
+    const l = p.toLocal(w.x, w.y);
+    const cx = Math.floor(l.lz / p.cell + p.cols / 2), cy = Math.floor(p.rows / 2 - l.lx / p.cell);
+    const inside = cx >= 0 && cy >= 0 && cx < p.cols && cy < p.rows;
+    this.vstate.hover = inside ? [cx, cy] : null;
+    this.canvas.style.cursor = inside ? CURSORS.interact : CURSORS.default;
+    if (m.rightPressed) {
+      if (!this.villageUI.cancelPlace()) this.villageUI.select(0);
+      return;
+    }
+    if (m.leftPressed) {
+      if (inside) this.villageUI.click(cx, cy);
+      else if (!this.villageUI.placing && !this.villageUI.moving) this.villageUI.select(0);
+    }
+  }
+
   private handleMouse(dt: number): void {
     const g = this.game;
     const m = this.input.mouse;
     const w = this.view.screenToWorld(m.x, m.y);
     g.aim.x = w.x;
     g.aim.y = w.y;
-    g.fireHeld = m.left && !m.overUI;
+    if (this.village) {
+      this.handleVillageMouse();
+      return;
+    }
+    // A tapped card follows the pointer until you tap the battlefield.
+    if (this.hud.armed >= 0) {
+      this.cardAim(this.hud.armed, m.x, m.y, m.overUI);
+      if (!m.overUI && m.leftPressed) {
+        this.play(this.hud.armed, w.x, w.y);
+        return;
+      }
+      if (m.rightPressed) {
+        this.cancelArmed();
+        return;
+      }
+    }
     if (m.overUI) {
       this.hover = null;
       this.canvas.style.cursor = CURSORS.default;
       this.hud.setHint('');
       return;
     }
+    if (m.leftPressed && this.hud.armed < 0 && !g.player.dead && g.mode === 'world' && g.player.hits(w.x, w.y, 0.5)) {
+      // Tapping your own fortress opens the base.
+      this.setVillage(true);
+      return;
+    }
     const hv = this.pick(w.x, w.y);
     this.hover = hv;
-    this.canvas.style.cursor = this.sendMode ? CURSORS.send : hv.kind === 'enemy' || hv.kind === 'tank' ? CURSORS.attack : hv.kind === 'node' ? CURSORS.harvest : hv.kind === 'ground' ? CURSORS.default : CURSORS.interact;
-    this.hud.setHint(this.hintFor(hv));
+    const own = g.mode === 'world' && g.player.hits(w.x, w.y, 0.5);
+    this.canvas.style.cursor = this.hud.armed >= 0 ? CURSORS.attack : this.sendMode ? CURSORS.send : hv.kind === 'enemy' || hv.kind === 'tank' ? CURSORS.attack : hv.kind === 'node' ? CURSORS.harvest : own ? CURSORS.interact : hv.kind === 'ground' ? CURSORS.default : CURSORS.interact;
+    if (own && hv.kind === 'ground') {
+      this.hud.setHint('<b>Your fortress</b> · click to open your base (B)');
+    }
+    if (!(own && hv.kind === 'ground')) this.hud.setHint(this.hintFor(hv));
     if (m.rightPressed) {
       this.rmbT = 0.25;
       hideTip();
@@ -518,7 +727,7 @@ export class App {
         const n = g.gen.nodes.find((k) => k.id === hv.id)!;
         const info = NODE_INFO[n.type];
         const ok = info.tier <= g.player.stats.drill;
-        return `<b>${info.name}</b> (${n.amount} left) · ${ok ? 'right-click: harvest' : `<span class="bad">needs Mk${info.tier} Drill</span>`}${g.outrider ? ' · J: send Outrider' : ''}`;
+        return `<b>${info.name}</b> (${n.amount} left) · ${ok ? 'park on it or right-click to drill' : `<span class="bad">needs Mk${info.tier} Drill Rig</span>`}${g.outrider ? ' · J: send Outrider' : ''}`;
       }
       case 'site': {
         const s = g.gen.sites.find((k) => k.id === hv.id)!;
@@ -551,5 +760,16 @@ export class App {
 
   get center(): number {
     return CENTER;
+  }
+
+  get castRange(): number {
+    return CAST_RANGE;
+  }
+
+  /** Screen position of the middle of a deck cell (tests and tooling). */
+  cellScreen(cx: number, cy: number): { x: number; y: number } {
+    const p = this.game.player;
+    const w = p.toWorld((p.rows / 2 - (cy + 0.5)) * p.cell, (cx + 0.5 - p.cols / 2) * p.cell);
+    return this.view.worldToScreen(w.x, w.y, deckHeight(p));
   }
 }

@@ -116,7 +116,9 @@ export interface Projectile {
 
 export type PickupKind = 'stack' | 'weapon' | 'chest';
 
-export type ChestKind = 'supply' | 'rune' | 'choice' | 'titan';
+export type ChestKind = 'supply' | 'rune' | 'choice' | 'titan' | 'pack' | 'rare_pack' | 'epic_pack' | 'legendary_pack';
+export type PackChest = 'pack' | 'rare_pack' | 'epic_pack' | 'legendary_pack';
+export const isPack = (k: ChestKind): k is PackChest => k === 'pack' || k === 'rare_pack' || k === 'epic_pack' || k === 'legendary_pack';
 
 export interface Pickup {
   id: number;
@@ -141,7 +143,8 @@ export type Reward =
   | { type: 'items'; stacks: Stack[] }
   | { type: 'weapon'; item: WeaponItem }
   | { type: 'crew'; crew: CrewMember }
-  | { type: 'tech'; n: number };
+  | { type: 'tech'; n: number }
+  | { type: 'card'; id: string };
 
 export interface Telegraph {
   id: number;
@@ -160,7 +163,7 @@ export interface Telegraph {
   onDone?: () => void;
 }
 
-export type AllyKind = 'marine' | 'heavy' | 'drone' | 'jet' | 'mech' | 'dragon' | 'mine';
+export type AllyKind = 'marine' | 'heavy' | 'drone' | 'jet' | 'mech' | 'dragon' | 'mine' | 'buggy';
 
 export interface Ally {
   id: number;
@@ -188,6 +191,10 @@ export interface Ally {
   ty: number;
   /** Turret module that launched it (Hornet jets). */
   owner: number;
+  /** Squad it belongs to (permanent units that respawn). */
+  squad?: string;
+  /** Formation slot within its squad. */
+  slot?: number;
 }
 
 export type ZoneKind = 'fire' | 'well' | 'acid' | 'chrono' | 'rad' | 'frost' | 'smoke';

@@ -64,12 +64,15 @@ interface SCrate extends NetCrate {
 
 const BOT_NAMES = ['Scav-117', 'Rattler', 'Hollow Jack', 'Grinder', 'Mother Rust', 'Voltface', 'Nine-Toes', 'Carrion', 'Dust Baron', 'Gutterking'];
 const SPAWN_PROTECTION = 5;
-const CELL = 0.5;
+/** Player fortresses are full facilities: one world unit per deck cell. */
+const CELL = 1;
 
 function sizeOf(bp: Blueprint): { radius: number } {
-  const dims: Record<string, [number, number]> = { crawler: [7, 10], assault: [8, 12], siege: [10, 14], dread: [11, 17], colossus: [13, 21], scout: [5, 7], outrider: [4, 6], outpost: [12, 12] };
-  const [c] = dims[bp.chassis] ?? [7, 10];
-  return { radius: (c * CELL + 1) / 2 };
+  const dims: Record<string, [number, number]> = {
+    crawler: [10, 14], assault: [12, 17], siege: [14, 20], dread: [16, 23], colossus: [18, 27], citadel: [20, 31], scout: [5, 7], outrider: [4, 6], outpost: [12, 12],
+  };
+  const [c] = dims[bp.chassis] ?? [10, 14];
+  return { radius: (c * CELL + 2 * CELL) / 2 };
 }
 
 function weaponsOf(bp: Blueprint): WeaponItem[] {
@@ -157,14 +160,15 @@ export class WarzoneServer {
     const r = this.rng;
     const heavy = r() < 0.5;
     const modules: Blueprint['modules'] = [
-      { key: 'bridge', cx: 3, cy: 4, weapon: null },
-      { key: 'hp_light', cx: 0, cy: 1, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'light'), rollRarity(r, 0.8), r) },
-      { key: 'hp_light', cx: 6, cy: 1, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'light'), rollRarity(r, 0.8), r) },
+      { key: 'bridge', cx: 3, cy: 5, weapon: null },
+      { key: 'hp_light', cx: 0, cy: 0, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'light'), rollRarity(r, 0.8), r) },
+      { key: 'hp_light', cx: 9, cy: 0, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'light'), rollRarity(r, 0.8), r) },
       heavy
-        ? { key: 'hp_heavy', cx: 2, cy: 1, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'heavy'), rollRarity(r, 0.8), r) }
-        : { key: 'hp_medium', cx: 2, cy: 1, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'medium'), rollRarity(r, 0.8), r) },
-      { key: 'reactor', cx: 0, cy: 7, weapon: null },
-      { key: 'engine', cx: 5, cy: 7, weapon: null },
+        ? { key: 'hp_heavy', cx: 3, cy: 1, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'heavy'), rollRarity(r, 0.8), r) }
+        : { key: 'hp_medium', cx: 4, cy: 2, weapon: makeWeapon(this.uid(), rollWeaponKey(r, (d) => d.size === 'medium'), rollRarity(r, 0.8), r) },
+      { key: 'reactor', cx: 0, cy: 9, weapon: null },
+      { key: 'engine', cx: 3, cy: 11, weapon: null },
+      { key: 'engine', cx: 5, cy: 11, weapon: null },
     ];
     return { chassis: 'crawler', drive: 'tracks', modules };
   }
@@ -443,7 +447,8 @@ export class WarzoneServer {
         while (diff < -Math.PI) diff += Math.PI * 2;
         b.rot += Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
         const sp = (Math.abs(diff) > 1 ? 0.5 : 4.2) * dt;
-        const r = moveCircle(map, b.x, b.y, b.radius * 0.8, Math.cos(b.rot) * sp, Math.sin(b.rot) * sp, 'ground');
+        // Bot fortresses roll over rubble like players do.
+        const r = moveCircle(map, b.x, b.y, b.radius * 0.8, Math.cos(b.rot) * sp, Math.sin(b.rot) * sp, 'crush');
         b.x = r.x;
         b.y = r.y;
       }

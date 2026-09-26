@@ -19,25 +19,36 @@ export function newWeapon(key: string, rarity: WeaponItem['rarity'] = 0, rng: ()
   return makeWeapon(newUid(), key, rarity, rng);
 }
 
-/** The Light Crawler every run starts with. */
+/**
+ * The Crawler Facility every run starts with: a Command Center in the middle, a few turrets,
+ * bunks, a cargo hold, a reactor and two engines, and plenty of open deck to build on.
+ * Row 0 is the front of the fortress.
+ */
+export const STARTER_LAYOUT: [string, number, number, string?][] = [
+  ['hp_heavy', 3, 1, 'main_battery'],
+  ['hp_light', 0, 0, 'autocannon'],
+  ['hp_light', 9, 0, 'autocannon'],
+  ['hp_light', 0, 13, 'autocannon'],
+  ['bridge', 3, 5],
+  ['quarters', 0, 5],
+  ['cargo', 8, 5],
+  ['reactor', 0, 9],
+  ['engine', 3, 11],
+  ['engine', 5, 11],
+];
+
 export function buildStarterTank(x: number, y: number): Tank {
   const t = new Tank('player', 'main', 'crawler', 'Fortress');
   t.x = x;
   t.y = y;
   t.rot = -Math.PI / 2;
-  t.addModule('hp_light', 0, 1, newWeapon('autocannon'));
-  t.addModule('hp_light', 6, 1, newWeapon('autocannon'));
-  t.addModule('hp_heavy', 2, 1, newWeapon('main_battery'));
-  t.addModule('quarters', 0, 4);
-  t.addModule('bridge', 3, 4);
-  t.addModule('cargo', 5, 4);
-  t.addModule('reactor', 0, 7);
-  t.addModule('engine', 5, 7);
+  for (const [key, cx, cy, w] of STARTER_LAYOUT) t.addModule(key, cx, cy, w ? newWeapon(w) : null);
   for (const m of t.modules) m.aim = t.rot;
   t.recalc();
   t.hp = t.stats.maxHp;
-  t.cargo.add('scrap', 60);
-  t.cargo.add('iron_plate', 10);
+  t.cargo.add('scrap', 120);
+  t.cargo.add('iron_plate', 20);
+  t.cargo.add('copper_wire', 6);
   t.cargo.add('repair_kit', 2);
   t.cargo.add('rations', 8);
   return t;
@@ -45,11 +56,7 @@ export function buildStarterTank(x: number, y: number): Tank {
 
 export function starterCrew(): CrewMember[] {
   const roles = ['driver', 'gunner', 'engineer', 'mechanic'] as const;
-  return roles.map((r, i) => {
-    const c = makeCrew(r, 0, 1);
-    c.officer = i;
-    return c;
-  });
+  return roles.map((r) => makeCrew(r, 0, 1));
 }
 
 const sizeFilter = (size: WeaponSize) => (d: { size: WeaponSize }) => d.size === size;
@@ -99,7 +106,7 @@ export function buildOutpost(threat: number, seed: number): Tank {
   t.threat = threat;
   t.dmgScale = 0.35 + 0.11 * threat;
   const rar = (): WeaponItem['rarity'] => rollDropRarity(r, threat);
-  t.addModule('bridge', 5, 5);
+  t.addModule('bridge', 4, 4);
   t.addModule('hp_heavy', 0, 0, newWeapon(threat >= 4 ? rollWeaponKey(r, sizeFilter('heavy')) : 'main_battery', rar(), r));
   if (threat >= 3.5) t.addModule('hp_heavy', 9, 9, newWeapon(threat >= 5 ? rollWeaponKey(r, sizeFilter('heavy')) : 'main_battery', rar(), r));
   if (threat >= 2.6) t.addModule('hp_medium', 10, 0, newWeapon(rollWeaponKey(r, sizeFilter('medium')), rar(), r));
@@ -107,12 +114,12 @@ export function buildOutpost(threat: number, seed: number): Tank {
   const spots = [[5, 0], [0, 6], [11, 5], [6, 11], [6, 0], [0, 5], [11, 6], [5, 11]];
   const lights = Math.min(spots.length, 2 + Math.floor(threat));
   for (let i = 0; i < lights; i++) t.addModule('hp_light', spots[i][0], spots[i][1], newWeapon(rollWeaponKey(r, sizeFilter('light')), rar(), r));
-  t.addModule('reactor', 3, 3);
-  t.addModule('reactor', 7, 3);
-  t.addModule('barracks', 3, 7);
-  t.addModule('cargo', 7, 7);
-  t.addModule('radar', 5, 3);
-  if (threat >= 3.5) t.addModule('shield', 7, 5);
+  t.addModule('reactor', 4, 1);
+  t.addModule('reactor', 6, 1);
+  t.addModule('barracks', 1, 4);
+  t.addModule('cargo', 8, 4);
+  t.addModule('radar', 5, 9);
+  if (threat >= 3.5) t.addModule('shield', 8, 6);
   t.recalc();
   t.stats.maxHp = Math.round(t.stats.maxHp * (0.3 + 0.2 * threat));
   t.hp = t.stats.maxHp;
@@ -123,10 +130,10 @@ export function buildOutpost(threat: number, seed: number): Tank {
 /** The mini tank crewed by side crew. */
 export function buildOutrider(level: number): Tank {
   const t = new Tank('player', 'outrider', 'outrider', 'Outrider');
-  t.addModule('bridge', 1, 2);
+  t.addModule('bridge', 0, 2);
   t.addModule('hp_light', 0, 0, newWeapon('autocannon', 1));
   if (level >= 2) t.addModule('hp_light', 3, 0, newWeapon('autocannon', 1));
-  t.addModule('engine', 1, 4);
+  t.addModule('engine', 1, 0);
   t.recalc();
   t.hp = t.stats.maxHp;
   return t;

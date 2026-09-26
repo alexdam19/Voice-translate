@@ -1,4 +1,5 @@
-import { navModeFor, TER, TRACTION, type NavMode } from '../../shared/map';
+import { CHUNK } from '../../shared/constants';
+import { crushable, navModeFor, OBS_COLOR, TER, TRACTION, type NavMode } from '../../shared/map';
 import { findPath, moveCircle, resolveCircle } from '../../shared/motion';
 import { NODE_INFO } from '../../shared/mapgen';
 import { turnToward, wrapAngle } from '../../shared/types';
@@ -6,7 +7,45 @@ import type { Game } from '../game';
 import type { Tank } from '../tank';
 
 export function tankNav(t: Tank): NavMode {
-  return navModeFor(t.drive);
+  return navModeFor(t.drive, t.crush);
+}
+
+/** The fortress rolls over rocks, ruins, wrecks and props, flattening them. */
+export function crushUnder(g: Game, t: Tank): void {
+  const map = g.map;
+  const half = Math.hypot(t.stats.length, t.stats.width) / 2;
+  const x0 = Math.floor(t.x - half), x1 = Math.floor(t.x + half), y0 = Math.floor(t.y - half), y1 = Math.floor(t.y + half);
+  let n = 0;
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      if (!map.inside(tx, ty)) continue;
+      const o = map.obs[ty * map.size + tx];
+      if (!crushable(o) || !t.hits(tx + 0.5, ty + 0.5, 0.2)) continue;
+      map.crush(tx, ty);
+      g.markDirty(tx, ty);
+      n++;
+      if (n <= 6) {
+        g.fx.push({ t: 'spark', x: tx + 0.5, y: ty + 0.5, color: OBS_COLOR[o] ?? '#8d6e63', n: 5 });
+        g.fx.push({ t: 'dust', x: tx + 0.5, y: ty + 0.5, color: '#a1887f' });
+      }
+    }
+  }
+  // Props (bones, barrels, cacti...) just get squashed.
+  for (let cy = Math.floor(y0 / CHUNK); cy <= Math.floor(y1 / CHUNK); cy++) {
+    for (let cx = Math.floor(x0 / CHUNK); cx <= Math.floor(x1 / CHUNK); cx++) {
+      for (const p of g.propsInChunk(cx, cy)) {
+        if (p.gone || !t.hits(p.x, p.y, 0)) continue;
+        p.gone = true;
+        g.markDirty(Math.floor(p.x), Math.floor(p.y));
+      }
+    }
+  }
+  if (n > 0) {
+    g.navDirty = true;
+    t.speed *= Math.pow(0.985, Math.min(n, 12));
+    if (Math.random() < 0.5) g.hooks.sound('crunch', t.x, t.y, Math.min(1, 0.3 + n * 0.1));
+    if (n >= 4) g.fx.push({ t: 'shake', amt: 0.15 });
+  }
 }
 
 /** Speed multiplier from the ground under the tank (worst of front/centre/back). */
@@ -131,6 +170,12 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   t.x += dx;
   t.y += dy;
   if (resolveTank(g, t)) t.speed *= 0.9;
+  // Flatten whatever is under the hull: every frame while moving, a few times a second while parked
+  // (it may have been towed, blinked or loaded on top of rubble).
+  if (t.crush && (Math.abs(t.speed) > 0.05 || Math.abs(t.pushX) + Math.abs(t.pushY) > 0.05 || (t.crushT -= dt) <= 0)) {
+    t.crushT = 0.25;
+    crushUnder(g, t);
+  }
   t.treadPhase += t.speed * dt;
 }
 
@@ -166,7 +211,7 @@ export function separateTanks(g: Game): void {
   for (const r of g.gen.runes) if (Math.abs(r.x - px) < 30 && Math.abs(r.y - py) < 30) blockers.push({ x: r.x, y: r.y, r: 1.2 });
   if (!blockers.length) return;
   for (const t of all) {
-    if (t.anchored) continue;
+    if (t.anchored || t.crush) continue;
     for (const c of t.circles()) {
       for (const b of blockers) {
         const dx = c.x - b.x, dy = c.y - b.y;

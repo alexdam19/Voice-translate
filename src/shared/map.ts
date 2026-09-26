@@ -76,12 +76,21 @@ OBS_COLOR[OBS.PILLAR] = '#3c3c50';
 export const ZONE = { RUSTBELT: 0, DUNES: 1, CRYO: 2, GLASS: 3, MAGMA: 4, ACID: 5, EDGE: 6 } as const;
 export type ZoneId = (typeof ZONE)[keyof typeof ZONE];
 
-/** How a mover interacts with liquids. */
-export type NavMode = 'ground' | 'magma' | 'hover' | 'air';
+/**
+ * How a mover interacts with liquids and obstacles. The `crush` modes belong to your fortress:
+ * it is a full facility on treads and rolls straight over rocks, ruins and wrecks (only cliffs and pillars stop it).
+ */
+export type NavMode = 'ground' | 'magma' | 'hover' | 'air' | 'crush' | 'crushMagma' | 'crushHover';
 
-export function navModeFor(drive: DriveKey): NavMode {
+export function navModeFor(drive: DriveKey, crush = false): NavMode {
+  if (crush) return drive === 'hover' ? 'crushHover' : drive === 'magma' ? 'crushMagma' : 'crush';
   return drive === 'hover' ? 'hover' : drive === 'magma' ? 'magma' : 'ground';
 }
+
+export const isCrushMode = (m: NavMode): boolean => m === 'crush' || m === 'crushMagma' || m === 'crushHover';
+
+/** Obstacles a fortress can roll over and flatten. */
+export const crushable = (o: number): boolean => o !== OBS.NONE && o !== OBS.CLIFF && o !== OBS.PILLAR;
 
 export class GameMap {
   readonly size: number;
@@ -128,10 +137,11 @@ export class GameMap {
     if (!this.inside(tx, ty)) return true;
     const i = ty * this.size + tx;
     if (mode === 'air') return false;
-    if (this.obs[i] !== 0) return true;
+    const o = this.obs[i];
+    if (o !== 0 && !(isCrushMode(mode) && crushable(o))) return true;
     const t = this.ter[i];
-    if (t === TER.LAVA) return mode === 'ground';
-    if (t === TER.ACID) return mode !== 'hover';
+    if (t === TER.LAVA) return mode === 'ground' || mode === 'crush';
+    if (t === TER.ACID) return mode !== 'hover' && mode !== 'crushHover';
     return false;
   }
 
@@ -151,8 +161,23 @@ export class GameMap {
     return this.clearance(mode)[ty * this.size + tx] / 3;
   }
 
-  invalidateNav(): void {
-    this.clearCache.clear();
+  /** Drops cached clearance. Crushing obstacles only changes the non-crush modes. */
+  invalidateNav(onlyObstacleModes = false): void {
+    if (!onlyObstacleModes) {
+      this.clearCache.clear();
+      return;
+    }
+    for (const m of [...this.clearCache.keys()]) if (!isCrushMode(m)) this.clearCache.delete(m);
+  }
+
+  /** Flattens a crushable obstacle. Returns true if something was there. */
+  crush(tx: number, ty: number): boolean {
+    if (!this.inside(tx, ty)) return false;
+    const i = ty * this.size + tx;
+    if (!crushable(this.obs[i])) return false;
+    this.obs[i] = OBS.NONE;
+    this.oh[i] = 0;
+    return true;
   }
 }
 

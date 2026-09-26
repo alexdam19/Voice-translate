@@ -18,7 +18,7 @@ function spawnPoint(g: Game, minD: number, maxD: number): { x: number; y: number
     if (Math.hypot(x - CENTER, y - CENTER) < SAFE_RADIUS) continue;
     const z = g.map.zoneAt(x, y);
     if (z === ZONE.EDGE || g.map.blocked(Math.floor(x), Math.floor(y), 'ground')) continue;
-    if (g.isVisible(x, y) && d < 22) continue;
+    if (g.isVisible(x, y) && d < 22 + p.stats.length / 2) continue;
     return { x, y };
   }
   return null;
@@ -27,11 +27,13 @@ function spawnPoint(g: Game, minD: number, maxD: number): { x: number; y: number
 export function updateSpawns(g: Game, dt: number): void {
   const p = g.player;
   if (p.dead) return;
+  // The fortress is big: measure spawn distances from its hull, not its middle.
+  const ext = p.stats.length / 2;
   // Despawn stragglers far away.
   for (let i = g.enemies.length - 1; i >= 0; i--) {
     const e = g.enemies[i];
     if (e.camp || e.titan) continue;
-    if (Math.hypot(e.x - p.x, e.y - p.y) > 80) g.enemies.splice(i, 1);
+    if (Math.hypot(e.x - p.x, e.y - p.y) > 80 + ext) g.enemies.splice(i, 1);
   }
   for (let i = g.tanks.length - 1; i >= 0; i--) {
     const t = g.tanks[i];
@@ -45,7 +47,7 @@ export function updateSpawns(g: Game, dt: number): void {
     const ambient = g.enemies.filter((e) => !e.camp && !e.titan).length;
     const target = inCamp ? 0 : Math.round(5 + threat * 2.4);
     if (ambient < target) {
-      const pt = spawnPoint(g, 26, 38);
+      const pt = spawnPoint(g, 26 + ext, 38 + ext);
       if (pt) {
         const zone = g.map.zoneAt(pt.x, pt.y);
         const t = threatAt(pt.x, pt.y);
@@ -64,7 +66,7 @@ export function updateSpawns(g: Game, dt: number): void {
     g.timers.raider = 55 + Math.random() * 40;
     const raiders = g.tanks.filter((t) => t.kind === 'raider' && !t.dead).length;
     if (!inCamp && threat >= 1.5 && raiders < 1 + Math.floor(threat / 2.5)) {
-      const pt = spawnPoint(g, 45, 60);
+      const pt = spawnPoint(g, 45 + ext, 60 + ext);
       if (pt) {
         const t = buildRaider(threatAt(pt.x, pt.y), Math.floor(Math.random() * 1e9));
         t.x = pt.x;
@@ -81,7 +83,7 @@ export function updateSpawns(g: Game, dt: number): void {
   if (g.timers.titan <= 0) {
     g.timers.titan = 240 + Math.random() * 120;
     if (threat >= 3.4 && !g.enemies.some((e) => e.titan)) {
-      const pt = spawnPoint(g, 45, 55);
+      const pt = spawnPoint(g, 45 + ext, 55 + ext);
       if (pt) {
         const zone = g.map.zoneAt(pt.x, pt.y);
         const kind = TITAN_STYLE[zone] ?? 'titan_walker';

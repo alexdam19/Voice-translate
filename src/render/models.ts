@@ -1,15 +1,21 @@
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, type Material } from 'three';
-import { CELL } from '../shared/constants';
 import { NODE_INFO, type NodeType, type RuneKind, RUNE_INFO } from '../shared/mapgen';
 import { hash2 } from '../shared/rng';
 import { WEAPONS } from '../shared/weapons';
 import { MODULES } from '../game/defs';
-import { TREAD, type Tank } from '../game/tank';
+import type { Tank } from '../game/tank';
+
+/** The model is built at half-unit cells, then scaled to the tank's real cell size. */
+const CELL = 0.5;
+const TREAD = 0.5;
 import { withFow } from './fow';
 import { GeoBuilder } from './geo';
 import { getAtlas, treadTexture } from './textures';
 
 const DECK = 0.78;
+
+/** World height of a tank's deck surface. */
+export const deckHeight = (t: Tank): number => DECK * (t.cell / 0.5);
 
 export interface TankModel {
   root: Group;
@@ -86,6 +92,12 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
     const lx = (t.rows / 2 - (m.cy + d.h / 2)) * CELL;
     const lz = (m.cx + d.w / 2 - t.cols / 2) * CELL;
     const fx = d.h * CELL - 0.06, fz = d.w * CELL - 0.06; // footprint along x (length) and z (width)
+    if (!m.built) {
+      // Under construction: a scaffold slab with hazard stripes.
+      gb.box(lx - fx / 2, DECK, lz - fz / 2, lx + fx / 2, DECK + 0.12, lz + fz / 2, atlas.get('hazard'), atlas.get('darkmetal'));
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.box(lx + sx * (fx / 2 - 0.05) - 0.03, DECK, lz + sz * (fz / 2 - 0.05) - 0.03, lx + sx * (fx / 2 - 0.05) + 0.03, DECK + 0.5, lz + sz * (fz / 2 - 0.05) + 0.03, metal, metal);
+      continue;
+    }
     const h = d.hardpoint ? 0.18 : d.height * 0.75;
     const top = atlas.get(`mod_${m.key}`);
     gb.box(lx - fx / 2, DECK, lz - fz / 2, lx + fx / 2, DECK + h, lz + fz / 2, top, side);
@@ -232,6 +244,14 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
   body.receiveShadow = true;
   root.add(body);
   if (!gl.empty) root.add(new Mesh(gl.build(), glow));
+  // Build at model scale, then grow to the real size (your fortress is 2x).
+  const k = t.cell / CELL;
+  if (k !== 1) {
+    const inner = new Group();
+    for (const c of [...root.children]) inner.add(c);
+    inner.scale.setScalar(k);
+    root.add(inner);
+  }
   return { root, turrets, lit, glow, treadMat, version: t.version, radars };
 }
 
@@ -672,6 +692,19 @@ export function buildAllyModel(kind: string): AllyModel {
       vox(root, '#90a4ae', -0.45, 0.15, 0, 0.15, 0.28, 0.04);
       vox(root, '#18ffff', 0.25, 0.1, 0, 0.22, 0.08, 0.12, true);
       vox(root, '#ff9100', -0.58, 0, 0, 0.08, 0.1, 0.12, true);
+      break;
+    }
+    case 'buggy': {
+      vox(root, '#ffb300', 0, 0.35, 0, 1.3, 0.28, 0.7);
+      vox(root, '#5d4037', -0.1, 0.55, 0, 0.6, 0.16, 0.62);
+      vox(root, '#37474f', -0.15, 0.85, 0, 0.08, 0.5, 0.6);
+      vox(root, '#263238', 0.15, 0.78, 0, 0.5, 0.1, 0.1);
+      vox(root, '#ffe57f', 0.66, 0.4, 0.22, 0.04, 0.08, 0.12, true);
+      vox(root, '#ffe57f', 0.66, 0.4, -0.22, 0.04, 0.08, 0.12, true);
+      for (const [x, z] of [[-0.42, -0.42], [0.42, -0.42], [-0.42, 0.42], [0.42, 0.42]]) {
+        const w = vox(root, '#212121', x, 0.2, z, 0.4, 0.4, 0.18);
+        parts.push(w);
+      }
       break;
     }
     case 'drone': {

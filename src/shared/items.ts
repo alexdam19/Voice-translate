@@ -57,7 +57,7 @@ item('mythic_essence', 'Mythic Essence', 'material', 'crystal', '#ff4f7b', '#ffd
 item('repair_kit', 'Repair Kit', 'consumable', 'kit', '#e8e8e8', '#ffb300', { value: 8, desc: 'Press 5: restores 25% hull over 3 seconds.' });
 item('rations', 'Rations', 'consumable', 'ration', '#8a7a4a', '#d4c48a', { value: 2, desc: 'Crew food. Hiring costs rations; medics use them to revive the injured.' });
 
-/* Drive trains (install from BASE > Chassis & Drive) */
+/* Drive trains (install from the Command Center's DRIVE TRAIN button) */
 item('drive_wheels', 'Standard Treads', 'drive', 'wheel', '#3a3a3a', '#9aa4ae', { drive: 'wheels', value: 10, desc: 'Fine on hard ground. Bogs in sand, slips on ice.' });
 item('drive_tracks', 'Dune Tracks', 'drive', 'track', '#4a4036', '#d6b270', { drive: 'tracks', value: 80, desc: 'Wide tracks that float over sand and dunes.' });
 item('drive_chains', 'Spiked Chains', 'drive', 'chain', '#3a3a44', '#c4d6ec', { drive: 'chains', value: 120, desc: 'Studded treads that bite into ice and snow.' });

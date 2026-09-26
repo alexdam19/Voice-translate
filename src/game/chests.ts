@@ -1,7 +1,8 @@
 import { rollDropRarity, rollLoot, rollWeaponKey } from '../shared/loot';
+import { CARDS, PACK_INFO, rollPack } from './cards';
 import { clampRarity, rarityName, type Rarity } from '../shared/rarity';
 import { EXCLUSIVE_WEAPONS, WEAPONS } from '../shared/weapons';
-import { CHAMPIONS, EXCLUSIVES, makeChampion, makeCrew, makeExclusive, randomRole, ROLES } from './crew';
+import { CHAMPIONS, EXCLUSIVES, makeChampion, makeCrew, makeExclusive, randomRole, ROLES, signatureCard } from './crew';
 import type { ChestKind, Reward } from './entities';
 import type { Game } from './game';
 import { newWeapon } from './templates';
@@ -11,6 +12,10 @@ export const CHEST_INFO: Record<ChestKind, { name: string; color: string; desc: 
   rune: { name: 'Rune Chest', color: '#b388ff', desc: 'A chance at an exclusive weapon, an exclusive character or a champion.' },
   choice: { name: 'This-or-That Chest', color: '#ffd23f', desc: 'Pick one of two rewards.' },
   titan: { name: 'Titan Hoard', color: '#ffab40', desc: 'Spoils from a giant.' },
+  pack: { name: PACK_INFO.pack.name, color: PACK_INFO.pack.color, desc: PACK_INFO.pack.desc },
+  rare_pack: { name: PACK_INFO.rare_pack.name, color: PACK_INFO.rare_pack.color, desc: PACK_INFO.rare_pack.desc },
+  epic_pack: { name: PACK_INFO.epic_pack.name, color: PACK_INFO.epic_pack.color, desc: PACK_INFO.epic_pack.desc },
+  legendary_pack: { name: PACK_INFO.legendary_pack.name, color: PACK_INFO.legendary_pack.color, desc: PACK_INFO.legendary_pack.desc },
 };
 
 function luck(g: Game, threat: number, base: number): number {
@@ -42,6 +47,9 @@ function itemsReward(g: Game, table: string, rolls: number): Reward {
 export function rollChest(g: Game, kind: ChestKind, threat: number): Reward[] {
   const rnd = (): number => g.rng.next();
   const bonus = takeBonus(g);
+  if (kind === 'pack' || kind === 'rare_pack' || kind === 'epic_pack' || kind === 'legendary_pack') {
+    return rollPack(rnd, kind, g.player.crew.chestLuck + bonus * 0.8).map((id) => ({ type: 'card', id }));
+  }
   if (kind === 'rune') {
     const roll = rnd() - g.player.crew.chestLuck * 0.03 - bonus * 0.05;
     const out: Reward[] = [];
@@ -95,12 +103,13 @@ export function grantReward(g: Game, r: Reward): string {
       g.addWeapon(r.item);
       return `${rarityName(r.item.rarity)} ${WEAPONS[r.item.key].name}`;
     case 'crew': {
+      const card = signatureCard(r.crew);
+      if (CARDS[card]) g.ownCard(card);
       const ok = g.addCrew(r.crew);
       if (!ok) {
         // No room: they wait at camp and join when you have space.
         r.crew.loc = 'away';
         r.crew.returnIn = 1;
-        r.crew.officer = -1;
         g.crew.push(r.crew);
         g.hooks.toast(`${r.crew.name} is waiting for a bunk. Build crew space (BASE).`, '#ffd740');
       }
@@ -109,5 +118,9 @@ export function grantReward(g: Game, r: Reward): string {
     case 'tech':
       g.give('tech_parts', r.n, true);
       return `${r.n} Salvaged Tech`;
+    case 'card': {
+      const got = g.ownCard(r.id);
+      return `${CARDS[r.id]?.name ?? r.id}${got === 'dupe' ? ' (copy)' : ' (new!)'}`;
+    }
   }
 }

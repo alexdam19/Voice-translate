@@ -2,21 +2,32 @@ import type { App } from '../app';
 import { getItem } from '../shared/items';
 import { RARITIES, type Rarity } from '../shared/rarity';
 import { AFFIXES, WEAPONS, weaponStats } from '../shared/weapons';
-import { abilityOf, championDef, displayTitle, exclusiveDef, ROLES } from '../game/crew';
+import { CARDS } from '../game/cards';
+import { championDef, displayTitle, exclusiveDef, ROLES, signatureCard } from '../game/crew';
 import { CHEST_INFO, grantReward } from '../game/chests';
 import type { ChestKind, Reward } from '../game/entities';
 import { itemIcon, portrait, weaponIcon } from '../render/icons';
+import { cardEl } from './cardView';
 import { button, esc, h } from './dom';
 
 function rewardRarity(r: Reward): Rarity {
   if (r.type === 'weapon') return r.item.rarity;
   if (r.type === 'crew') return r.crew.rarity;
   if (r.type === 'tech') return 2;
+  if (r.type === 'card') return CARDS[r.id]?.rarity ?? 0;
   return 0;
 }
 
-export function rewardCard(r: Reward): HTMLDivElement {
+export function rewardCard(r: Reward, g: import('../game/game').Game | null = null): HTMLDivElement {
   const rar = rewardRarity(r);
+  if (r.type === 'card') {
+    const own = g?.cards[r.id];
+    const wrap = h('div', `reward-card card-reveal r${rar}`);
+    wrap.style.setProperty('--rc', RARITIES[rar].color);
+    wrap.appendChild(h('div', 'rk', own ? 'COPY (+1 toward the next level)' : 'NEW CARD!'));
+    wrap.appendChild(cardEl(g, r.id));
+    return wrap;
+  }
   const col = RARITIES[rar].color;
   const card = h('div', `reward-card r${rar}`);
   card.style.setProperty('--rc', col);
@@ -31,14 +42,14 @@ export function rewardCard(r: Reward): HTMLDivElement {
     const c = r.crew;
     const ch = championDef(c);
     const ex = exclusiveDef(c);
-    const ab = abilityOf(c);
+    const cid = signatureCard(c);
     card.innerHTML = `<div class="rk">${ch ? 'CHAMPION' : ex ? 'EXCLUSIVE CHARACTER' : 'NEW CREW'}</div><img class="big portrait" src="${portrait(c)}">
       <div class="rn" style="color:${col}">${esc(c.name)}</div><div class="rs">${esc(displayTitle(c))} · Level ${c.level}</div>
-      <div class="rs">Ability: <b style="color:${ab.color}">${esc(ab.name)}</b></div>
+      <div class="rs">Brings the card <b>${esc(cid ? CARDS[cid]?.name ?? '' : '')}</b></div>
       <div class="rd">${ex ? esc(ex.desc) : esc(ROLES[c.role].passive)}</div>`;
   } else if (r.type === 'tech') {
-    card.innerHTML = `<div class="rk">RESEARCH</div><img class="big" src="${itemIcon('tech_parts')}"><div class="rn" style="color:${col}">${r.n} Salvaged Tech</div><div class="rd">Spend it on RESEARCH (T).</div>`;
-  } else {
+    card.innerHTML = `<div class="rk">SALVAGED TECH</div><img class="big" src="${itemIcon('tech_parts')}"><div class="rn" style="color:${col}">${r.n} Salvaged Tech</div><div class="rd">Used for high-level buildings and card upgrades.</div>`;
+  } else if (r.type === 'items') {
     card.innerHTML = `<div class="rk">MATERIALS</div><div class="stacks">${r.stacks.map((s) => `<span><img src="${itemIcon(s.id)}">${s.n} ${esc(getItem(s.id).name)}</span>`).join('')}</div>`;
   }
   return card;
@@ -80,7 +91,7 @@ export class ChestUI {
     box.innerHTML = `<div class="ct" style="color:${info.color}">${esc(info.name)}</div><div class="cs">${c.choice ? 'THIS or THAT: pick one reward. The other is lost.' : esc(info.desc)}</div>`;
     const row = h('div', 'reward-row');
     c.rewards.forEach((r, i) => {
-      const card = rewardCard(r);
+      const card = rewardCard(r, this.app.game);
       card.style.animationDelay = `${i * 0.18}s`;
       if (c.choice) {
         card.classList.add('pickable');

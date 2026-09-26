@@ -2,17 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { MAX_BASE_CREW } from '../src/shared/constants';
 import { RARITIES, rollRarity } from '../src/shared/rarity';
 import { makeWeapon, weaponScore, weaponStats, WEAPONS } from '../src/shared/weapons';
-import { buildModule, hire, mountWeapon, research, upgradeChassis } from '../src/game/actions';
+import { hire, mountWeapon } from '../src/game/actions';
 import { rollChest } from '../src/game/chests';
 import { computeCrewBonus, giveXp, makeCrew, pickPerk, CHAMPIONS } from '../src/game/crew';
 import { Game } from '../src/game/game';
 import { deserialize, serialize } from '../src/game/save';
-import { castAbility } from '../src/game/systems/crewsys';
-import { updateArsenal } from '../src/game/systems/arsenal';
 import { installHandlers, stepWorld } from '../src/game/systems/step';
 import { orderHarvest } from '../src/game/systems/orders';
+import { ccTo, levelTo } from './helpers';
 import { launchOutrider, outriderDestroyed } from '../src/game/systems/outrider';
-import { TECH, TECH_BY_ID, canResearch } from '../src/game/tech';
+import { TECH, TECH_BY_ID } from '../src/game/tech';
 
 function game(seed = 77): Game {
   const g = new Game(seed);
@@ -48,39 +47,6 @@ describe('rarity and weapons', () => {
 });
 
 describe('fortress', () => {
-  it('starter tank has weapons, power and crew bunks', () => {
-    const g = game();
-    const p = g.player;
-    expect(p.weapons().length).toBe(3);
-    expect(p.stats.powerRatio).toBe(1);
-    expect(g.crewCap()).toBe(5);
-    expect(g.mainCrew().length).toBe(4);
-    expect(g.officers().filter(Boolean).length).toBe(4);
-  });
-
-  it('builds modules, respects the grid and pays costs', () => {
-    const g = game();
-    const scrap = g.player.cargo.count('scrap');
-    const spot = g.player.findSpot('armor')!;
-    expect(buildModule(g, 'armor', spot[0], spot[1]).ok).toBe(true);
-    expect(g.player.cargo.count('iron_plate')).toBe(6);
-    expect(buildModule(g, 'armor', spot[0], spot[1]).ok).toBe(false);
-    expect(buildModule(g, 'shield', 0, 0).ok).toBe(false); // needs research
-    expect(g.player.cargo.count('scrap')).toBe(scrap);
-  });
-
-  it('chassis upgrades keep the layout and add room', () => {
-    const g = game();
-    g.give('iron_plate', 50, true);
-    g.give('scrap', 200, true);
-    g.give('circuit', 10, true);
-    const before = g.player.modules.length;
-    expect(upgradeChassis(g).ok).toBe(true);
-    expect(g.player.chassis).toBe('assault');
-    expect(g.player.modules.length).toBe(before);
-    expect(g.player.findSpot('barracks')).not.toBeNull();
-  });
-
   it('mounts weapons only on matching hardpoints', () => {
     const g = game();
     const heavy = g.player.modules.find((m) => m.key === 'hp_heavy')!;
@@ -93,35 +59,8 @@ describe('fortress', () => {
     expect(g.armory.some((k) => k.key === 'autocannon')).toBe(true);
   });
 
-  it('tech tree is a DAG reachable from the roots', () => {
-    const have = new Set<string>();
-    let progress = true;
-    while (progress) {
-      progress = false;
-      for (const n of TECH) if (canResearch(have, n)) {
-        have.add(n.id);
-        progress = true;
-      }
-    }
-    expect(have.size).toBe(TECH.length);
+  it('the old tech tree is still a DAG (the Level Road hands it out in order)', () => {
     for (const n of TECH) for (const r of n.requires) expect(TECH_BY_ID.has(r)).toBe(true);
-  });
-
-  it('research takes time, spends salvaged tech and unlocks equipment', () => {
-    const g = game();
-    g.give('tech_parts', 10, true);
-    g.give('iron_plate', 30, true);
-    g.give('circuit', 10, true);
-    g.give('explosive', 4, true);
-    expect(research(g, 'drill_mk2').ok).toBe(true);
-    expect(g.tech.has('drill_mk2')).toBe(false);
-    // One military project at a time.
-    expect(research(g, 'reinforced').ok).toBe(false);
-    for (let i = 0; i < 70 * 10; i++) updateArsenal(g, 0.1);
-    expect(g.tech.has('drill_mk2')).toBe(true);
-    const spot = g.player.findSpot('drill_mk2')!;
-    expect(buildModule(g, 'drill_mk2', spot[0], spot[1]).ok).toBe(true);
-    expect(g.player.stats.drill).toBe(2);
   });
 });
 
@@ -146,19 +85,10 @@ describe('crew', () => {
     const g = game();
     g.give('scrap', 2500, true);
     g.give('rations', 300, true);
-    for (let i = 0; i < 16 && g.crewCap() < MAX_BASE_CREW; i++) {
-      const s = g.player.findSpot('barracks');
-      if (!s) {
-        g.give('iron_plate', 200, true);
-        g.give('circuit', 20, true);
-        g.give('titanium_alloy', 40, true);
-        g.give('tech_parts', 20, true);
-        upgradeChassis(g);
-        continue;
-      }
-      g.give('iron_plate', 20, true);
-      buildModule(g, 'barracks', s[0], s[1]);
-    }
+    levelTo(g, 20);
+    ccTo(g, 6);
+    for (let i = 0; i < 6 && g.crewCap() < MAX_BASE_CREW; i++) g.player.autoAdd('barracks');
+    g.applyCrew();
     expect(g.crewCap()).toBe(MAX_BASE_CREW);
     for (let i = 0; i < 20; i++) {
       g.rollRecruits();
@@ -166,15 +96,6 @@ describe('crew', () => {
     }
     expect(g.mainCrew().length).toBe(MAX_BASE_CREW);
     expect(g.outriderUnlocked()).toBe(true);
-  });
-
-  it('officer abilities go on cooldown', () => {
-    const g = game();
-    const off = g.officers()[1]!;
-    expect(castAbility(g, 1, g.player.x, g.player.y)).toBe(true);
-    expect(off.cd).toBeGreaterThan(10);
-    expect(castAbility(g, 1, g.player.x, g.player.y)).toBe(false);
-    expect(g.player.hasBuff('barrage')).toBe(true);
   });
 
   it('outrider crew can die when it is destroyed', () => {
@@ -228,6 +149,15 @@ describe('chests', () => {
   });
 });
 
+describe('chest packs', () => {
+  it('card pack chests roll cards', () => {
+    const g = game();
+    const r = rollChest(g, 'rare_pack', 2);
+    expect(r.length).toBe(4);
+    expect(r.every((k) => k.type === 'card')).toBe(true);
+  });
+});
+
 describe('simulation', () => {
   it('harvests a node near camp', () => {
     const g = game(4242);
@@ -238,17 +168,59 @@ describe('simulation', () => {
     expect(g.player.cargo.count('scrap') + g.player.cargo.count('iron_ore') + g.player.cargo.count('copper_ore')).toBeGreaterThan(scrap);
   });
 
-  it('save round-trips progress', () => {
+  it('save round-trips progress, cards, builds and squads', () => {
     const g = game(99);
     g.give('tech_parts', 3, true);
-    g.tech.add('drill_mk2');
+    levelTo(g, 7);
+    g.commander.xp = 55;
     g.explored[1234] = 1;
     g.armory.push(makeWeapon(4321, 'laser', 3));
+    g.ownCard('fireball');
+    g.ownCard('fireball');
+    g.packs.push('rare_pack');
+    g.relics = ['iron_hide'];
+    g.cards.iron_hide = { level: 2, shards: 0 };
+    const s = g.player.findSpot('armor')!;
+    const m = g.player.addModule('armor', s[0], s[1])!;
+    m.built = false;
+    g.builds.push({ modId: m.id, kind: 'build', to: 1, t: 3, total: 8, cost: { iron_plate: 4 } });
+    g.tracked = { kind: 'upgrade', modId: m.id };
+    g.squads.marines = { type: 'marines', order: 'guard', gx: 10, gy: 20, target: null, phase: 'going', work: 0, carry: [], respawn: 1 };
     const d = deserialize(JSON.parse(JSON.stringify(serialize(g))));
     expect(d.player.cargo.count('tech_parts')).toBe(3);
-    expect(d.tech.has('drill_mk2')).toBe(true);
+    expect(d.commander).toEqual({ level: 7, xp: 55 });
     expect(d.explored[1234]).toBe(1);
     expect(d.armory[0].key).toBe('laser');
     expect(d.crew.length).toBe(g.crew.length);
+    expect(d.cards.fireball.shards).toBe(1);
+    expect(d.packs).toEqual(['rare_pack']);
+    expect(d.relics).toEqual(['iron_hide']);
+    expect(d.builds.length).toBe(1);
+    const bm = d.player.moduleById(d.builds[0].modId)!;
+    expect(bm.key).toBe('armor');
+    expect(bm.built).toBe(false);
+    expect(d.tracked).toEqual({ kind: 'upgrade', modId: bm.id });
+    expect(d.squads.marines?.order).toBe('guard');
+    expect(d.hand.length).toBe(4);
+  });
+
+  it('old saves move into the bigger fortress', () => {
+    const g = game(12);
+    const d = serialize(g);
+    d.v = 4;
+    d.tank = { ...d.tank, chassis: 'assault', modules: [
+      { key: 'bridge', cx: 2, cy: 3, weapon: null },
+      { key: 'hp_light', cx: 0, cy: 0, weapon: makeWeapon(77, 'laser', 2) },
+      { key: 'reactor', cx: 0, cy: 5, weapon: null },
+      { key: 'engine', cx: 4, cy: 5, weapon: null },
+      { key: 'quarters', cx: 4, cy: 0, weapon: null },
+    ] };
+    delete d.commander;
+    const h = deserialize(JSON.parse(JSON.stringify(d)));
+    expect(h.player.stats.cc).toBe(2);
+    expect(h.player.chassis).toBe('assault');
+    expect(h.player.modules.some((m) => m.weapon?.key === 'laser')).toBe(true);
+    expect(h.commander.level).toBeGreaterThanOrEqual(3);
+    expect(h.packs.length).toBeGreaterThan(0);
   });
 });

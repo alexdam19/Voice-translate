@@ -60,7 +60,7 @@ export type RuneKind = 'crimson' | 'azure' | 'verdant' | 'gilded';
 
 export const RUNE_INFO: Record<RuneKind, { name: string; color: string; buff: string }> = {
   crimson: { name: 'Crimson Rune', color: '#ff3b3b', buff: '+25% weapon damage, shots burn' },
-  azure: { name: 'Azure Rune', color: '#3fa9ff', buff: 'Officer abilities recharge 35% faster' },
+  azure: { name: 'Azure Rune', color: '#3fa9ff', buff: 'Card energy refills 35% faster' },
   verdant: { name: 'Verdant Rune', color: '#4cff72', buff: 'Hull regenerates 1.5% per second' },
   gilded: { name: 'Gilded Rune', color: '#ffd23f', buff: '+60% loot and harvest yield' },
 };
@@ -97,6 +97,8 @@ export interface Prop {
   rot: number;
   /** Tint variant 0..3. */
   v: number;
+  /** Flattened by a passing fortress. */
+  gone?: boolean;
 }
 
 export interface WorldGen {

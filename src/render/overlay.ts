@@ -1,8 +1,21 @@
 import { NODE_INFO, RUNE_INFO, TIER_NAMES, threatTier } from '../shared/mapgen';
+import { MODULES } from '../game/defs';
 import type { Game } from '../game/game';
+import { SQUADS, type SquadType } from '../game/squads';
+import { jobFor } from '../game/systems/builds';
+import type { TrackTarget } from '../game/systems/tracking';
 import { SITE_RADIUS, SITE_TIME } from '../game/systems/world';
 import type { Tank } from '../game/tank';
+import { deckHeight } from './models';
 import type { View } from './view';
+
+/** What the base (village) view is showing. */
+export interface VillageState {
+  hover: [number, number] | null;
+  selected: number;
+  /** Building being placed or moved. */
+  ghost: { key: string; cx: number; cy: number; ok: boolean } | null;
+}
 
 /**
  * 2D overlay drawn over the 3D view: LoL-style health bars, damage numbers,
@@ -71,6 +84,150 @@ export class Overlay {
     c.beginPath();
     c.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
     c.stroke();
+  }
+
+  /** Screen position of a point on the deck, in deck cells. */
+  private deckPt(t: Tank, cx: number, cy: number): { x: number; y: number; ok: boolean } {
+    const w = t.toWorld((t.rows / 2 - cy) * t.cell, (cx - t.cols / 2) * t.cell);
+    return this.view.worldToScreen(w.x, w.y, deckHeight(t) + 0.02);
+  }
+
+  private deckRect(t: Tank, cx: number, cy: number, w: number, h: number, stroke: string | null, fill: string | null, lw = 1): void {
+    const c = this.ctx;
+    const a = this.deckPt(t, cx, cy), b = this.deckPt(t, cx + w, cy), d = this.deckPt(t, cx + w, cy + h), e = this.deckPt(t, cx, cy + h);
+    c.beginPath();
+    c.moveTo(a.x, a.y);
+    c.lineTo(b.x, b.y);
+    c.lineTo(d.x, d.y);
+    c.lineTo(e.x, e.y);
+    c.closePath();
+    if (fill) {
+      c.fillStyle = fill;
+      c.fill();
+    }
+    if (stroke) {
+      c.lineWidth = lw;
+      c.strokeStyle = stroke;
+      c.stroke();
+    }
+  }
+
+  /** The base view: deck grid, building levels, builders at work and the placement ghost. */
+  drawVillage(g: Game, vs: VillageState): void {
+    const c = this.ctx;
+    const t = g.player;
+    // Grid
+    c.globalAlpha = 0.28;
+    c.lineWidth = 1;
+    c.strokeStyle = '#b3e5fc';
+    c.beginPath();
+    for (let x = 0; x <= t.cols; x++) {
+      const a = this.deckPt(t, x, 0), b = this.deckPt(t, x, t.rows);
+      c.moveTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
+    }
+    for (let y = 0; y <= t.rows; y++) {
+      const a = this.deckPt(t, 0, y), b = this.deckPt(t, t.cols, y);
+      c.moveTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
+    }
+    c.stroke();
+    c.globalAlpha = 1;
+    this.deckRect(t, 0, 0, t.cols, t.rows, '#4dd0e1', null, 2);
+    const front = this.deckPt(t, t.cols / 2, -0.8);
+    this.text('▲ FRONT', front.x, front.y, '#80deea', 9);
+    // Buildings
+    for (const m of t.modules) {
+      const d = MODULES[m.key];
+      const sel = m.id === vs.selected;
+      const hov = vs.hover && vs.hover[0] >= m.cx && vs.hover[0] < m.cx + d.w && vs.hover[1] >= m.cy && vs.hover[1] < m.cy + d.h;
+      if (sel || hov) this.deckRect(t, m.cx, m.cy, d.w, d.h, sel ? '#ffea00' : '#ffffff', sel ? 'rgba(255,234,0,0.12)' : 'rgba(255,255,255,0.06)', sel ? 3 : 1.5);
+      const mid = this.deckPt(t, m.cx + d.w / 2, m.cy + d.h / 2);
+      const job = jobFor(g, m.id);
+      if (job) {
+        const left = Math.max(0, job.total - job.t);
+        this.bar(mid.x, mid.y - 16, Math.max(40, d.w * 16), job.t / job.total, job.kind === 'build' ? '#ffb300' : '#40c4ff', 0, 0, 6);
+        this.text(`${job.kind === 'build' ? '🔨' : `⬆ L${job.to}`} ${left >= 60 ? `${Math.floor(left / 60)}m ${Math.ceil(left % 60)}s` : `${Math.ceil(left)}s`}`, mid.x, mid.y - 26, '#fff8e1', 9);
+      }
+      if (m.built && (d.w * d.h >= 4 || sel || hov)) {
+        const corner = this.deckPt(t, m.cx + 0.35, m.cy + 0.35);
+        this.text(String(m.lvl), corner.x, corner.y, '#ffe57f', 10);
+      }
+      if (sel || hov) this.text(d.name, mid.x, mid.y + 10, sel ? '#ffea00' : '#ffffff', 10);
+    }
+    // Hovered empty cell
+    if (vs.hover && !vs.ghost && t.cellAt(vs.hover[0], vs.hover[1]) === -1) this.deckRect(t, vs.hover[0], vs.hover[1], 1, 1, 'rgba(255,255,255,0.6)', null, 1);
+    // Placement ghost
+    if (vs.ghost) {
+      const d = MODULES[vs.ghost.key];
+      const col = vs.ghost.ok ? 'rgba(118,255,3,' : 'rgba(255,23,68,';
+      this.deckRect(t, vs.ghost.cx, vs.ghost.cy, d.w, d.h, `${col}0.95)`, `${col}0.28)`, 2.5);
+      const mid = this.deckPt(t, vs.ghost.cx + d.w / 2, vs.ghost.cy + d.h / 2);
+      this.text(vs.ghost.ok ? `${d.name} · click to place` : "Doesn't fit here", mid.x, mid.y, vs.ghost.ok ? '#ccff90' : '#ff8a80', 10);
+    }
+  }
+
+  /** Squad guard points and the tracked target (with an arrow at the screen edge when it is off screen). */
+  drawMarkers(g: Game, target: TrackTarget | null, label: string): void {
+    const v = this.view;
+    const c = this.ctx;
+    for (const [k, sq] of Object.entries(g.squads)) {
+      if (!sq || sq.order !== 'guard') continue;
+      const p = v.worldToScreen(sq.gx, sq.gy, 0.1);
+      if (!p.ok) continue;
+      const col = SQUADS[k as SquadType].color;
+      c.strokeStyle = col;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(p.x, p.y);
+      c.lineTo(p.x, p.y - 26);
+      c.stroke();
+      c.fillStyle = col;
+      c.fillRect(p.x, p.y - 26, 12, 8);
+      this.text(`${SQUADS[k as SquadType].name}`, p.x, p.y - 34, col, 8);
+    }
+    if (!target || target.kind === 'base') return;
+    const p = v.worldToScreen(target.x, target.y, 2.5);
+    const dist = Math.round(Math.hypot(target.x - g.player.x, target.y - g.player.y));
+    const inside = p.ok && p.x > 40 && p.y > 60 && p.x < v.width - 40 && p.y < v.height - 200;
+    const bob = Math.sin(performance.now() / 180) * 4;
+    if (inside) {
+      this.text('▼', p.x, p.y - 12 + bob, '#ffd740', 18);
+      this.text(`${label} · ${dist}m`, p.x, p.y - 32 + bob, '#fff8e1', 10);
+      return;
+    }
+    // Arrow at the edge of the screen, pointing toward the target.
+    const cx = v.width / 2, cy = v.height / 2;
+    const q = v.worldToScreen(target.x, target.y, 0);
+    let dx = q.x - cx, dy = q.y - cy;
+    if (!q.ok) {
+      dx = -dx;
+      dy = -dy;
+    }
+    const a = Math.atan2(dy, dx);
+    // Keep the arrow inside the play area: clear of the top bar and the card hand at the bottom.
+    const x0 = 70, x1 = v.width - 70, y0 = 110, y1 = v.height - 240;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const kx = ca > 0 ? (x1 - cx) / ca : ca < 0 ? (x0 - cx) / ca : Infinity;
+    const ky = sa > 0 ? (y1 - cy) / sa : sa < 0 ? (y0 - cy) / sa : Infinity;
+    const k = Math.max(0, Math.min(kx, ky));
+    const ax = cx + ca * k, ay = cy + sa * k;
+    c.save();
+    c.translate(ax, ay);
+    c.rotate(a);
+    c.fillStyle = '#ffd740';
+    c.strokeStyle = '#0b0b0e';
+    c.lineWidth = 3;
+    c.beginPath();
+    c.moveTo(18 + bob, 0);
+    c.lineTo(-6 + bob, -12);
+    c.lineTo(-2 + bob, 0);
+    c.lineTo(-6 + bob, 12);
+    c.closePath();
+    c.stroke();
+    c.fill();
+    c.restore();
+    this.text(`${label} · ${dist}m`, ax - Math.cos(a) * 30, ay - Math.sin(a) * 22, '#fff8e1', 10);
   }
 
   draw(g: Game, hoverId: number): void {

@@ -1,7 +1,7 @@
 import { getItem } from '../shared/items';
 import { RARITIES, type Rarity } from '../shared/rarity';
 import { WEAPONS } from '../shared/weapons';
-import { abilityOf, championDef, ROLES, type CrewMember } from '../game/crew';
+import { championDef, ROLES, type CrewMember } from '../game/crew';
 import { MODULES } from '../game/defs';
 import { MODULE_COLOR, getAtlas } from './textures';
 import { Pix, shade, seeded } from './pixel';
@@ -273,75 +273,295 @@ export function portrait(c: CrewMember): string {
   });
 }
 
-/* ---------------- abilities ---------------- */
-
-export function abilityIcon(c: CrewMember): string {
-  const a = abilityOf(c);
-  return make(`ab:${a.key}`, 24, 24, (p) => {
-    p.fill(shade(a.color, 0.25));
-    p.frame(0, 0, 24, 24, shade(a.color, 0.6));
-    const col = a.color, w = '#ffffff';
-    switch (a.key) {
-      case 'barrage': case 'deadeye':
-        for (let i = 0; i < 3; i++) p.rect(4 + i * 6, 6, 3, 12, col);
-        p.rect(4, 5, 15, 1, w);
-        if (a.key === 'deadeye') p.ring(12, 12, 8, w);
-        break;
-      case 'shield_surge': case 'meltdown':
-        p.ring(12, 12, 8, col);
-        p.ring(12, 12, 6, shade(col, 1.3));
-        p.circle(12, 12, 3, a.key === 'meltdown' ? '#ff6d00' : w);
-        break;
-      case 'weld': case 'nanite':
-        p.rect(5, 10, 14, 4, col);
-        p.rect(10, 5, 4, 14, col);
-        if (a.key === 'nanite') p.speck(w, 8);
-        break;
-      case 'triage': case 'miracle':
-        p.rect(9, 4, 6, 16, w);
-        p.rect(4, 9, 16, 6, w);
-        p.rect(10, 5, 4, 14, col);
-        p.rect(5, 10, 14, 4, col);
-        break;
-      case 'nitro': case 'charge':
-        for (let i = 0; i < 3; i++) {
-          p.rect(4 + i * 5, 6 + i * 2, 8, 2, col);
-          p.rect(4 + i * 5, 16 - i * 2, 8, 2, col);
-        }
-        p.rect(16, 10, 5, 4, w);
-        break;
-      case 'magnet': case 'treasure':
-        p.rect(5, 5, 4, 12, col);
-        p.rect(15, 5, 4, 12, col);
-        p.rect(5, 15, 14, 4, col);
-        p.rect(5, 5, 4, 3, w);
-        p.rect(15, 5, 4, 3, w);
-        break;
-      case 'artillery': case 'orbital':
-        p.ring(12, 14, 6, col);
-        p.rect(11, 2, 2, 10, w);
-        p.rect(9, 14, 6, 1, col);
-        p.rect(11, 12, 2, 5, col);
-        break;
-      case 'emp': case 'singularity':
-        p.ring(12, 12, 9, col);
-        p.ring(12, 12, 5, shade(col, 1.3));
-        p.circle(12, 12, 2, w);
-        break;
-      case 'squad': case 'legion':
-        for (let i = 0; i < 3; i++) {
-          p.rect(4 + i * 6, 8, 4, 4, '#e0ac69');
-          p.rect(3 + i * 6, 12, 6, 7, col);
-        }
-        break;
-    }
-  });
-}
-
 export function roleIcon(role: string): string {
   return make(`role:${role}`, 12, 12, (p) => {
     const c = ROLES[role as keyof typeof ROLES]?.color ?? '#fff';
     p.circle(6, 6, 5, c);
     p.circle(6, 6, 3, shade(c, 0.5));
+  });
+}
+
+/* ---------------- battle cards ---------------- */
+
+const SCHOOL_BG: Record<string, [string, string]> = {
+  iron: ['#5a1e10', '#c1502a'],
+  volt: ['#0c2c44', '#2a88c0'],
+  rust: ['#1e3410', '#5a8a2c'],
+  void: ['#1c0e30', '#6a3aa8'],
+  aegis: ['#3e3208', '#b08a1c'],
+};
+
+/** Card illustration, 48x32 pixels: a sky in the school's colors and a motif for the card. */
+export function cardArt(id: string, school: string): string {
+  return make(`card:${id}`, 48, 32, (p) => {
+    const [dk, lt] = SCHOOL_BG[school] ?? ['#222', '#555'];
+    for (let y = 0; y < 32; y++) p.rect(0, y, 48, 1, shade(lt, 0.35 + (y / 32) * 0.55));
+    p.speck(shade(lt, 1.4), 10);
+    p.rect(0, 26, 48, 6, shade(dk, 0.9));
+    p.rect(0, 26, 48, 1, shade(lt, 0.8));
+    const W = '#ffffff', Y = '#ffea00', O = '#ff9100', R = '#ff3d00', G = '#9e9e9e', D = '#263238';
+    const boom = (x: number, y: number, r: number): void => {
+      p.circle(x, y, r, O);
+      p.circle(x, y, r * 0.65, Y);
+      p.circle(x, y, r * 0.3, W);
+    };
+    const tank = (x: number, y: number): void => {
+      p.rect(x, y, 14, 5, '#546e7a');
+      p.rect(x + 3, y - 3, 7, 3, '#78909c');
+      p.rect(x + 10, y - 2, 6, 1, D);
+      p.rect(x - 1, y + 5, 16, 2, D);
+    };
+    const soldier = (x: number, y: number, c: string): void => {
+      p.rect(x + 1, y, 3, 3, '#e0ac69');
+      p.rect(x, y + 3, 5, 5, c);
+      p.rect(x, y + 8, 2, 3, D);
+      p.rect(x + 3, y + 8, 2, 3, D);
+      p.rect(x + 5, y + 4, 3, 1, D);
+    };
+    const jet = (x: number, y: number): void => {
+      p.rect(x, y, 10, 2, '#eceff1');
+      p.rect(x + 3, y - 3, 3, 8, '#90a4ae');
+      p.rect(x - 2, y, 2, 2, O);
+      p.set(x + 9, y, '#18ffff');
+    };
+    const bolt = (x: number, y: number, c: string): void => {
+      let cx = x;
+      for (let k = 0; k < 26; k++) {
+        p.set(cx, y + k, c);
+        p.set(cx + 1, y + k, W);
+        if (k % 5 === 4) cx += k % 10 === 4 ? 2 : -2;
+      }
+    };
+    switch (id) {
+      case 'artillery':
+        for (let i = 0; i < 3; i++) boom(10 + i * 14, 22 - (i % 2) * 3, 4);
+        for (let i = 0; i < 3; i++) p.rect(12 + i * 13, 3 + i * 2, 2, 5, G);
+        break;
+      case 'salvo':
+        for (let i = 0; i < 6; i++) {
+          p.rect(4 + i * 7, 18 - i * 2, 5, 1, '#cfd8dc');
+          p.rect(1 + i * 7, 18 - i * 2, 3, 1, O);
+        }
+        boom(40, 22, 4);
+        break;
+      case 'fireball':
+        p.circle(26, 14, 8, R);
+        p.circle(28, 13, 5, O);
+        p.circle(29, 12, 2.5, Y);
+        for (let i = 0; i < 5; i++) p.rect(4 + i * 3, 12 + i, 8, 2, shade(O, 0.8 - i * 0.1));
+        break;
+      case 'carpet_bomb':
+        jet(4, 6);
+        for (let i = 0; i < 5; i++) boom(8 + i * 8, 23, 3);
+        break;
+      case 'barrage':
+        for (let i = 0; i < 4; i++) {
+          p.rect(4, 8 + i * 4, 40, 1, Y);
+          p.rect(38, 7 + i * 4, 4, 3, O);
+        }
+        break;
+      case 'meltdown':
+        p.circle(24, 15, 9, '#ff6d00');
+        p.ring(24, 15, 11, Y);
+        p.circle(24, 15, 4, W);
+        p.rect(20, 25, 8, 2, R);
+        break;
+      case 'jets':
+        jet(4, 6);
+        jet(18, 12);
+        jet(30, 5);
+        break;
+      case 'meteor':
+        for (let i = 0; i < 4; i++) {
+          const x = 8 + i * 11, y = 6 + (i % 2) * 6;
+          p.rect(x - 6, y - 4, 6, 2, shade(O, 0.7));
+          p.circle(x, y, 3, '#6d4c41');
+          p.circle(x, y, 1.5, O);
+        }
+        boom(24, 24, 4);
+        break;
+      case 'nuke':
+        p.rect(21, 14, 6, 12, G);
+        p.circle(24, 10, 9, '#ffcc80');
+        p.circle(24, 9, 6, Y);
+        p.circle(24, 8, 3, W);
+        p.rect(10, 24, 28, 3, O);
+        break;
+      case 'emp':
+        p.ring(24, 16, 12, '#ea80fc');
+        p.ring(24, 16, 8, '#ce93d8');
+        p.ring(24, 16, 4, W);
+        break;
+      case 'lightning':
+        bolt(12, 0, '#82b1ff');
+        bolt(30, 2, '#82b1ff');
+        boom(13, 25, 3);
+        break;
+      case 'orbital':
+        p.rect(20, 0, 8, 26, '#ff5252');
+        p.rect(22, 0, 4, 26, '#ffcdd2');
+        boom(24, 25, 5);
+        break;
+      case 'orbital_laser':
+        p.rect(4, 2, 10, 5, '#b0bec5');
+        p.rect(0, 4, 4, 1, '#40c4ff');
+        p.rect(14, 4, 4, 1, '#40c4ff');
+        for (let k = 0; k < 20; k++) p.rect(10 + k, 7 + k, 3, 1, '#ff1744');
+        boom(32, 26, 3);
+        break;
+      case 'timestop':
+        p.circle(24, 15, 10, '#e0f7fa');
+        p.ring(24, 15, 10, '#18ffff');
+        p.rect(23, 7, 2, 9, D);
+        p.rect(23, 14, 7, 2, D);
+        break;
+      case 'blink':
+        p.ring(12, 16, 7, '#18ffff');
+        p.ring(36, 16, 7, '#18ffff');
+        tank(29, 16);
+        p.speck('#18ffff', 14);
+        break;
+      case 'drones':
+        for (let i = 0; i < 3; i++) {
+          const x = 8 + i * 14, y = 8 + (i % 2) * 6;
+          p.rect(x, y, 6, 3, '#546e7a');
+          p.rect(x - 2, y - 1, 10, 1, '#b0bec5');
+          p.rect(x + 2, y + 3, 1, 8, '#80d8ff');
+        }
+        break;
+      case 'cataclysm':
+        p.rect(0, 0, 48, 6, '#1a237e');
+        bolt(6, 3, '#82b1ff');
+        bolt(22, 2, '#b3e5fc');
+        bolt(38, 3, '#82b1ff');
+        break;
+      case 'nitro':
+        tank(20, 18);
+        for (let i = 0; i < 3; i++) p.rect(2 + i * 4, 18 + i * 2, 12, 1, '#18ffff');
+        break;
+      case 'weld':
+        p.rect(14, 16, 20, 8, '#78909c');
+        p.rect(22, 8, 3, 8, '#8d6e63');
+        p.circle(23, 16, 2, W);
+        p.speck(Y, 10);
+        break;
+      case 'nanite':
+        p.speck('#69f0ae', 40);
+        tank(17, 17);
+        break;
+      case 'acid_rain':
+        p.rect(0, 0, 48, 5, '#33691e');
+        for (let i = 0; i < 12; i++) p.rect(2 + i * 4, 6 + (i % 3) * 4, 1, 4, '#76ff03');
+        p.rect(4, 26, 40, 2, '#76ff03');
+        break;
+      case 'magnet':
+        p.rect(14, 6, 6, 16, '#e53935');
+        p.rect(28, 6, 6, 16, '#1e88e5');
+        p.rect(14, 18, 20, 6, G);
+        p.rect(14, 6, 6, 3, W);
+        p.rect(28, 6, 6, 3, W);
+        break;
+      case 'frenzy':
+        for (let i = 0; i < 5; i++) p.rect(6 + i * 8, 18 - (i % 2) * 4, 6, 6, i % 2 ? '#bcaaa4' : '#ffd740');
+        p.speck(Y, 8);
+        break;
+      case 'mines':
+        for (let i = 0; i < 4; i++) {
+          p.circle(8 + i * 11, 24, 3, '#37474f');
+          p.set(8 + i * 11, 22, '#ff1744');
+        }
+        break;
+      case 'kraken':
+        for (let i = 0; i < 4; i++) {
+          const x = 8 + i * 10;
+          for (let k = 0; k < 14; k++) p.rect(x + Math.round(Math.sin(k * 0.6 + i) * 2), 26 - k, 3, 1, '#7c4dff');
+        }
+        break;
+      case 'singularity':
+        p.circle(24, 15, 8, '#12001f');
+        p.ring(24, 15, 9, '#d500f9');
+        p.ring(24, 15, 13, '#7b1fa2');
+        break;
+      case 'soul_harvest':
+        p.circle(24, 13, 7, '#b388ff');
+        p.rect(20, 11, 3, 3, '#1a1030');
+        p.rect(26, 11, 3, 3, '#1a1030');
+        p.rect(22, 17, 5, 1, '#1a1030');
+        break;
+      case 'dragon':
+        p.rect(10, 12, 20, 6, '#b71c1c');
+        p.rect(30, 10, 8, 5, '#d32f2f');
+        p.rect(16, 4, 8, 8, '#7f0000');
+        p.rect(38, 12, 8, 3, O);
+        p.set(35, 11, Y);
+        break;
+      case 'void_rift':
+        for (let k = 0; k < 24; k++) p.rect(23 + Math.round(Math.sin(k * 0.5) * 3), 3 + k, 3, 1, '#12001f');
+        p.speck('#b388ff', 16);
+        break;
+      case 'scholar':
+        p.rect(14, 10, 20, 14, '#efebe9');
+        p.rect(23, 10, 2, 14, '#8d6e63');
+        for (let i = 0; i < 4; i++) {
+          p.rect(16, 13 + i * 3, 5, 1, G);
+          p.rect(27, 13 + i * 3, 5, 1, G);
+        }
+        break;
+      case 'deadeye':
+        p.ring(24, 15, 10, '#ff1744');
+        p.ring(24, 15, 5, '#ff1744');
+        p.rect(23, 2, 2, 26, '#ff1744');
+        p.rect(11, 14, 26, 2, '#ff1744');
+        break;
+      case 'shield_surge':
+        p.ring(24, 16, 12, '#40c4ff');
+        p.ring(24, 16, 10, '#b3e5fc');
+        tank(17, 17);
+        break;
+      case 'dome':
+        for (let r = 12; r > 9; r--) p.ring(24, 26, r, '#69f0ae');
+        tank(17, 19);
+        break;
+      case 'squad':
+        for (let i = 0; i < 3; i++) soldier(10 + i * 11, 13, '#1565c0');
+        break;
+      case 'legion':
+        for (let i = 0; i < 5; i++) soldier(3 + i * 9, 13 - (i % 2) * 2, '#ffa000');
+        break;
+      case 'mech':
+        p.rect(18, 4, 12, 8, '#ff8f00');
+        p.rect(30, 7, 10, 2, D);
+        p.rect(19, 12, 3, 12, '#5d4037');
+        p.rect(26, 12, 3, 12, '#5d4037');
+        p.rect(21, 6, 6, 2, '#18ffff');
+        break;
+      case 'miracle':
+        p.rect(21, 4, 6, 22, W);
+        p.rect(13, 11, 22, 6, W);
+        p.rect(22, 5, 4, 20, Y);
+        p.rect(14, 12, 20, 4, Y);
+        break;
+      case 'treasure':
+        p.rect(14, 14, 20, 11, '#8d6e63');
+        p.rect(14, 12, 20, 4, '#6d4c41');
+        p.rect(22, 16, 4, 4, Y);
+        p.speck(Y, 12);
+        break;
+      case 'charge':
+        tank(24, 17);
+        for (let i = 0; i < 4; i++) p.rect(2 + i * 4, 16 + i * 2, 16, 1, '#18ffff');
+        break;
+      case 'smoke':
+        for (let i = 0; i < 6; i++) p.circle(8 + i * 7, 18 - (i % 2) * 4, 6, shade('#9e9e9e', 0.8 + (i % 3) * 0.15));
+        break;
+      default: {
+        // Relics: a glowing trinket on a stand.
+        p.rect(18, 22, 12, 4, '#5d4037');
+        p.circle(24, 14, 7, lt);
+        p.circle(24, 14, 4, shade(lt, 1.6));
+        p.ring(24, 14, 9, Y);
+        p.speck(Y, 6);
+      }
+    }
   });
 }

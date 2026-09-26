@@ -80,7 +80,11 @@ function lifesteal(g: Game, src: number | undefined, dealt: number, frac: number
 export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): void {
   if (e.hp <= 0 || e.burrowed) return;
   dmg = preHit(e, dmg, o.fx);
-  if (o.srcTank === g.player.id) g.ultGain(dmg);
+  if (o.srcTank === g.player.id) {
+    const c = g.player.crew;
+    if (e.titan && c.titanDmg) dmg *= 1 + c.titanDmg;
+    else if (e.elite && c.eliteDmg) dmg *= 1 + c.eliteDmg;
+  }
   const dealt = Math.min(e.hp, dmg);
   e.hp -= dmg;
   e.hitFlash = 0.12;
@@ -115,6 +119,7 @@ export function killEnemy(g: Game, e: Enemy): void {
     g.dropLoot(e.x, e.y, 'titan', 4);
     g.dropPickup(e.x, e.y, { kind: 'weapon', weapon: newWeapon(rollWeaponKey(Math.random), rollDropRarity(Math.random, threat, 1.2, 2)) });
     g.dropPickup(e.x, e.y, { kind: 'chest', chest: 'titan', chestThreat: threat });
+    g.dropPickup(e.x, e.y, { kind: 'chest', chest: threat >= 6 ? 'legendary_pack' : 'epic_pack', chestThreat: threat });
     g.hooks.toast(`${e.name} has fallen!`, '#ffab40');
     g.fx.push({ t: 'shake', amt: 1.2 });
   } else {
@@ -122,9 +127,17 @@ export function killEnemy(g: Game, e: Enemy): void {
     if (e.elite) {
       g.dropLoot(e.x, e.y, 'elite', 1);
       if (Math.random() < 0.18) g.dropPickup(e.x, e.y, { kind: 'weapon', weapon: newWeapon(rollWeaponKey(Math.random), rollDropRarity(Math.random, threat, 0.3)) });
+      // Elites carry card packs.
+      const roll = Math.random();
+      if (roll < 0.45) g.dropPickup(e.x, e.y, { kind: 'chest', chest: roll < 0.06 * threat * 0.5 ? 'rare_pack' : 'pack', chestThreat: threat });
+    } else if (e.kind === 'guardian' && Math.random() < 0.5) {
+      g.dropPickup(e.x, e.y, { kind: 'chest', chest: 'rare_pack', chestThreat: threat });
+    } else if (Math.random() < 0.012) {
+      // Now and then an ordinary enemy drops a pack too.
+      g.dropPickup(e.x, e.y, { kind: 'chest', chest: 'pack', chestThreat: threat });
     }
   }
-  g.crewXp(e.xp);
+  g.gainXp(e.xp * (0.8 + 0.2 * threat));
 }
 
 /** Damage to any tank. Shields and armor soak first. Player tanks can injure crew on big hits. */
@@ -141,7 +154,6 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
     return;
   }
   let d = dmg;
-  if (o.srcTank === g.player.id && t.team === 'enemy') g.ultGain(dmg);
   if (t.hasBuff('dome')) d *= 0.1;
   if (t.hasBuff('smoke')) d *= 0.5;
   // Slows and stuns from special weapons.
@@ -170,10 +182,20 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
   if (o.burn && t.team === 'enemy') t.addBuff('burn', 3, o.burn);
   const dealt = Math.min(t.hp, d);
   t.hp -= d;
-  t.hitFlash = 0.1;
+  // Ticking damage (hazards, burning ground) doesn't flash the whole hull.
+  if (!o.silent) t.hitFlash = 0.1;
   lifesteal(g, o.srcTank, dealt, o.lifesteal);
   if (!o.silent && (t.team === 'enemy' || d >= 1)) g.float(t.x, t.y + 0.4, String(Math.round(d)), t.team === 'player' ? '#ff5252' : o.crit ? '#ffea00' : '#ffffff', !!o.crit);
   if (t === g.player && d > t.stats.maxHp * 0.07 && Math.random() < 0.35 * (1 - g.crewFx.injuryResist)) injureRandomCrew(g, 20 + Math.random() * 15);
+  if (t.hp <= 0 && t === g.player && t.crew.phoenix > 0 && g.phoenixCd <= 0) {
+    // Phoenix Feather: rise from the ashes once every 3 minutes.
+    g.phoenixCd = 180;
+    t.hp = t.stats.maxHp * t.crew.phoenix;
+    t.addBuff('invuln', 1.5);
+    g.fx.push({ t: 'ring', x: t.x, y: t.y, r: t.stats.length, color: '#ff6d00' });
+    g.float(t.x, t.y, 'PHOENIX!', '#ff9100', true);
+    g.hooks.sound('legendary');
+  }
   if (t.hp <= 0) {
     t.hp = 0;
     onTankDestroyed(g, t);

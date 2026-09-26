@@ -1,35 +1,50 @@
-import { ACTIVE_SLOTS, OFFICER_LABELS, OFFICER_SLOTS } from '../shared/constants';
 import { getItem } from '../shared/items';
 import { RUNE_INFO, TIER_NAMES, threatAt, threatTier } from '../shared/mapgen';
 import { RARITIES } from '../shared/rarity';
-import { treePoints, WEAPONS, weaponScore } from '../shared/weapons';
+import { treePoints, WEAPONS } from '../shared/weapons';
 import { ZONES } from '../shared/zones';
-import { ACTIVES } from '../game/arsenal';
-import { abilityCooldown, abilityOf, abilityPower, PERK_BY_ID, perkText, ROLES } from '../game/crew';
-import { chassisDef, DRIVE_INFO, levelMult, MODULES } from '../game/defs';
+import { CARDS, HAND_SIZE, PACK_INFO } from '../game/cards';
+import { PERK_BY_ID, perkText, ROLES } from '../game/crew';
+import { buildBlock, upgradeBlock, upgradeCostOf } from '../game/actions';
+import { chassisForCC, DRIVE_INFO, MODULE_LIST, MODULES } from '../game/defs';
 import type { Game } from '../game/game';
-import { activeCooldown, armedUlt, forgeSpeed } from '../game/systems/arsenal';
+import { FEATURES, levelRoad, MAX_COMMANDER_LEVEL, type FeatureKey, type LevelReward } from '../game/progress';
+import { SQUADS, squadSize, type SquadType } from '../game/squads';
+import { forgeSpeed } from '../game/systems/arsenal';
+import { cardBlock } from '../game/systems/cards';
 import { OUTRIDER_COST } from '../game/systems/outrider';
-import { canResearch, TECH } from '../game/tech';
-import { abilityIcon, itemIcon, moduleIcon, portrait, weaponIcon } from '../render/icons';
-import { scaleDesc } from './abilitiesPanel';
-import { selectArsenalWeapon, starsHTML, weaponSummary } from './arsenalPanel';
-import { button, esc, h, tooltip } from './dom';
+import { activeSquads, setSquadOrder, squadBuilding, squadStatus, squadUnits } from '../game/systems/squads';
+import type { TrackInfo } from '../game/systems/tracking';
+import { itemIcon, moduleIcon, portrait } from '../render/icons';
+import { cardEl } from './cardView';
+import { button, esc, h, hideTip, tooltip } from './dom';
 import { OBJECTIVES } from './objectives';
-import { researchStatus } from './techPanel';
+import { fmtTime } from './village';
+
+/** Is there a building to put up or upgrade right now (free builder, unlocked, affordable)? */
+function builderWork(g: Game): boolean {
+  if (g.freeBuilders() <= 0) return false;
+  for (const m of g.player.modules) if (!upgradeBlock(g, m.id) && g.canPay(upgradeCostOf(g, m.id))) return true;
+  for (const d of MODULE_LIST) if (!d.required && !buildBlock(g, d.key) && g.canPay(d.cost) && g.player.findSpot(d.key)) return true;
+  return false;
+}
 
 export interface HudActions {
   openPanel(name: string, tab?: string): void;
-  cast(slot: number): void;
-  castActive(slot: number): void;
-  castUlt(): void;
   pickPerk(crewId: number, idx: number): void;
-  toggleWeapon(modId: number): void;
-  toggleAutoFire(): void;
   useKit(): void;
   outrider(cmd: 'follow' | 'hold' | 'send' | 'launch'): void;
-  hoverWeapon(range: number): void;
   minimapClick(x: number, y: number, right: boolean): void;
+  /** Card drag: aim follows the pointer; drop plays it if released over the battlefield. */
+  cardAim(slot: number, x: number, y: number, overUI: boolean): void;
+  cardDrop(slot: number, x: number, y: number, overUI: boolean): void;
+  cardTap(slot: number): void;
+  squadAim(type: SquadType, x: number, y: number, overUI: boolean): void;
+  squadDrop(type: SquadType, x: number, y: number, overUI: boolean): void;
+  openPack(): void;
+  village(on: boolean): void;
+  trackClick(): void;
+  untrack(): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -43,193 +58,258 @@ function setHTML(el: HTMLElement, s: string): void {
   }
 }
 
-function fmtScaled(n: number, P: number, unit: string): string {
-  const v = n * P;
-  return `${unit === '%' || v >= 10 ? Math.round(v) : Math.round(v * 10) / 10}${unit}`;
-}
+/** Which menu buttons show up (features switch on as you level). */
+const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls?: string }[] = [
+  { key: 'base', label: 'BASE', sub: 'B', cls: 'big base' },
+  { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
+  { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
+  { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
+  { key: 'cargo', label: 'CARGO', sub: 'I' },
+  { key: 'map', label: 'MAP', sub: 'M' },
+  { key: 'help', label: '?', sub: 'H' },
+];
 
 export class Hud {
   root: HTMLDivElement;
+  private cmd = h('div', 'cmdr');
   private zone = h('div', 'zone-banner');
   private obj = h('div', 'objective');
+  private track = h('div', 'tracker');
+  private jobs = h('div', 'jobs');
   private res = h('div', 'resources');
   private menu = h('div', 'menu-buttons');
   private boss = h('div', 'bossbar');
   private buffs = h('div', 'buffbar');
   private toasts = h('div', 'toasts');
+  private lvlBanner = h('div', 'lvl-banner');
   private hazard = h('div', 'hazard-warn');
-  private bar = h('div', 'command-bar');
+  private hpBox = h('div', 'hp-box');
   private hpFill = h('div', 'fill');
   private shFill = h('div', 'shield');
   private hpText = h('div', 'txt');
   private tankInfo = h('div', 'tank-info');
-  private slots: HTMLDivElement[] = [];
-  private actSlots: HTMLDivElement[] = [];
-  private ultBtn = h('div', 'ult-btn');
+  private kitBtn = h('div', 'kit-btn');
+  private hand = h('div', 'hand');
+  private handSlots: HTMLDivElement[] = [];
+  private handKeys: string[] = [];
+  private nextCard = h('div', 'next-card');
+  private energy = h('div', 'energy');
+  private energyFill = h('div', 'en-fill');
+  private energyNum = h('div', 'en-num');
+  private packBtn = h('div', 'pack-btn');
+  private squads = h('div', 'squads');
+  private squadKey = '';
   private perkBox = h('div', 'perk-box');
   private perkKey = '';
-  private resBox = h('div', 'res-widget');
   private tint = h('div', 'timestop-tint');
-  private weaponsRow = h('div', 'weapons-row');
-  private weaponsKey = '';
-  private kitBtn = h('div', 'kit-btn');
-  private autoBtn = h('div', 'auto-btn');
   private rider = h('div', 'rider-card');
   private hint = h('div', 'hover-hint');
   private death = h('div', 'death');
+  private dragGhost = h('div', 'drag-ghost');
+  private bottom = h('div', 'hud-bottom');
   minimap: HTMLCanvasElement;
-  private badges = new Map<string, HTMLSpanElement>();
+  private mmWrap = h('div', 'minimap');
+  private badges = new Map<string, HTMLDivElement>();
   private lastObjective = -1;
+  private game: Game | null = null;
+  /** Hand slot armed by a tap (waiting for a tap on the battlefield). */
+  armed = -1;
+  private lvlT = 0;
+  trackInfo: TrackInfo | null = null;
+  private village = false;
+  /** A free builder has something affordable to do (checked once a second). */
+  private work = false;
+  private workT = 0;
 
   constructor(parent: HTMLElement, private act: HudActions) {
     this.root = h('div', 'hud');
     parent.appendChild(this.root);
     const tl = h('div', 'hud-tl');
-    tl.append(this.zone, this.obj, this.resBox);
-    this.resBox.addEventListener('click', (e) => {
+    tl.append(this.cmd, this.zone, this.obj, this.track, this.jobs);
+    this.cmd.addEventListener('click', (e) => {
+      e.stopPropagation();
+      act.openPanel('progress');
+    });
+    tooltip(this.cmd, () => this.cmdTip());
+    this.track.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if ((e.target as HTMLElement).closest('.tr-x')) act.untrack();
+      else act.trackClick();
+    });
+    this.jobs.addEventListener('click', (e) => {
       e.stopPropagation();
       const t = (e.target as HTMLElement).closest('[data-open]') as HTMLElement | null;
-      act.openPanel(t?.dataset.open ?? 'tech', t?.dataset.tab);
+      if (t?.dataset.open === 'base') act.village(true);
+      else if (t) act.openPanel(t.dataset.open!, t.dataset.tab);
     });
     const tr = h('div', 'hud-tr');
     tr.append(this.menu, this.res);
     const tc = h('div', 'hud-tc');
-    tc.append(this.boss, this.buffs, this.hazard, this.toasts);
-    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.rider, this.hint, this.death);
-    // Menu buttons: the two big ones are BASE vs CREW.
-    const mk = (key: string, label: string, sub: string, cls = ''): void => {
-      const b = h('div', `menu-btn ${cls}`, `<b>${label}</b><small>${sub}</small>`);
+    tc.append(this.lvlBanner, this.boss, this.buffs, this.hazard, this.toasts);
+    this.lvlBanner.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.lvlT = 0;
+      this.lvlBanner.style.display = 'none';
+      act.openPanel('progress');
+    });
+    for (const m of MENU) {
+      const b = h('div', `menu-btn ${m.cls ?? ''}`, `<b>${m.label}</b><small>${m.sub}</small>`);
       const badge = h('span', 'badge');
       b.appendChild(badge);
-      this.badges.set(key, badge);
+      this.badges.set(m.key, b);
       b.addEventListener('click', (e) => {
         e.stopPropagation();
-        act.openPanel(key);
+        if (m.key === 'base') act.village(!this.village);
+        else act.openPanel(m.key);
       });
       this.menu.appendChild(b);
-    };
-    mk('base', 'BASE', 'B · tank', 'big base');
-    mk('arsenal', 'ARSENAL', 'V · weapons', 'big arsenal');
-    mk('crew', 'CREW', 'C · people', 'big crew');
-    mk('tech', 'RESEARCH', 'T', 'big tech');
-    mk('abilities', 'ABILITIES', 'K');
-    mk('cargo', 'CARGO', 'I');
-    mk('map', 'MAP', 'M');
-    mk('help', '?', 'H');
-    // Command bar
-    const left = h('div', 'cb-left');
+    }
+    // Bottom-left: the fortress.
     const hp = h('div', 'hp-bar');
     hp.append(this.hpFill, this.shFill, this.hpText);
-    left.append(this.tankInfo, hp);
-    const abil = h('div', 'abilities');
-    const offGroup = h('div', 'ab-group');
-    for (let i = 0; i < OFFICER_SLOTS; i++) {
-      const s = h('div', 'ab-slot');
-      s.innerHTML = `<div class="ab-img"></div><div class="ab-portrait"></div><div class="ab-cd"></div><div class="ab-time"></div><div class="ab-key">${OFFICER_LABELS[i]}</div>`;
-      s.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (this.game && i >= this.game.officerSeats()) act.openPanel('tech', 'personnel');
-        else if (this.game && !this.game.officers()[i]) act.openPanel('crew', 'officers');
-        else act.cast(i);
-      });
-      tooltip(s, () => this.abilityTip(i));
-      this.slots.push(s);
-      offGroup.appendChild(s);
-    }
-    // The ultimate: one big button with a charge ring.
-    this.ultBtn.innerHTML = '<div class="ult-ring"></div><div class="ult-img"></div><div class="ult-pct"></div><div class="ab-key">R</div>';
-    this.ultBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (this.game && !armedUlt(this.game)) act.openPanel('abilities');
-      else act.castUlt();
-    });
-    tooltip(this.ultBtn, () => this.ultTip());
-    const actGroup = h('div', 'ab-group act');
-    for (let i = 0; i < ACTIVE_SLOTS; i++) {
-      const s = h('div', 'ab-slot act');
-      s.innerHTML = `<div class="ab-img"></div><div class="ab-cd"></div><div class="ab-time"></div><div class="ab-key">${i + 1}</div>`;
-      s.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (this.game && !this.game.activeSlots[i]) act.openPanel('abilities');
-        else act.castActive(i);
-      });
-      tooltip(s, () => this.activeTip(i));
-      this.actSlots.push(s);
-      actGroup.appendChild(s);
-    }
-    abil.append(offGroup, this.ultBtn, actGroup);
-    const right = h('div', 'cb-right');
     this.kitBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       act.useKit();
     });
-    tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Craft more in CARGO > Workshop.</div>`);
-    this.autoBtn.addEventListener('click', (e) => {
+    tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
+    this.hpBox.append(this.tankInfo, hp, this.kitBtn);
+    this.tankInfo.addEventListener('click', (e) => {
       e.stopPropagation();
-      act.toggleAutoFire();
+      act.village(true);
     });
-    tooltip(this.autoBtn, () => `<h4>Auto-fire [Y]</h4><div>ON: every weapon set to AUTO picks targets and fires by itself.</div><div>OFF: all weapons aim at your cursor and fire while you hold left mouse.</div><div class="d">Right-click a weapon icon to switch just that one.</div>`);
-    right.append(this.kitBtn, this.autoBtn);
-    const mid = h('div', 'cb-mid');
-    mid.append(abil, this.weaponsRow);
-    this.bar.append(left, mid, right);
-    this.root.appendChild(this.bar);
-    // Minimap
-    const mm = h('div', 'minimap');
+    // Bottom-center: the hand of cards and energy.
+    const handWrap = h('div', 'hand-wrap');
+    const handRow = h('div', 'hand-row');
+    handRow.appendChild(this.nextCard);
+    for (let i = 0; i < HAND_SIZE; i++) {
+      const s = h('div', 'hand-slot');
+      s.dataset.slot = String(i);
+      this.bindCardDrag(s, i);
+      this.handSlots.push(s);
+      this.handKeys.push('');
+      this.hand.appendChild(s);
+    }
+    handRow.appendChild(this.hand);
+    this.energy.append(this.energyFill, this.energyNum);
+    for (let i = 1; i < 10; i++) this.energy.appendChild(h('i', 'en-tick'));
+    this.packBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      act.openPack();
+    });
+    handWrap.append(this.packBtn, handRow, this.energy);
+    this.bottom.append(this.hpBox, handWrap);
+    // Bottom-right: squads above the minimap.
     this.minimap = h('canvas');
     this.minimap.width = 220;
     this.minimap.height = 220;
-    mm.appendChild(this.minimap);
-    mm.appendChild(h('div', 'mm-hint', 'click: look · right-click: drive'));
+    this.mmWrap.appendChild(this.minimap);
+    this.mmWrap.appendChild(h('div', 'mm-hint', 'click: drive there'));
     this.minimap.addEventListener('mousedown', (e) => {
       e.stopPropagation();
       const r = this.minimap.getBoundingClientRect();
       act.minimapClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, e.button === 2);
     });
     this.minimap.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.root.appendChild(mm);
+    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.mmWrap, this.hint, this.death, this.dragGhost);
+    for (const el of [tl, tr, this.bottom, this.squads, this.perkBox, this.rider, this.mmWrap]) el.addEventListener('mousedown', (e) => e.stopPropagation());
   }
 
-  private ultTip(): string {
-    const g = this.game;
-    if (!g) return '';
-    const u = armedUlt(g);
-    if (!u) return '<h4>ULTIMATE <small>[R]</small></h4><div>No ultimate yet. Research one deep in the tree (Nuclear Program, Mech Drop, Meteor Storm, Summon Dragon...) and build its module.</div><div class="d">Click to see them all.</div>';
-    return `<h4 style="color:${u.def.color}">${esc(u.def.name)} <small>[R]</small></h4><div>${scaleDesc(u.def.desc, levelMult(u.m.lvl))}</div><div class="d">${Math.floor(g.ultCharge * 100)}% charged · charges over ~${u.def.charge}s, faster while you deal damage${u.def.target === 'point' ? ' · aims at cursor' : ''}</div>`;
-  }
+  /* ---------------- drag and drop ---------------- */
 
-  private activeTip(i: number): string {
-    const g = this.game;
-    if (!g) return '';
-    const m = g.activeSlots[i] ? g.player.moduleById(g.activeSlots[i]) : undefined;
-    if (!m) return `<h4>Arsenal slot ${i + 1}</h4><div>Empty. Build an active module (Salvo Rack, Jet Hangar, Drone Bay, Mine Layer, Blink Drive...) after researching it.</div><div class="d">Click to open ABILITIES.</div>`;
-    const a = ACTIVES[MODULES[m.key].active!];
-    return `<h4 style="color:${a.color}">${esc(a.name)} <small>[${i + 1}]</small></h4><div>${scaleDesc(a.desc, levelMult(m.lvl))}</div><div class="d">${esc(MODULES[m.key].name)} L${m.lvl} · cooldown ${Math.round(activeCooldown(g, a.key))}s${a.target === 'point' ? ' · aims at cursor' : ''}</div>`;
-  }
-
-  private abilityTip(i: number): string {
-    const g = this.game;
-    if (!g) return '';
-    if (i >= g.officerSeats()) return `<h4>Locked seat (${OFFICER_LABELS[i]})</h4><div>Research ${i === 4 ? 'Officer School' : 'Chain of Command'} in RESEARCH > Personnel > COMMAND.</div>`;
-    const c = g.officers()[i];
-    if (!c) return `<h4>Empty officer seat (${OFFICER_LABELS[i]})</h4><div>Assign a main-crew officer in CREW (C) > Officers.</div>`;
-    const a = abilityOf(c);
-    const P = abilityPower(c, g.player.crew.abilityPower);
-    const desc = a.desc.replace(/\{([^}]+)\}/g, (_m, v: string) => {
-      const n = parseFloat(v);
-      if (Number.isNaN(n)) return v;
-      return `<b>${fmtScaled(n, P, v.replace(/[\d.]/g, ''))}</b>`;
+  /** Drag a card out of the hand and drop it on the battlefield, Clash Royale style. Tap to arm it instead. */
+  private bindCardDrag(el: HTMLDivElement, slot: number): void {
+    el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      hideTip();
+      const g = this.game;
+      if (!g || !g.hand[slot]) return;
+      const sx = e.clientX, sy = e.clientY;
+      let dragging = false;
+      const move = (ev: MouseEvent): void => {
+        if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 8) {
+          dragging = true;
+          this.armed = -1;
+          this.dragGhost.innerHTML = '';
+          this.dragGhost.appendChild(cardEl(g, g.hand[slot], { mini: true }));
+          this.dragGhost.style.display = 'block';
+          el.classList.add('dragging');
+        }
+        if (!dragging) return;
+        this.dragGhost.style.left = `${ev.clientX}px`;
+        this.dragGhost.style.top = `${ev.clientY}px`;
+        const over = this.overUI(ev);
+        this.dragGhost.classList.toggle('cancel', over);
+        this.act.cardAim(slot, ev.clientX, ev.clientY, over);
+      };
+      const up = (ev: MouseEvent): void => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+        el.classList.remove('dragging');
+        this.dragGhost.style.display = 'none';
+        if (dragging) this.act.cardDrop(slot, ev.clientX, ev.clientY, this.overUI(ev));
+        else this.act.cardTap(slot);
+      };
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up);
     });
-    return `<h4 style="color:${a.color}">${a.name} <small>[${OFFICER_LABELS[i]}]</small></h4><div>${desc}</div><div class="d">${esc(c.name)} · ${ROLES[c.role].name} L${c.level} · <span style="color:${RARITIES[c.rarity].color}">${RARITIES[c.rarity].name}</span> · cooldown ${Math.round(abilityCooldown(c, g.player.crew.cdr))}s${a.target === 'point' ? ' · aims at cursor' : ''}</div>`;
+    tooltip(el, () => {
+      const g = this.game;
+      const id = g?.hand[slot];
+      if (!g || !id) return '';
+      const d = CARDS[id];
+      return `<h4>${esc(d.name)} <small>[${slot + 1}] · ${g.cardCost(id)} energy</small></h4><div class="d">${d.target === 'area' ? 'Drag it onto the battlefield (or tap it, then tap the ground).' : 'Tap it or drag it out to play it on your fortress.'}</div>`;
+    });
   }
 
-  private game: Game | null = null;
+  private bindSquadDrag(el: HTMLDivElement, type: SquadType): void {
+    el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      hideTip();
+      const sx = e.clientX, sy = e.clientY;
+      let dragging = false;
+      const move = (ev: MouseEvent): void => {
+        if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) > 8) {
+          dragging = true;
+          this.dragGhost.innerHTML = `<div class="sq-ghost" style="border-color:${SQUADS[type].color}">⚑ ${esc(SQUADS[type].name)}<br><small>drop to guard here</small></div>`;
+          this.dragGhost.style.display = 'block';
+        }
+        if (!dragging) return;
+        this.dragGhost.style.left = `${ev.clientX}px`;
+        this.dragGhost.style.top = `${ev.clientY}px`;
+        const over = this.overUI(ev);
+        this.dragGhost.classList.toggle('cancel', over);
+        this.act.squadAim(type, ev.clientX, ev.clientY, over);
+      };
+      const up = (ev: MouseEvent): void => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+        this.dragGhost.style.display = 'none';
+        if (dragging) this.act.squadDrop(type, ev.clientX, ev.clientY, this.overUI(ev));
+      };
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up);
+    });
+  }
+
+  /** Is the pointer over HUD chrome rather than the battlefield? */
+  private overUI(ev: MouseEvent): boolean {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null;
+    if (!el) return true;
+    if (el.tagName === 'CANVAS' && !el.closest('.minimap')) return false;
+    return !!el.closest('.hud-bottom, .hud-tl, .hud-tr, .squads, .minimap, .perk-box, .panel-backdrop, .rider-card, .village .v-card, .village .v-top');
+  }
+
+  /* ---------------- messages ---------------- */
 
   toast(text: string, color = '#fff'): void {
     const t = h('div', 'toast', esc(text));
     t.style.borderLeftColor = color;
     this.toasts.appendChild(t);
-    while (this.toasts.children.length > 5) this.toasts.firstChild?.remove();
+    while (this.toasts.children.length > 4) this.toasts.firstChild?.remove();
     setTimeout(() => t.classList.add('out'), 4200);
     setTimeout(() => t.remove(), 4800);
   }
@@ -239,10 +319,47 @@ export class Hud {
     this.hint.style.display = s ? 'block' : 'none';
   }
 
-  update(g: Game): void {
+  /** Big "LEVEL UP" banner with what the level unlocked. */
+  levelUp(r: LevelReward): void {
+    const items: string[] = [];
+    for (const f of r.features) items.push(`<span class="feat">★ ${esc(f.name)}</span>`);
+    for (const m of r.modules) items.push(`<span><img src="${moduleIcon(m.key)}">${esc(m.name)}</span>`);
+    for (const t of r.techs.slice(0, 3)) items.push(`<span>${esc(t.name)}</span>`);
+    if (r.techs.length > 3) items.push(`<span>+${r.techs.length - 3} more</span>`);
+    if (r.relicSlot) items.push('<span class="feat">◈ Relic slot</span>');
+    if (r.builder) items.push('<span class="feat">🔨 Extra builder</span>');
+    items.push(`<span style="color:${PACK_INFO[r.pack].color}">▣ ${esc(PACK_INFO[r.pack].name)}</span>`);
+    this.lvlBanner.innerHTML = `<div class="lb-t">COMMANDER LEVEL ${r.level}!</div><div class="lb-s">+3% hull · +2% damage · fully repaired</div><div class="lb-i">${items.join('')}</div>${r.features.map((f) => `<div class="lb-f"><b>${esc(f.name)}:</b> ${esc(f.desc)}</div>`).join('')}<div class="lb-c">click for the Level Road</div>`;
+    this.lvlBanner.style.display = 'block';
+    this.lvlBanner.classList.remove('pop');
+    void this.lvlBanner.offsetWidth;
+    this.lvlBanner.classList.add('pop');
+    this.lvlT = r.features.length ? 12 : 7;
+  }
+
+  private cmdTip(): string {
+    const g = this.game;
+    if (!g) return '';
+    const c = g.commander;
+    const next = levelRoad()[c.level];
+    const lines = next ? [...next.features.map((f) => `★ ${f.name}`), ...next.modules.map((m) => m.name), ...next.techs.slice(0, 3).map((t) => t.name), PACK_INFO[next.pack].name] : [];
+    return `<h4>Commander level ${c.level}</h4><div>Earn XP by killing enemies, clearing loot areas, outposts, raider tanks and runes.</div>${next ? `<div class="d">Level ${next.level} brings: ${lines.map(esc).join(', ')}</div>` : ''}`;
+  }
+
+  /* ---------------- per-frame ---------------- */
+
+  update(g: Game, dt: number, village: boolean): void {
     this.game = g;
+    this.village = village;
     const p = g.player;
-    // Zone banner
+    this.root.classList.toggle('in-village', village);
+    this.root.classList.toggle('in-raid', g.mode === 'raid');
+    // Commander
+    const c = g.commander;
+    const next = levelRoad()[c.level];
+    const nextTxt = next ? [...next.features.map((f) => f.name), ...next.modules.map((m) => m.name)].slice(0, 2).join(', ') || PACK_INFO[next.pack].name : 'MAX';
+    setHTML(this.cmd, `<div class="cm-lvl">${c.level}</div><div class="cm-body"><div class="cm-t">COMMANDER <small>${c.level >= MAX_COMMANDER_LEVEL ? 'MAX LEVEL' : `next: ${esc(nextTxt)}`}</small></div><div class="cm-bar"><div style="width:${g.xpFrac() * 100}%"></div></div></div>`);
+    // Zone
     const z = ZONES[g.map.zoneAt(p.x, p.y)];
     const threat = g.mode === 'raid' ? 4 : threatAt(p.x, p.y);
     const tier = threatTier(threat);
@@ -252,215 +369,208 @@ export class Hud {
       if (z.drive && p.drive !== z.drive && p.drive !== 'hover') warn += `<div class="need">Terrain: ${DRIVE_INFO[z.drive].name} recommended</div>`;
       if (z.hazard && !p.stats.protects.has(z.hazard)) warn += `<div class="need bad">${esc(z.need)}</div>`;
     }
-    setHTML(this.zone, `<div class="zn">${esc(zoneName)}</div><div class="tier t${tier}">THREAT ${TIER_NAMES[tier]}</div>${warn}`);
+    setHTML(this.zone, `<span class="zn">${esc(zoneName)}</span> <span class="tier t${tier}">THREAT ${TIER_NAMES[tier]}</span>${warn}`);
     // Objective
     if (g.mode === 'world' && g.objective < OBJECTIVES.length) {
       const o = OBJECTIVES[g.objective];
       if (this.lastObjective !== g.objective) {
         this.lastObjective = g.objective;
         const rw = Object.entries(o.reward).map(([id, n]) => `<img src="${itemIcon(id)}">${n}`).join(' ');
-        setHTML(this.obj, `<div class="ot">OBJECTIVE ${g.objective + 1}/${OBJECTIVES.length}</div><div class="on">${esc(o.title)}</div><div class="oh">${esc(o.hint)}</div><div class="or">Reward: ${rw}</div>`);
+        setHTML(this.obj, `<div class="ot">GOAL ${g.objective + 1}/${OBJECTIVES.length}</div><div class="on">${esc(o.title)}</div><div class="oh">${esc(o.hint)}</div><div class="or">Reward: ${rw}</div>`);
       }
       this.obj.style.display = 'block';
     } else this.obj.style.display = 'none';
+    this.updateTracker(g);
+    this.updateJobs(g);
     // Resources
-    const res = ['scrap', 'iron_plate', 'circuit', 'titanium_alloy', 'tech_parts', 'mythic_essence'].map((id) => `<span title="${getItem(id).name}"><img src="${itemIcon(id)}">${p.cargo.count(id)}</span>`);
-    const crewN = g.mainCrew().length;
-    res.push(`<span title="Crew aboard / bunks">👥 ${crewN}/${g.crewCap()}</span>`);
+    const res = ['scrap', 'iron_plate', 'copper_wire', 'circuit', 'titanium_alloy', 'tech_parts'].map((id) => `<span title="${getItem(id).name}"><img src="${itemIcon(id)}">${p.cargo.count(id)}</span>`);
+    res.push(`<span title="Crew aboard / bunks">👥 ${g.mainCrew().length}/${g.crewCap()}</span>`);
     setHTML(this.res, res.join(''));
-    // Badges
-    const perkPending = g.crew.some((c) => c.draft);
-    this.badges.get('crew')!.style.display = perkPending ? 'block' : 'none';
-    this.badges.get('crew')!.textContent = perkPending ? '★' : '';
-    const spare = g.armory.length > 0 && p.hardpoints().some((m) => !m.weapon);
-    this.badges.get('base')!.style.display = spare ? 'block' : 'none';
-    this.badges.get('base')!.textContent = spare ? '!' : '';
-    const idle = g.mode === 'world' && (!g.research.military || (!g.research.personnel && p.stats.lab > 0));
-    const canStart = idle && this.canStartResearch(g);
-    this.badges.get('tech')!.style.display = canStart ? 'block' : 'none';
-    this.badges.get('tech')!.textContent = canStart ? '+' : '';
+    // Menu buttons (features appear as you level)
+    for (const m of MENU) {
+      const b = this.badges.get(m.key)!;
+      const f = m.feature ? FEATURES.find((k) => k.key === m.feature) : undefined;
+      b.style.display = !f || c.level >= f.level || (m.key === 'arsenal' && g.armory.length > 0) ? '' : 'none';
+      b.classList.toggle('on', m.key === 'base' && village);
+    }
+    const badge = (k: string, txt: string): void => {
+      const s = this.badges.get(k)!.querySelector('.badge') as HTMLElement;
+      s.style.display = txt ? 'block' : 'none';
+      s.textContent = txt;
+    };
+    badge('crew', g.crew.some((k) => k.draft) ? '★' : '');
+    const upCard = Object.entries(g.cards).some(([id, k]) => CARDS[id] && k.level < 10 && k.shards >= Math.ceil(k.level * [4, 3, 2, 2, 1, 1][CARDS[id].rarity]));
+    badge('cards', g.packs.length ? String(g.packs.length) : upCard ? '⬆' : '');
+    this.workT -= dt;
+    if (this.workT <= 0) {
+      this.workT = 1;
+      this.work = g.mode === 'world' && builderWork(g);
+    }
+    badge('base', this.work ? '🔨' : '');
     const pts = [...g.armory, ...p.weapons().map((m) => m.weapon!)].some((w) => (w.tree ?? []).length < treePoints(w));
-    this.badges.get('arsenal')!.style.display = pts ? 'block' : 'none';
-    this.badges.get('arsenal')!.textContent = pts ? '★' : '';
-    const unbound = p.modules.some((m) => MODULES[m.key].active && !g.activeSlots.includes(m.id)) && g.activeSlots.includes(0);
-    this.badges.get('abilities')!.style.display = unbound ? 'block' : 'none';
-    this.badges.get('abilities')!.textContent = unbound ? '!' : '';
+    const spare = g.armory.length > 0 && p.hardpoints().some((m) => !m.weapon && m.built);
+    badge('arsenal', spare ? '!' : pts ? '★' : '');
     // Boss bar
-    const titan = g.enemies.find((e) => e.titan && Math.hypot(e.x - p.x, e.y - p.y) < 60);
+    const titan = g.enemies.find((e) => e.titan && Math.hypot(e.x - p.x, e.y - p.y) < 70);
     if (titan) {
       this.boss.style.display = 'block';
       setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${esc(titan.kind.replace('titan_', '').toUpperCase())} TITAN</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
     } else this.boss.style.display = 'none';
+    // Level banner timer
+    if (this.lvlT > 0) {
+      this.lvlT -= dt;
+      if (this.lvlT <= 0) this.lvlBanner.style.display = 'none';
+    }
     // Buffs
     const b: string[] = [];
     if (g.runeBuff) b.push(`<span style="color:${RUNE_INFO[g.runeBuff.rune].color}">◆ ${RUNE_INFO[g.runeBuff.rune].name} ${Math.ceil(g.runeBuff.t)}s</span>`);
-    for (const [k, v] of p.buffs) {
-      const names: Record<string, string> = { barrage: 'Barrage', nitro: 'Nitro', invuln: 'Invulnerable', deadeye: 'Deadeye', meltdown: 'Meltdown', armorUp: 'Nanites', barrier: 'Barrier', harvestUp: 'Fast Harvest', stun: 'STUNNED', chill: 'Slowed', regen: 'Repairing', dome: 'Aegis Dome', smoke: 'Smoke Screen', blitz: 'Blitz' };
-      if (names[k]) b.push(`<span>${names[k]} ${Math.ceil(v.t)}s</span>`);
-    }
+    const names: Record<string, string> = {
+      barrage: 'Barrage', nitro: 'Nitro', invuln: 'Invulnerable', deadeye: 'Deadeye', meltdown: 'Meltdown', armorUp: 'Nanites', barrier: 'Barrier', harvestUp: 'Fast Harvest',
+      stun: 'STUNNED', chill: 'Slowed', regen: 'Repairing', dome: 'Aegis Dome', smoke: 'Smoke Screen', blitz: 'Blitz', frenzy: 'Salvage Frenzy', soul: 'Soul Harvest', scholar: 'Scholar',
+    };
+    for (const [k, v] of p.buffs) if (names[k]) b.push(`<span>${names[k]} ${Math.ceil(v.t)}s</span>`);
     if (g.chestBonus > 0) b.push('<span style="color:#ffd23f">Next chest +1 rarity</span>');
     if (g.timeStop > 0) b.push(`<span style="color:#18ffff">TIME STOP ${Math.ceil(g.timeStop)}s</span>`);
     if (g.orbital) b.push(`<span style="color:#ff1744">ORBITAL LASER ${Math.ceil(g.orbital.t)}s · steer with the mouse</span>`);
     if (g.storm) b.push(`<span style="color:#82b1ff">CATACLYSM ${Math.ceil(g.storm.t)}s</span>`);
     this.tint.style.display = g.timeStop > 0 ? 'block' : 'none';
     setHTML(this.buffs, b.join(''));
-    // Hazard
     if (g.hazardWarn) {
       this.hazard.style.display = 'block';
       setText(this.hazard, `⚠ ${g.hazardWarn}`);
     } else this.hazard.style.display = 'none';
-    // Command bar
-    const ch = chassisDef(p.chassis);
-    setHTML(this.tankInfo, `<b>${esc(ch.name)}</b> <span>${DRIVE_INFO[p.drive].name} · ${p.stats.topSpeed.toFixed(1)} spd · ${Math.round(p.stats.armor * 100)}% armor${p.stats.powerRatio < 1 ? ' · <i class="bad">LOW POWER</i>' : ''}</span>`);
+    // Fortress
+    const ch = chassisForCC(p.stats.cc);
+    setHTML(this.tankInfo, `<b>${esc(ch.name)}</b> <span>CC L${p.stats.cc} · ${p.stats.topSpeed.toFixed(1)} spd · ${Math.round(p.stats.armor * 100)}% armor${p.stats.powerRatio < 1 ? ' · <i class="bad">LOW POWER</i>' : ''}</span>`);
     this.hpFill.style.width = `${(p.hp / p.stats.maxHp) * 100}%`;
     const barrier = p.buff('barrier')?.v ?? 0;
     this.shFill.style.width = `${Math.min(100, ((p.shield + barrier) / p.stats.maxHp) * 100)}%`;
     setText(this.hpText, `${Math.ceil(p.hp)} / ${p.stats.maxHp}${p.stats.shield ? `  ⛨ ${Math.ceil(p.shield)}` : ''}${barrier > 0 ? `  +${Math.ceil(barrier)}` : ''}`);
-    const off = g.officers();
-    const seats = g.officerSeats();
-    for (let i = 0; i < OFFICER_SLOTS; i++) {
-      const s = this.slots[i];
-      const c = off[i];
-      const img = s.children[0] as HTMLDivElement, por = s.children[1] as HTMLDivElement, cd = s.children[2] as HTMLDivElement, tm = s.children[3] as HTMLDivElement;
-      s.classList.toggle('locked', i >= seats);
-      if (!c) {
-        s.classList.add('empty');
-        if (i >= seats) {
-          setHTML(img, '<span class="lock">🔒</span>');
-          setHTML(por, '');
-          cd.style.background = 'none';
-          setText(tm, '');
-          continue;
-        }
-        setHTML(img, '');
-        setHTML(por, '');
-        cd.style.background = 'none';
-        setText(tm, '');
-        continue;
-      }
-      s.classList.remove('empty');
-      setHTML(img, `<img src="${abilityIcon(c)}">`);
-      setHTML(por, `<img src="${portrait(c)}">`);
-      s.style.borderColor = RARITIES[c.rarity].color;
-      const max = abilityCooldown(c, p.crew.cdr);
-      if (c.injured > 0) {
-        cd.style.background = 'rgba(120,0,0,0.65)';
-        setText(tm, '✚');
-      } else if (c.cd > 0) {
-        const pct = (c.cd / max) * 100;
-        cd.style.background = `conic-gradient(rgba(5,5,10,0.72) ${pct}%, transparent ${pct}%)`;
-        setText(tm, c.cd >= 10 ? String(Math.ceil(c.cd)) : c.cd.toFixed(1));
-      } else {
-        cd.style.background = 'none';
-        setText(tm, '');
-      }
-      s.classList.toggle('ready', c.cd <= 0 && c.injured <= 0);
-    }
-    this.updateArsenalBar(g);
-    this.updatePerks(g);
-    this.updateResearch(g);
-    // Weapons row (rebuilt when layout changes)
-    const ws = p.weapons();
-    const key = ws.map((m) => `${m.id}:${m.weapon!.uid}:${m.mode}`).join(',') + `|${g.autoFire}`;
-    if (key !== this.weaponsKey) {
-      this.weaponsKey = key;
-      this.weaponsRow.innerHTML = '';
-      for (const m of ws) {
-        const w = m.weapon!;
-        const d = WEAPONS[w.key];
-        const auto = g.autoFire && m.mode === 'auto';
-        const el = h('div', `wpn ${auto ? 'auto' : 'manual'}`, `<img src="${weaponIcon(w.key, w.rarity)}"><span>${auto ? 'AUTO' : 'MAN'}</span><i class="wst" style="color:${RARITIES[w.rarity].color}">${w.rarity + 1}★</i>`);
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          selectArsenalWeapon(w.uid);
-          this.act.openPanel('arsenal', 'weapons');
-        });
-        el.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.act.toggleWeapon(m.id);
-        });
-        el.addEventListener('mouseenter', () => this.act.hoverWeapon(m.stats?.range ?? 0));
-        el.addEventListener('mouseleave', () => this.act.hoverWeapon(0));
-        tooltip(el, () => `<h4 style="color:${RARITIES[w.rarity].color}">${esc(d.name)}</h4><div>${starsHTML(w)}</div><div>${weaponSummary(w, m.stats ?? undefined)}</div><div>DPS score ${weaponScore(w)} · ${(w.tree ?? []).length}/${treePoints(w)} tree points</div><div class="d">Click: open in ARSENAL (forge, upgrade tree) · Right-click: switch ${auto ? 'to MANUAL' : 'to AUTO'}.</div>`);
-        this.weaponsRow.appendChild(el);
-      }
-      if (!ws.length) this.weaponsRow.innerHTML = '<div class="nowpn">No weapons mounted — BASE > Armory</div>';
-    }
-    // Weapon cooldown flashes
-    const wels = this.weaponsRow.children;
-    for (let i = 0; i < ws.length && i < wels.length; i++) (wels[i] as HTMLElement).classList.toggle('firing', ws[i].recoil > 0.6);
     setHTML(this.kitBtn, `<img src="${itemIcon('repair_kit')}"><span class="k">5</span><span class="n">${p.cargo.count('repair_kit')}</span>`);
-    setHTML(this.autoBtn, `<b>${g.autoFire ? 'AUTO' : 'MANUAL'}</b><small>FIRE · Y</small>`);
-    this.autoBtn.classList.toggle('off', !g.autoFire);
-    // Outrider card
+    this.updateHand(g);
+    this.updateSquads(g);
+    this.updatePerks(g);
     this.updateRider(g);
-    // Death
     if (p.dead && g.mode === 'world') {
       this.death.style.display = 'flex';
-      setHTML(this.death, `<div><h2>FORTRESS DISABLED</h2><p>Your crew is towing it back to camp... ${Math.ceil(g.respawnIn)}</p><p class="d">You lost a quarter of your scrap. Some crew were wounded.</p></div>`);
+      setHTML(this.death, `<div><h2>FORTRESS DISABLED</h2><p>Your crew is towing it back to camp... ${Math.ceil(g.respawnIn)}</p><p class="d">It comes back fully repaired. You dropped a quarter of your scrap.</p></div>`);
     } else this.death.style.display = 'none';
   }
 
-  private canStartResearch(g: Game): boolean {
-    for (const n of TECH) {
-      if (!canResearch(g.tech, n)) continue;
-      if (g.research[n.tree]) continue;
-      if (n.tree === 'personnel' && g.player.stats.lab <= 0) continue;
-      if (g.canPay(n.cost)) return true;
+  /* ---------------- cards ---------------- */
+
+  private updateHand(g: Game): void {
+    const max = g.maxEnergy();
+    const e = g.energy;
+    this.energyFill.style.width = `${(e / max) * 100}%`;
+    setText(this.energyNum, String(Math.floor(e)));
+    const ticks = this.energy.querySelectorAll('.en-tick');
+    ticks.forEach((t, i) => ((t as HTMLElement).style.left = `${((i + 1) / max) * 100}%`));
+    for (let i = 0; i < ticks.length; i++) (ticks[i] as HTMLElement).style.display = i + 1 < max ? '' : 'none';
+    for (let i = 0; i < HAND_SIZE; i++) {
+      const id = g.hand[i] ?? '';
+      const s = this.handSlots[i];
+      const key = `${id}:${g.cardLevel(id)}:${g.cardCost(id)}`;
+      if (key !== this.handKeys[i]) {
+        this.handKeys[i] = key;
+        s.innerHTML = '';
+        if (id) {
+          const el = cardEl(g, id, { mini: true });
+          el.appendChild(h('div', 'hk', String(i + 1)));
+          el.appendChild(h('div', 'mc-need'));
+          s.appendChild(el);
+          s.classList.remove('drawn');
+          void s.offsetWidth;
+          s.classList.add('drawn');
+        }
+      }
+      const block = id ? cardBlock(g, i) : 'empty';
+      const cost = g.cardCost(id);
+      s.classList.toggle('ready', !block);
+      s.classList.toggle('armed', this.armed === i);
+      const need = s.querySelector('.mc-need') as HTMLElement | null;
+      if (need) need.style.height = block && cost > 0 ? `${Math.max(0, 1 - e / cost) * 100}%` : '0';
     }
-    return false;
+    const nx = g.queue[0];
+    setHTML(this.nextCard, nx ? `<small>NEXT</small>${cardEl(g, nx, { mini: true }).outerHTML}` : '');
+    this.packBtn.style.display = g.packs.length ? 'block' : 'none';
+    if (g.packs.length) setHTML(this.packBtn, `▣ ${g.packs.length} CARD PACK${g.packs.length > 1 ? 'S' : ''} <b>OPEN</b>`);
   }
 
-  /** Ultimate button and actives 1-4. */
-  private updateArsenalBar(g: Game): void {
-    const p = g.player;
-    const u = armedUlt(g);
-    const ring = this.ultBtn.children[0] as HTMLDivElement, img = this.ultBtn.children[1] as HTMLDivElement, pct = this.ultBtn.children[2] as HTMLDivElement;
-    if (u) {
-      const k = Math.floor(g.ultCharge * 100);
-      ring.style.background = `conic-gradient(${u.def.color} ${k}%, rgba(20,20,28,0.9) ${k}%)`;
-      setHTML(img, `<img src="${moduleIcon(u.m.key)}">`);
-      setText(pct, k >= 100 ? 'READY' : `${k}%`);
-      this.ultBtn.classList.toggle('ready', k >= 100);
-      this.ultBtn.classList.remove('empty');
-    } else {
-      ring.style.background = 'rgba(20,20,28,0.9)';
-      setHTML(img, '<span class="lock">?</span>');
-      setText(pct, 'ULT');
-      this.ultBtn.classList.remove('ready');
-      this.ultBtn.classList.add('empty');
+  /* ---------------- squads ---------------- */
+
+  private updateSquads(g: Game): void {
+    const types = activeSquads(g);
+    const key = types.map((t) => {
+      const b = squadBuilding(g, t);
+      return `${t}:${g.squads[t]?.order}:${squadUnits(g, t).length}:${b?.lvl}:${squadStatus(g, t)}`;
+    }).join('|') + `|${g.mode}`;
+    if (key === this.squadKey) return;
+    this.squadKey = key;
+    this.squads.innerHTML = '';
+    if (!types.length || g.mode !== 'world') {
+      this.squads.style.display = 'none';
+      return;
     }
-    for (let i = 0; i < ACTIVE_SLOTS; i++) {
-      const s = this.actSlots[i];
-      const m = g.activeSlots[i] ? p.moduleById(g.activeSlots[i]) : undefined;
-      const img2 = s.children[0] as HTMLDivElement, cd = s.children[1] as HTMLDivElement, tm = s.children[2] as HTMLDivElement;
-      if (!m) {
-        s.classList.add('empty');
-        s.classList.remove('ready');
-        setHTML(img2, '');
-        cd.style.background = 'none';
-        setText(tm, '');
-        continue;
-      }
-      s.classList.remove('empty');
-      const a = ACTIVES[MODULES[m.key].active!];
-      setHTML(img2, `<img src="${moduleIcon(m.key)}">`);
-      s.style.borderColor = a.color;
-      const max = activeCooldown(g, a.key);
-      if (m.cd > 0) {
-        const pc = (m.cd / max) * 100;
-        cd.style.background = `conic-gradient(rgba(5,5,10,0.72) ${pc}%, transparent ${pc}%)`;
-        setText(tm, m.cd >= 10 ? String(Math.ceil(m.cd)) : m.cd.toFixed(1));
-      } else {
-        cd.style.background = 'none';
-        setText(tm, '');
-      }
-      s.classList.toggle('ready', m.cd <= 0);
+    this.squads.style.display = 'flex';
+    for (const t of types) {
+      const d = SQUADS[t];
+      const b = squadBuilding(g, t)!;
+      const sq = g.squads[t];
+      const el = h('div', `sq-chip ${sq?.order ?? ''}`);
+      el.style.borderColor = d.color;
+      el.innerHTML = `<div class="sq-top"><img src="${moduleIcon(d.building)}"><div><b style="color:${d.color}">${esc(d.name)}</b><small>${squadUnits(g, t).length}/${squadSize(d, b.lvl)} · ${esc(squadStatus(g, t))}</small></div></div>`;
+      const row = h('div', 'sq-btns');
+      row.appendChild(button('⌂', () => setSquadOrder(g, t, 'follow'), `small ${sq?.order === 'follow' ? 'on' : ''}`));
+      if (d.canScavenge) row.appendChild(button('SCAVENGE', () => setSquadOrder(g, t, 'scavenge'), `small ${sq?.order === 'scavenge' ? 'on' : ''}`));
+      row.appendChild(h('span', 'sq-drag', '⚑ drag to guard'));
+      el.appendChild(row);
+      this.bindSquadDrag(el, t);
+      tooltip(el, () => `<h4 style="color:${d.color}">${esc(d.name)}</h4><div>${esc(d.desc)}</div><div class="d">⌂ follow the fortress · drag the badge onto the map to guard that spot${d.canScavenge ? ' · SCAVENGE: collect loot drops and harvest nodes ahead, then bring the haul home' : ''}.<br>Upgrade the ${esc(MODULES[d.building].name)} for more and stronger units.</div>`);
+      this.squads.appendChild(el);
     }
   }
 
-  /** Clickable level-up perk cards on the left side of the screen. */
+  /* ---------------- tracker & jobs ---------------- */
+
+  private updateTracker(g: Game): void {
+    const t = this.trackInfo;
+    if (!t || g.mode !== 'world') {
+      this.track.style.display = 'none';
+      return;
+    }
+    this.track.style.display = 'block';
+    const rows = t.needs.map((n) => `<div class="tr-n ${n.have >= n.need ? 'ok' : ''}">${n.id === 'shards' ? '<span class="tr-card">▣</span>' : `<img src="${itemIcon(n.id)}">`}<span>${esc(n.name)}</span><b>${n.have}/${n.need}</b></div>`).join('');
+    setHTML(this.track, `<div class="tr-h">◎ TRACKING <span class="tr-x" title="Stop tracking">✕</span></div><div class="tr-t">${esc(t.title)}</div>${rows}<div class="tr-hint ${t.ready ? 'good' : ''}">${esc(t.hint)}</div><div class="tr-c">${t.ready ? 'Click to open your base' : t.target && t.target.kind !== 'base' ? 'Follow the yellow marker' : ''}</div>`);
+    this.track.classList.toggle('ready', t.ready);
+  }
+
+  private updateJobs(g: Game): void {
+    if (g.mode !== 'world') {
+      this.jobs.style.display = 'none';
+      return;
+    }
+    const lines: string[] = [];
+    for (const j of g.builds) {
+      const m = g.player.moduleById(j.modId);
+      if (!m) continue;
+      lines.push(`<div class="rw" data-open="base"><small>${j.kind === 'build' ? '🔨 BUILDING' : `⬆ LEVEL ${j.to}`}</small> ${esc(MODULES[m.key].name)}<div class="bar"><div style="width:${(j.t / j.total) * 100}%"></div></div><small>${fmtTime(j.total - j.t)}</small></div>`);
+    }
+    const free = g.freeBuilders();
+    if (free > 0 && !this.village) lines.push(`<div class="rw idle" data-open="base"><small>🔨 ${free} builder${free > 1 ? 's' : ''} free</small> tap to build or upgrade</div>`);
+    const job = g.forgeJob;
+    if (job) {
+      const w = [...g.armory, ...g.player.weapons().map((m) => m.weapon!)].find((k) => k.uid === job.uid);
+      const sp = forgeSpeed(g);
+      lines.push(`<div class="rw forge" data-open="arsenal" data-tab="weapons"><small>FORGE</small> ${esc(w ? WEAPONS[w.key].name : '?')} → ${job.to + 1}★<div class="bar"><div style="width:${(job.t / job.total) * 100}%"></div></div><small>${sp > 0 ? fmtTime((job.total - job.t) / sp) : 'no forge'}</small></div>`);
+    }
+    const html = lines.join('');
+    setHTML(this.jobs, html);
+    this.jobs.style.display = html ? 'block' : 'none';
+  }
+
+  /* ---------------- crew perks ---------------- */
+
   private updatePerks(g: Game): void {
     const c = g.mode === 'world' ? g.crew.find((k) => k.draft) : undefined;
     const pending = g.crew.filter((k) => k.draft).length;
@@ -473,7 +583,7 @@ export class Hud {
       return;
     }
     this.perkBox.style.display = 'block';
-    this.perkBox.appendChild(h('div', 'pk-head', `<img src="${portrait(c)}"><div><b>LEVEL UP!</b><br>${esc(c.name)} <small>L${c.level} ${esc(ROLES[c.role].name)}</small><br><small>Click a perk to learn it${pending > 1 ? ` · ${pending - 1} more waiting` : ''}</small></div>`));
+    this.perkBox.appendChild(h('div', 'pk-head', `<img src="${portrait(c)}"><div><b>CREW LEVEL UP!</b><br>${esc(c.name)} <small>L${c.level} ${esc(ROLES[c.role].name)}</small><br><small>Click a perk${pending > 1 ? ` · ${pending - 1} more waiting` : ''}</small></div>`));
     c.draft!.forEach((pk, i) => {
       const d = PERK_BY_ID.get(pk.id);
       if (!d) return;
@@ -489,35 +599,15 @@ export class Hud {
     });
   }
 
-  /** Research and forge progress under the objective. */
-  private updateResearch(g: Game): void {
-    if (g.mode !== 'world') {
-      this.resBox.style.display = 'none';
-      return;
-    }
-    const lines: string[] = [];
-    for (const r of researchStatus(g)) {
-      lines.push(`<div class="rw" data-open="tech" data-tab="${r.kind}"><small>${r.kind === 'military' ? 'RESEARCH' : 'PERSONNEL'}</small> ${esc(r.name)}<div class="bar"><div style="width:${r.pct * 100}%"></div></div><small>${Math.ceil(r.left)}s</small></div>`);
-    }
-    const job = g.forgeJob;
-    if (job) {
-      const w = [...g.armory, ...g.player.weapons().map((m) => m.weapon!)].find((k) => k.uid === job.uid);
-      const sp = forgeSpeed(g);
-      lines.push(`<div class="rw forge" data-open="arsenal" data-tab="weapons"><small>FORGE</small> ${esc(w ? WEAPONS[w.key].name : '?')} → ${job.to + 1}★<div class="bar"><div style="width:${(job.t / job.total) * 100}%"></div></div><small>${sp > 0 ? `${Math.ceil((job.total - job.t) / sp)}s` : 'no forge'}</small></div>`);
-    }
-    if (!g.research.military) lines.push(`<div class="rw idle" data-open="tech" data-tab="military"><small>RESEARCH</small> idle: click to pick a project</div>`);
-    const html = lines.join('');
-    setHTML(this.resBox, html);
-    this.resBox.style.display = html ? 'block' : 'none';
-  }
+  /* ---------------- outrider ---------------- */
 
   private riderKey = '';
 
   private updateRider(g: Game): void {
     const t = g.outrider;
     let key = '';
-    if (g.mode !== 'world') key = 'none';
-    else if (!g.outriderUnlocked()) key = `locked:${g.mainCrew().length}`;
+    if (g.mode !== 'world' || g.commander.level < 12) key = 'none';
+    else if (!g.outriderUnlocked()) key = 'none';
     else if (g.outriderLevel === 0 || !t) key = `build:${g.outriderLevel}:${Math.ceil(g.outriderRebuild)}:${g.player.stats.garage}`;
     else key = `live:${g.outriderOrder.mode}:${'phase' in g.outriderOrder ? g.outriderOrder.phase : ''}:${Math.round((t.hp / t.stats.maxHp) * 20)}:${g.outriderCrew().length}:${t.cargo.stacks().length}`;
     if (key === this.riderKey) return;
@@ -528,12 +618,8 @@ export class Hud {
       return;
     }
     this.rider.style.display = 'block';
-    if (key.startsWith('locked')) {
-      this.rider.innerHTML = `<div class="rt">OUTRIDER <small>locked</small></div><div class="rd">Mini tank unlocks at <b>15 crew</b> aboard (${g.mainCrew().length}/15).</div>`;
-      return;
-    }
     if (key.startsWith('build')) {
-      this.rider.innerHTML = `<div class="rt">OUTRIDER</div><div class="rd">${g.player.stats.garage ? g.outriderRebuild > 0 ? `Rebuilding... ${Math.ceil(g.outriderRebuild)}s` : 'Ready to launch from the Garage.' : 'Build a <b>Garage</b> on your base first.'}</div>`;
+      this.rider.innerHTML = `<div class="rt">OUTRIDER</div><div class="rd">${g.player.stats.garage ? g.outriderRebuild > 0 ? `Rebuilding... ${Math.ceil(g.outriderRebuild)}s` : 'Ready to launch from the Garage.' : 'Build a <b>Garage</b> first.'}</div>`;
       if (g.player.stats.garage && g.outriderRebuild <= 0) {
         const b = button(g.outriderLevel ? 'Rebuild' : 'Launch', () => this.act.outrider('launch'));
         tooltip(b, () => `Cost: ${Object.entries(OUTRIDER_COST).map(([k, n]) => `${n} ${getItem(k).name}`).join(', ')}`);
@@ -543,7 +629,7 @@ export class Hud {
     }
     const o = g.outriderOrder;
     const status = o.mode === 'expedition' ? `Expedition: ${o.phase}` : o.mode === 'hold' ? 'Holding position' : 'Following';
-    this.rider.innerHTML = `<div class="rt">OUTRIDER <small>${esc(status)}</small></div><div class="hp-mini"><div style="width:${(t!.hp / t!.stats.maxHp) * 100}%"></div></div><div class="rd">${g.outriderCrew().length}/${g.outriderCap()} side crew · hold ${t!.cargo.stacks().reduce((s, k) => s + k.n, 0)}</div>`;
+    this.rider.innerHTML = `<div class="rt">OUTRIDER <small>${esc(status)}</small></div><div class="hp-mini"><div style="width:${(t!.hp / t!.stats.maxHp) * 100}%"></div></div>`;
     const row = h('div', 'rbtns');
     row.append(button('Follow', () => this.act.outrider('follow')), button('Hold', () => this.act.outrider('hold')), button('Send (J)', () => this.act.outrider('send')));
     this.rider.appendChild(row);

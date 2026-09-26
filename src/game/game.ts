@@ -1,16 +1,18 @@
-import { ACTIVE_SLOTS, BASE_OFFICER_SEATS, CENTER, MAP_SIZE, MAX_BASE_CREW, OFFICER_SLOTS } from '../shared/constants';
+import { CENTER, CHUNK, MAP_SIZE, MAX_BASE_CREW } from '../shared/constants';
 import { canAfford, payCost, type Cost, type Stack } from '../shared/inventory';
 import { getItem } from '../shared/items';
 import { rollLoot } from '../shared/loot';
 import type { GameMap } from '../shared/map';
-import { generateWorld, threatAt, type RuneKind, type WorldGen } from '../shared/mapgen';
+import { generateWorld, threatAt, type Prop, type RuneKind, type WorldGen } from '../shared/mapgen';
 import { RNG } from '../shared/rng';
 import type { WeaponItem } from '../shared/weapons';
+import { BASE_MAX_ENERGY, CARDS, DECK_SIZE, ENERGY_REGEN, HAND_SIZE, levelPower, MAX_CARD_LEVEL, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
 import { computeCrewBonus, giveXp, makeRecruit, type CrewMember } from './crew';
 import { eid, type Ally, type ChestKind, type Enemy, type FloatText, type Pickup, type Projectile, type Reward, type Telegraph, type Zone } from './entities';
 import { ENEMIES } from './enemyDefs';
-import { MODULES } from './defs';
-import { crewFx, emptyCrewFx, freeTech, type CrewFx, type TreeKind } from './tech';
+import { builderCount, levelBonus, levelRoad, MAX_COMMANDER_LEVEL, relicSlots, techsForLevel, xpToNext, type LevelReward } from './progress';
+import type { SquadState, SquadType } from './squads';
+import { crewFx, emptyCrewFx, type CrewFx } from './tech';
 import { Tank } from './tank';
 import { buildStarterTank, starterCrew } from './templates';
 
@@ -29,14 +31,22 @@ export type FxEvent =
   | { t: 'strike'; x: number; y: number; color: string }
   | { t: 'teleport'; x: number; y: number };
 
-export interface ResearchJob {
-  id: string;
+/** A builder putting up a new building or upgrading one (Clash-of-Clans style, runs in real time). */
+export interface BuildJob {
+  modId: number;
+  /** 'build': new building under construction. 'upgrade': going to level `to`. */
+  kind: 'build' | 'upgrade';
+  to: number;
   t: number;
   total: number;
-  /** Paid up front; refunded on cancel. */
-  cost?: Record<string, number>;
+  cost: Record<string, number>;
 }
-export type TreeKindJob = ResearchJob;
+
+/** What the objective tracker is following. */
+export type Track =
+  | { kind: 'build'; key: string }
+  | { kind: 'upgrade'; modId: number }
+  | { kind: 'card'; id: string };
 
 export interface ForgeJob {
   uid: number;
@@ -50,6 +60,7 @@ export interface GameHooks {
   toast(text: string, color?: string): void;
   sound(name: string, x?: number, y?: number, vol?: number): void;
   chest(kind: ChestKind, rewards: Reward[], choice: boolean): void;
+  levelUp(reward: LevelReward): void;
   died(): void;
   enterDeadZone(): void;
 }
@@ -100,6 +111,7 @@ export class Game {
   crew: CrewMember[];
   recruits: CrewMember[] = [];
   armory: WeaponItem[] = [];
+  /** Unlocks earned on the Level Road (weapon families, crew upgrades, drives...). */
   tech: Set<string>;
   explored: Uint8Array;
   visible: Uint8Array;
@@ -119,17 +131,13 @@ export class Game {
   stats: GameStats = { kills: 0, titans: 0, raiders: 0, outposts: 0, sites: 0, runes: 0, chests: 0, harvested: 0, deaths: 0, time: 0 };
   objective = 0;
   objectiveCounters: Record<string, number> = {};
-  /** World point under the mouse. */
+  /** World point under the mouse (steers the Orbital Laser). */
   aim = { x: 0, y: 0 };
-  /** Manual weapons fire while this is held. */
-  fireHeld = false;
-  /** Global auto-fire toggle. When off, every weapon is manual. */
-  autoFire = true;
   respawnIn = 0;
   deadZoneMode = false;
-  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0 };
+  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0 };
   hazardWarn: string | null = null;
-  hooks: GameHooks = { toast: () => {}, sound: () => {}, chest: () => {}, died: () => {}, enterDeadZone: () => {} };
+  hooks: GameHooks = { toast: () => {}, sound: () => {}, chest: () => {}, levelUp: () => {}, died: () => {}, enterDeadZone: () => {} };
   revealAll = false;
   nextTitanName = 0;
   onPlayerDestroyed?: () => void;
@@ -140,28 +148,49 @@ export class Game {
   /** Dead Zone extraction points and progress. */
   extracts: { x: number; y: number; r: number }[] = [];
   extractProgress = 0;
-  /** Timed research: one military and one personnel project at a time. */
-  research: Record<TreeKind, ResearchJob | null> = { military: null, personnel: null };
   forgeJob: ForgeJob | null = null;
-  /** Deck module ids bound to keys 1-4 (0 = empty). */
-  activeSlots: number[] = new Array(ACTIVE_SLOTS).fill(0);
-  /** Deck module id of the armed ultimate (key R), and its charge 0-1. */
-  ultModule = 0;
-  ultCharge = 0;
-  /** Damage dealt that has not been turned into ultimate charge yet. */
-  ultBank = 0;
   /** Seconds of Time Stop left. */
   timeStop = 0;
   /** Orbital laser being steered by the cursor. */
   orbital: { x: number; y: number; t: number; dps: number } | null = null;
   /** Cataclysm storm around the fortress. */
   storm: { t: number; P: number; cd: number } | null = null;
-  /** Personnel research effects. */
+  /** Level Road crew upgrades. */
   crewFx: CrewFx = emptyCrewFx();
   /** WASD drive input (screen-relative unit vector, or tank-style throttle/turn). */
   driveInput = { x: 0, y: 0, active: false };
   /** Tank-style controls: W/S throttle, A/D turn. Off = screen-relative. */
   tankControls = false;
+
+  /* ---------------- Commander (XP and the Level Road) ---------------- */
+  commander = { level: 1, xp: 0 };
+
+  /* ---------------- Battle cards ---------------- */
+  /** Your collection: card id -> level and spare duplicates. */
+  cards: Record<string, OwnedCard> = {};
+  /** The 8 cards you fight with. */
+  deck: string[] = [...STARTER_DECK];
+  /** Slotted relics (permanent cards). */
+  relics: string[] = [];
+  /** The 4 cards you can play right now, and the rest of the cycle. */
+  hand: string[] = [];
+  queue: string[] = [];
+  energy = 5;
+  /** Unopened card packs. */
+  packs: PackKind[] = [];
+  /** Seconds until Phoenix Feather can save you again. */
+  phoenixCd = 0;
+
+  /* ---------------- Base (village) ---------------- */
+  builds: BuildJob[] = [];
+  /** Squad orders, per squad building type. Units live in `allies`. */
+  squads: Partial<Record<SquadType, SquadState>> = {};
+  /** The upgrade the objective tracker follows. */
+  tracked: Track | null = null;
+  /** Terrain chunks the fortress flattened something in (renderer rebuilds them). */
+  dirtyChunks = new Set<number>();
+  navDirty = false;
+  private propIndex: Map<number, Prop[]> | null = null;
 
   constructor(seed: number, gen?: WorldGen) {
     this.gen = gen ?? generateWorld(seed);
@@ -169,16 +198,142 @@ export class Game {
     this.rng = new RNG(seed ^ 0x9e3779b9);
     this.player = buildStarterTank(this.gen.spawn.x, this.gen.spawn.y);
     this.crew = starterCrew();
-    this.tech = freeTech();
+    this.tech = new Set(techsForLevel(1));
+    for (const id of STARTER_DECK) this.cards[id] = { level: 1, shards: 0 };
     this.explored = new Uint8Array(MAP_SIZE * MAP_SIZE);
     this.visible = new Uint8Array(MAP_SIZE * MAP_SIZE);
     this.applyCrew();
     this.player.hp = this.player.stats.maxHp;
     this.rollRecruits();
+    this.resetHand();
   }
 
   get seed(): number {
     return this.gen.seed;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Commander XP                                                      */
+  /* ---------------------------------------------------------------- */
+
+  /** Kills, outposts, loot areas and runes give XP to the commander and the crew. */
+  gainXp(amount: number, crewShare = 1): void {
+    if (amount <= 0 || this.mode !== 'world') {
+      if (amount > 0 && crewShare > 0) this.crewXp(amount * crewShare);
+      return;
+    }
+    const scholar = this.player.buff('scholar');
+    const mult = 1 + this.player.crew.cmdXp + (scholar ? scholar.v : 0);
+    const c = this.commander;
+    if (c.level < MAX_COMMANDER_LEVEL) {
+      c.xp += amount * mult;
+      while (c.level < MAX_COMMANDER_LEVEL && c.xp >= xpToNext(c.level)) {
+        c.xp -= xpToNext(c.level);
+        c.level++;
+        this.onLevelUp(c.level);
+      }
+      if (c.level >= MAX_COMMANDER_LEVEL) c.xp = 0;
+    }
+    if (crewShare > 0) this.crewXp(amount * crewShare);
+  }
+
+  private onLevelUp(level: number): void {
+    const reward = levelRoad()[level - 1];
+    for (const id of techsForLevel(level)) this.tech.add(id);
+    this.packs.push(reward.pack);
+    this.applyCrew();
+    // Level ups fully repair the fortress: a small reward that feels good mid-fight.
+    this.player.hp = this.player.stats.maxHp;
+    this.hooks.sound('levelup');
+    this.hooks.levelUp(reward);
+  }
+
+  /** Progress to the next commander level, 0-1. */
+  xpFrac(): number {
+    const c = this.commander;
+    return c.level >= MAX_COMMANDER_LEVEL ? 1 : c.xp / xpToNext(c.level);
+  }
+
+  builders(): number {
+    return builderCount(this.commander.level);
+  }
+
+  freeBuilders(): number {
+    return this.builders() - this.builds.length;
+  }
+
+  relicSlots(): number {
+    return relicSlots(this.commander.level);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Cards                                                             */
+  /* ---------------------------------------------------------------- */
+
+  cardLevel(id: string): number {
+    return this.cards[id]?.level ?? 0;
+  }
+
+  /** How strong a card is when you play it. */
+  cardPower(id: string): number {
+    return levelPower(this.cardLevel(id) || 1) * (1 + this.player.crew.cardPower + this.player.stats.cards);
+  }
+
+  cardCost(id: string): number {
+    const d = CARDS[id];
+    if (!d || d.type === 'relic') return 0;
+    return Math.max(1, d.cost - this.player.crew.discount);
+  }
+
+  maxEnergy(): number {
+    return BASE_MAX_ENERGY + this.player.crew.maxEnergy;
+  }
+
+  /** Energy per second. */
+  energyRate(): number {
+    const azure = this.runeBuff?.rune === 'azure' ? 0.35 : 0;
+    return ENERGY_REGEN * (1 + this.player.crew.energy + this.player.stats.cards * 2 + azure);
+  }
+
+  /** Adds a card to the collection: new cards arrive at level 1, duplicates become shards. */
+  ownCard(id: string, n = 1): 'new' | 'dupe' {
+    const c = this.cards[id];
+    if (!c) {
+      this.cards[id] = { level: 1, shards: Math.max(0, n - 1) };
+      // Fill an empty deck slot automatically so new players see their new card right away.
+      if (CARDS[id].type !== 'relic' && this.deck.length < DECK_SIZE) {
+        this.deck.push(id);
+        this.queue.push(id);
+      }
+      if (CARDS[id].type === 'relic' && this.relics.length < this.relicSlots()) {
+        this.relics.push(id);
+        this.applyCrew();
+      }
+      return 'new';
+    }
+    if (c.level < MAX_CARD_LEVEL) c.shards += n;
+    return 'dupe';
+  }
+
+  /** Shuffles the deck into a fresh cycle and draws a hand. */
+  resetHand(): void {
+    const deck = this.deck.filter((id) => CARDS[id] && CARDS[id].type !== 'relic' && this.cards[id]);
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(this.rng.next() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    this.hand = deck.slice(0, HAND_SIZE);
+    this.queue = deck.slice(HAND_SIZE);
+  }
+
+  /** The card in hand slot `slot` was played: it goes to the back of the cycle and the next card comes in. */
+  cycleCard(slot: number): void {
+    const id = this.hand[slot];
+    if (!id) return;
+    this.queue.push(id);
+    const next = this.queue.shift();
+    this.hand[slot] = next ?? id;
+    if (!next) this.queue.pop();
   }
 
   /* ---------------------------------------------------------------- */
@@ -191,18 +346,6 @@ export class Game {
 
   outriderCrew(): CrewMember[] {
     return this.crew.filter((c) => c.loc === 'outrider');
-  }
-
-  /** Officer seats unlocked so far (4, plus COMMAND research). */
-  officerSeats(): number {
-    return Math.min(OFFICER_SLOTS, BASE_OFFICER_SEATS + this.crewFx.seats);
-  }
-
-  officers(): (CrewMember | null)[] {
-    const out: (CrewMember | null)[] = new Array(OFFICER_SLOTS).fill(null);
-    const seats = this.officerSeats();
-    for (const c of this.crew) if (c.loc === 'main' && c.officer >= 0 && c.officer < seats) out[c.officer] = c;
-    return out;
   }
 
   /** Perk choices per level-up (3, or 4 with Legendary Leadership). */
@@ -227,22 +370,41 @@ export class Game {
     this.crewFx = crewFx(this.tech);
     const bonus = computeCrewBonus(this.crew);
     const fx = this.crewFx;
-    bonus.dmg += fx.dmg;
+    const lb = levelBonus(this.commander.level);
+    bonus.dmg += fx.dmg + lb.dmg;
     bonus.rate += fx.rate;
     bonus.crit += fx.crit;
     bonus.range += fx.range;
     bonus.recovery += fx.recovery;
     bonus.regen += fx.regen;
-    bonus.hp += fx.hp;
+    bonus.hp += fx.hp + lb.hp;
     bonus.armor += fx.armor;
     bonus.shield += fx.shield;
     bonus.power += fx.power;
     bonus.cargo += fx.cargo;
-    bonus.cdr = Math.min(0.55, bonus.cdr + fx.cdr);
-    bonus.ult += fx.ult;
-    bonus.actcd = Math.min(0.55, bonus.actcd + fx.actcd);
-    bonus.abilityPower += fx.abilityPower;
+    bonus.energy += fx.energy;
+    bonus.cardPower += fx.cardPower;
+    bonus.cmdXp += fx.cmdXp;
     bonus.xp += fx.xp;
+    for (const id of this.relics) {
+      const r = CARDS[id]?.relic;
+      if (!r) continue;
+      const v = r.value * levelPower(this.cardLevel(id) || 1);
+      switch (r.stat) {
+        case 'energy': bonus.energy += v; break;
+        case 'lifesteal': bonus.lifesteal += v; break;
+        case 'loot': bonus.loot += v; break;
+        case 'chestLuck': bonus.chestLuck += v; break;
+        case 'titanDmg': bonus.titanDmg += v; break;
+        case 'cmdXp': bonus.cmdXp += v; break;
+        case 'armor': bonus.armor += v; break;
+        case 'maxEnergy': bonus.maxEnergy += Math.round(v); break;
+        case 'phoenix': bonus.phoenix = Math.max(bonus.phoenix, Math.min(0.6, v)); break;
+        case 'discount': bonus.discount += 1; break;
+        case 'eliteDmg': bonus.eliteDmg += v; break;
+        case 'harvest': bonus.harvest += v; break;
+      }
+    }
     const blitz = this.player.buff('blitz');
     if (blitz) {
       bonus.dmg += blitz.v;
@@ -253,9 +415,8 @@ export class Game {
       bonus.loot += 0.6;
       bonus.harvest += 0.6;
     }
-    if (this.runeBuff?.rune === 'azure') bonus.cdr = Math.min(0.6, bonus.cdr + 0.35);
+    bonus.energy = Math.min(1.2, bonus.energy);
     this.player.applyBonuses(this.tech, bonus);
-    this.syncArsenal();
   }
 
   /** Space for one more crew member somewhere (fortress, then Outrider). */
@@ -270,15 +431,6 @@ export class Game {
     if (!room) return false;
     c.loc = room;
     c.officer = -1;
-    if (room === 'main') {
-      const used = new Set(this.crew.filter((x) => x.loc === 'main' && x.officer >= 0).map((x) => x.officer));
-      for (let i = 0; i < this.officerSeats(); i++) {
-        if (!used.has(i)) {
-          c.officer = i;
-          break;
-        }
-      }
-    }
     this.crew.push(c);
     this.applyCrew();
     return true;
@@ -289,16 +441,14 @@ export class Game {
     const ups: string[] = [];
     for (const c of this.crew) {
       if (c.loc === 'away') continue;
-      const mult = c.officer >= 0 ? 1.5 : 1;
-      if (giveXp(c, amount * mult * bonus, () => this.rng.next(), this.draftChoices())) ups.push(`${c.name} (L${c.level})`);
+      if (giveXp(c, amount * bonus, () => this.rng.next(), this.draftChoices())) ups.push(`${c.name} (L${c.level})`);
     }
     if (!ups.length) return;
-    this.hooks.sound('levelup');
     // Big fights level people up in bursts: one toast every few seconds is plenty.
-    if (this.time - this.lastLevelToast < 4) return;
+    if (this.time - this.lastLevelToast < 6) return;
     this.lastLevelToast = this.time;
     const who = ups.length > 3 ? `${ups.slice(0, 3).join(', ')} and ${ups.length - 3} more` : ups.join(', ');
-    this.hooks.toast(`Level up: ${who}! Click a perk card on the left to pick.`, '#ffd740');
+    this.hooks.toast(`Crew level up: ${who}. Pick a perk card on the left.`, '#ffd740');
   }
   private lastLevelToast = -99;
 
@@ -308,31 +458,31 @@ export class Game {
   }
 
   /* ---------------------------------------------------------------- */
-  /* Arsenal: active slots and the armed ultimate                      */
+  /* Crushing (the fortress flattens obstacles and props)              */
   /* ---------------------------------------------------------------- */
 
-  /** Damage dealt by the fortress feeds the ultimate. */
-  ultGain(dmg: number): void {
-    if (this.ultModule && dmg > 0) this.ultBank = Math.min(this.ultBank + dmg, 20000);
+  markDirty(tx: number, ty: number): void {
+    const cx = Math.floor(tx / CHUNK), cy = Math.floor(ty / CHUNK);
+    this.dirtyChunks.add(cy * 1000 + cx);
+    // Obstacles on a chunk border also change the neighbour's side faces.
+    if (tx % CHUNK === 0 && cx > 0) this.dirtyChunks.add(cy * 1000 + cx - 1);
+    if (tx % CHUNK === CHUNK - 1) this.dirtyChunks.add(cy * 1000 + cx + 1);
+    if (ty % CHUNK === 0 && cy > 0) this.dirtyChunks.add((cy - 1) * 1000 + cx);
+    if (ty % CHUNK === CHUNK - 1) this.dirtyChunks.add((cy + 1) * 1000 + cx);
   }
 
-  /** Keeps active slots and the ultimate pointing at real modules; fills empty slots automatically. */
-  syncArsenal(): void {
-    const p = this.player;
-    const actives = p.modules.filter((m) => MODULES[m.key].active);
-    const ids = new Set(actives.map((m) => m.id));
-    for (let i = 0; i < this.activeSlots.length; i++) if (this.activeSlots[i] && !ids.has(this.activeSlots[i])) this.activeSlots[i] = 0;
-    for (const m of actives) {
-      if (this.activeSlots.includes(m.id)) continue;
-      const free = this.activeSlots.indexOf(0);
-      if (free < 0) break;
-      this.activeSlots[free] = m.id;
+  /** Props in a chunk (lazy spatial index). */
+  propsInChunk(cx: number, cy: number): Prop[] {
+    if (!this.propIndex) {
+      this.propIndex = new Map();
+      for (const p of this.gen.props) {
+        const k = Math.floor(p.y / CHUNK) * 1000 + Math.floor(p.x / CHUNK);
+        let a = this.propIndex.get(k);
+        if (!a) this.propIndex.set(k, (a = []));
+        a.push(p);
+      }
     }
-    const ults = p.modules.filter((m) => MODULES[m.key].ult);
-    if (!ults.some((m) => m.id === this.ultModule)) {
-      this.ultModule = ults[0]?.id ?? 0;
-      if (!this.ultModule) this.ultCharge = Math.min(this.ultCharge, 0.5);
-    }
+    return this.propIndex.get(cy * 1000 + cx) ?? [];
   }
 
   /* ---------------------------------------------------------------- */

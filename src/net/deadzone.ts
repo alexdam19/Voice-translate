@@ -173,16 +173,17 @@ export class DeadZoneClient {
     raid.crew = w.crew;
     raid.tech = w.tech;
     raid.armory = [...w.armory];
-    raid.autoFire = w.autoFire;
     raid.runeBuff = w.runeBuff;
-    // Module ids are reassigned on copy: map active slots and the ultimate by deck order.
-    const idx = (id: number): number => w.player.modules.findIndex((m) => m.id === id);
-    raid.activeSlots = w.activeSlots.map((id) => raid.player.modules[idx(id)]?.id ?? 0);
-    raid.ultModule = raid.player.modules[idx(w.ultModule)]?.id ?? 0;
-    raid.ultCharge = w.ultCharge;
+    // Your cards come with you (XP isn't earned in the Dead Zone).
+    raid.commander = { ...w.commander };
+    raid.cards = w.cards;
+    raid.deck = [...w.deck];
+    raid.relics = [...w.relics];
+    raid.energy = w.energy;
     raid.tankControls = w.tankControls;
     raid.extracts = arena.extracts;
     raid.applyCrew();
+    raid.resetHand();
     raid.player.hp = raid.player.stats.maxHp;
     raid.player.shield = raid.player.stats.shield;
     installHandlers(raid);
@@ -207,7 +208,6 @@ export class DeadZoneClient {
     this.app.game = raid;
     this.app.view.setWorld(raid);
     this.app.centerOnPlayer();
-    this.app.camLocked = true;
     this.showStatus();
     this.app.hud.toast(`Welcome to the Dead Zone${this.offline ? ' (offline)' : ''}. Loot crates, survive, and extract at a green beacon.`, '#ff8a80');
   }

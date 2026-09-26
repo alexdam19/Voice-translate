@@ -9,7 +9,7 @@ export function renderCargo(ctx: PanelCtx): void {
   const g = ctx.app.game;
   const inv = g.player.cargo;
   const used = inv.slots.filter(Boolean).length;
-  ctx.body.appendChild(h('div', 'hint', `Cargo hold: <b>${used} / ${inv.size}</b> slots. Build Cargo Holds (BASE) for more room. ${g.player.stats.vault ? `Secure Vault protects ${g.player.stats.vault} slots in the Dead Zone.` : ''}`));
+  ctx.body.appendChild(h('div', 'hint', `Cargo hold: <b>${used} / ${inv.size}</b> slots. Build Cargo Holds (BASE > Shop) for more room. ${g.player.stats.vault ? `Secure Vault protects ${g.player.stats.vault} slots in the Dead Zone.` : ''}`));
   const grid = h('div', 'hold-grid');
   inv.slots.forEach((s, i) => {
     const el = h('div', `slot ${s ? '' : 'empty'} ${i < g.player.stats.vault ? 'vault' : ''}`);
@@ -29,17 +29,16 @@ function renderWorkshop(ctx: PanelCtx): void {
   const g = ctx.app.game;
   const s = g.player.stats;
   const sections: [string, 'refinery' | 'workshop' | 'sanctum' | 'none', boolean, string][] = [
-    ['REFINERY: ore into parts', 'refinery', s.refinery, 'Build a Refinery on your deck (BASE).'],
-    ['WORKSHOP: drive trains', 'workshop', s.workshop, 'Build a Workshop on your deck (BASE). Weapons are built in ARSENAL (V) > Codex.'],
-    ['ARCANE SANCTUM: Mythic Essence', 'sanctum', s.sanctum > 0, 'Research Arcane Studies, then build an Arcane Sanctum.'],
+    ['REFINERY: ore into parts', 'refinery', s.refinery, 'Build a Refinery in your base (BASE > Shop > Resources).'],
+    ['WORKSHOP: drive trains', 'workshop', s.workshop, 'Build a Workshop in your base (BASE > Shop). Weapons are built in ARSENAL (V) > Codex.'],
+    ['ARCANE SANCTUM: Mythic Essence', 'sanctum', s.sanctum > 0, 'Build an Arcane Sanctum (commander level 15).'],
     ['FIELD KITCHEN & KITS', 'none', true, ''],
   ];
   for (const [title, station, ok, need] of sections) {
     ctx.body.appendChild(h('div', 'cat', `${title} ${ok ? '' : `<small class="bad">${esc(need)}</small>`}`));
     const grid = h('div', 'recipe-grid');
     for (const r of recipesFor(station)) {
-      if (r.tech && !g.tech.has(r.tech)) continue;
-      if (r.id === 's_essence' && g.tech.has('essence_tap')) continue;
+      if (r.unlock && g.commander.level < r.unlock) continue;
       const out = getItem(r.out);
       const el = h('div', `recipe ${ok ? '' : 'locked'}`);
       el.innerHTML = `<img src="${itemIcon(r.out)}"><div><b>${r.n > 1 ? `${r.n}× ` : ''}${esc(out.name)}</b> <small>(have ${g.player.cargo.count(r.out)})</small><br>${costHTML(r.cost, [g.player.cargo])}</div>`;

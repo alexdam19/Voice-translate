@@ -1,15 +1,18 @@
 import { turnToward, wrapAngle } from '../../shared/types';
 import { eid, type Ally, type AllyKind, type Projectile } from '../entities';
 import type { Game, Target } from '../game';
+import type { SquadType } from '../squads';
 import { damageEnemy, damageTank, explode, type HitOpts } from './damage';
 import { moveSmall } from './movement';
 
 /**
- * Friendly units summoned by abilities and turrets: marines, laser drones, mini fighter jets,
- * battle mechs, dragons and mines.
+ * Friendly units: squads trained by your buildings (marines, scout buggies, guard drones, fighters, walkers)
+ * and units summoned by cards (drop squads, drone swarms, mechs, dragons, mines).
+ * Every unit has an anchor: squads follow the fortress, guard a spot or head out scavenging;
+ * summoned units fight around where they were dropped.
  */
 
-function makeAlly(kind: AllyKind, x: number, y: number, o: Partial<Ally>): Ally {
+export function makeAlly(kind: AllyKind, x: number, y: number, o: Partial<Ally>): Ally {
   return {
     id: eid(), kind, x, y, z: 0, rot: 0, hp: 100, maxHp: 100, life: 20, dmg: 10, range: 9, cd: Math.random() * 0.5, cd2: 1, heavy: false, face: 1, anim: 0,
     targetId: 0, tx: x, ty: y, owner: 0, ...o,
@@ -19,13 +22,12 @@ function makeAlly(kind: AllyKind, x: number, y: number, o: Partial<Ally>): Ally 
 /** Is this ally something enemies can shoot? (Jets and dragons fly too high; mines are hidden.) */
 export const allyTargetable = (a: Ally): boolean => a.kind !== 'jet' && a.kind !== 'dragon' && a.kind !== 'mine';
 
-export function spawnMarines(g: Game, n: number, heavy: boolean, life: number, power: number): void {
-  const p = g.player;
+export function spawnMarines(g: Game, n: number, heavy: boolean, life: number, power: number, x = g.player.x, y = g.player.y): void {
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
-    const r = p.stats.width / 2 + 1;
+    const r = 1 + (i % 3) * 0.6;
     const hp = (heavy ? 220 : 90) * power;
-    g.allies.push(makeAlly(heavy ? 'heavy' : 'marine', p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, { hp, maxHp: hp, life, dmg: (heavy ? 16 : 9) * power, range: heavy ? 11 : 9, heavy }));
+    g.allies.push(makeAlly(heavy ? 'heavy' : 'marine', x + Math.cos(a) * r, y + Math.sin(a) * r, { hp, maxHp: hp, life, dmg: (heavy ? 16 : 9) * power, range: heavy ? 11 : 9, heavy, tx: x, ty: y }));
   }
 }
 
@@ -36,17 +38,17 @@ export function spawnJet(g: Game, x: number, y: number, rot: number, tx: number,
   return a;
 }
 
-export function spawnDrones(g: Game, n: number, dmg: number, life: number, hp: number): void {
+export function spawnDrones(g: Game, n: number, dmg: number, life: number, hp: number, x = g.player.x, y = g.player.y): void {
   const p = g.player;
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2;
-    g.allies.push(makeAlly('drone', p.x + Math.cos(a) * 2, p.y + Math.sin(a) * 2, { z: 1.8, life, dmg, range: 10, hp, maxHp: hp, rot: a }));
+    g.allies.push(makeAlly('drone', p.x + Math.cos(a) * 2, p.y + Math.sin(a) * 2, { z: 1.8, life, dmg, range: 10, hp, maxHp: hp, rot: a, tx: x, ty: y }));
   }
 }
 
 export function spawnMech(g: Game, x: number, y: number, P: number): void {
   const hp = 3000 * P;
-  g.allies.push(makeAlly('mech', x, y, { life: 30, dmg: 150 * P, range: 16, hp, maxHp: hp, cd: 1, cd2: 3 }));
+  g.allies.push(makeAlly('mech', x, y, { life: 30, dmg: 150 * P, range: 16, hp, maxHp: hp, cd: 1, cd2: 3, tx: x, ty: y }));
   explode(g, x, y, 4, 200 * P, 'player', { srcTank: g.player.id }, '#ffab40');
   g.fx.push({ t: 'shake', amt: 1 });
 }
@@ -58,13 +60,62 @@ export function spawnDragon(g: Game, x: number, y: number, P: number): void {
   g.fx.push({ t: 'shake', amt: 0.8 });
 }
 
-export function layMines(g: Game, n: number, dmg: number): void {
-  const p = g.player;
+export function layMines(g: Game, n: number, dmg: number, x = g.player.x, y = g.player.y, spread = 4): void {
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
-    const r = p.stats.length / 2 + 2 + Math.random() * 5;
-    g.allies.push(makeAlly('mine', p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, { life: 60, dmg, hp: 1, maxHp: 1, cd: 0.8 + i * 0.05 }));
+    const r = Math.sqrt(Math.random()) * spread;
+    g.allies.push(makeAlly('mine', x + Math.cos(a) * r, y + Math.sin(a) * r, { life: 60, dmg, hp: 1, maxHp: 1, cd: 0.8 + i * 0.05 }));
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Anchors                                                                 */
+/* ---------------------------------------------------------------------- */
+
+interface Anchor {
+  x: number;
+  y: number;
+  /** How close to the anchor counts as "there". */
+  idle: number;
+  /** Enemies further than this from the anchor are ignored. */
+  engage: number;
+  /** Moving under orders (scavenging): don't stop to chase. */
+  busy: boolean;
+}
+
+/** Formation slot around the back of the fortress. */
+function followSpot(g: Game, a: Ally): { x: number; y: number } {
+  const p = g.player;
+  const slot = a.slot ?? 0;
+  const ring = Math.floor(slot / 8);
+  const k = slot % 8;
+  const ang = p.rot + Math.PI + (k - 3.5) * 0.32 + (a.kind === 'buggy' ? 0.15 : 0);
+  const r = p.stats.length / 2 + 2.5 + ring * 1.8 + (a.kind === 'buggy' ? 1.5 : a.kind === 'mech' ? 3 : 0);
+  return { x: p.x + Math.cos(ang) * r, y: p.y + Math.sin(ang) * r };
+}
+
+function anchorOf(g: Game, a: Ally): Anchor {
+  const p = g.player;
+  if (a.squad) {
+    const sq = g.squads[a.squad as SquadType];
+    if (sq?.order === 'guard') {
+      const k = (a.slot ?? 0) * 2.39996;
+      const r = 1 + Math.sqrt(a.slot ?? 0) * 1.1;
+      return { x: sq.gx + Math.cos(k) * r, y: sq.gy + Math.sin(k) * r, idle: 1.2, engage: 16, busy: false };
+    }
+    if (sq?.order === 'scavenge' && sq.phase !== 'working') return { x: a.tx, y: a.ty, idle: 1, engage: a.range + 4, busy: true };
+    if (sq?.order === 'scavenge') return { x: a.tx, y: a.ty, idle: 2.5, engage: a.range + 6, busy: false };
+    const f = followSpot(g, a);
+    return { x: f.x, y: f.y, idle: 1.5, engage: p.stats.length / 2 + 18, busy: false };
+  }
+  return { x: a.tx, y: a.ty, idle: 3, engage: 18, busy: false };
+}
+
+/** Nearest hostile the unit may engage (within `engage` of its anchor). */
+function targetFor(g: Game, a: Ally, an: Anchor, reach: number): Target | null {
+  const t = nearestHostile(g, a.x, a.y, reach);
+  if (!t) return null;
+  return Math.hypot(t.x - an.x, t.y - an.y) <= an.engage + t.r ? t : null;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -124,10 +175,10 @@ export function updateAllies(g: Game, dt: number): void {
         updateJet(g, a, dt);
         break;
       case 'drone':
-        updateDrone(g, a, dt);
+        updateDrone(g, a, dt, anchorOf(g, a));
         break;
       case 'mech':
-        updateMech(g, a, dt);
+        updateMech(g, a, dt, anchorOf(g, a));
         break;
       case 'dragon':
         updateDragon(g, a, dt);
@@ -136,44 +187,66 @@ export function updateAllies(g: Game, dt: number): void {
         if (updateMine(g, a, dt)) g.allies.splice(i, 1);
         break;
       default:
-        updateMarine(g, a, dt);
+        updateMarine(g, a, dt, anchorOf(g, a));
     }
   }
 }
 
-function updateMarine(g: Game, a: Ally, dt: number): void {
-  const best = nearestHostile(g, a.x, a.y, a.range + 6);
+/** Marines and scout buggies: fight near their anchor, otherwise walk (or drive) to it. */
+function updateMarine(g: Game, a: Ally, dt: number, an: Anchor): void {
+  const buggy = a.kind === 'buggy';
+  const speed = buggy ? 10 : 4.5;
+  const best = targetFor(g, a, an, a.range + (an.busy ? 2 : 8));
   let mx = 0, my = 0;
   if (best) {
     const bd = Math.hypot(best.x - a.x, best.y - a.y);
     a.face = best.x >= a.x ? 1 : -1;
-    if (bd > a.range * 0.8) {
+    if (!an.busy && bd > a.range * 0.8) {
       mx = (best.x - a.x) / bd;
       my = (best.y - a.y) / bd;
     }
     a.cd -= dt;
     if (a.cd <= 0 && bd <= a.range + best.r) {
-      a.cd = a.heavy ? 0.5 : 0.7;
-      shot(g, a, Math.atan2(best.y - a.y, best.x - a.x), 28, a.dmg, { splash: a.heavy ? 0.8 : 0, targetId: best.id });
+      a.cd = buggy ? 0.25 : a.heavy ? 0.5 : 0.7;
+      shot(g, a, Math.atan2(best.y - a.y, best.x - a.x), 28, a.dmg, { splash: a.heavy ? 0.8 : 0, targetId: best.id, color: buggy ? '#ffe57f' : '#ff8a80' });
       g.hooks.sound('smg', a.x, a.y, 0.2);
     }
-  } else {
-    const p = g.player;
-    const dx = p.x - a.x, dy = p.y - a.y;
+  }
+  if (!mx && !my) {
+    const dx = an.x - a.x, dy = an.y - a.y;
     const d = Math.hypot(dx, dy);
-    if (d > p.stats.length / 2 + 3) {
-      mx = dx / d;
-      my = dy / d;
+    if (d > an.idle) {
+      const k = Math.min(1, (d - an.idle) / 2 + 0.3);
+      mx = (dx / d) * k;
+      my = (dy / d) * k;
+      if (!best) a.face = dx >= 0 ? 1 : -1;
     }
   }
-  const r = moveSmall(g, a.x, a.y, 0.3, mx * 4.5 * dt, my * 4.5 * dt, false);
-  a.x = r.x;
-  a.y = r.y;
+  // Squad units that fall far behind the fortress catch up quickly.
+  const far = a.squad && Math.hypot(an.x - a.x, an.y - a.y) > 30 ? 1.8 : 1;
+  const sp = speed * far;
+  if (buggy && (mx || my)) a.rot = turnToward(a.rot, Math.atan2(my, mx), 6 * dt);
+  const r = moveSmall(g, a.x, a.y, buggy ? 0.5 : 0.3, mx * sp * dt, my * sp * dt, false);
+  if (r.hit && far > 1) {
+    // Stuck on rocks while catching up: hop over.
+    a.x += mx * sp * dt;
+    a.y += my * sp * dt;
+  } else {
+    a.x = r.x;
+    a.y = r.y;
+  }
+  if (!buggy) a.anim += (mx || my ? 0 : -dt * 5.5);
 }
 
 /** Mini fighter jets: always moving, loop around the target, strafe with guns and drop bombs. */
 function updateJet(g: Game, a: Ally, dt: number): void {
   const speed = 15;
+  if (a.squad) {
+    // Fighter wings patrol around their anchor (the fortress, or the guard point).
+    const an = anchorOf(g, a);
+    a.tx = an.x;
+    a.ty = an.y;
+  }
   const tgt = nearestHostile(g, a.tx, a.ty, 18) ?? nearestHostile(g, a.x, a.y, 14);
   const gx = tgt ? tgt.x : a.tx + Math.cos(a.anim * 0.25) * 7, gy = tgt ? tgt.y : a.ty + Math.sin(a.anim * 0.25) * 7;
   const want = Math.atan2(gy - a.y, gx - a.x);
@@ -200,9 +273,9 @@ function updateJet(g: Game, a: Ally, dt: number): void {
   }
 }
 
-function updateDrone(g: Game, a: Ally, dt: number): void {
+function updateDrone(g: Game, a: Ally, dt: number, an: Anchor): void {
   const p = g.player;
-  const tgt = nearestHostile(g, a.x, a.y, 18);
+  const tgt = targetFor(g, a, an, 18);
   let gx: number, gy: number;
   if (tgt) {
     const ang = a.rot + a.anim * 0.15;
@@ -218,20 +291,22 @@ function updateDrone(g: Game, a: Ally, dt: number): void {
     }
   } else {
     const ang = a.rot + a.anim * 0.3;
-    gx = p.x + Math.cos(ang) * (p.stats.length / 2 + 2);
-    gy = p.y + Math.sin(ang) * (p.stats.length / 2 + 2);
+    const home = a.squad && g.squads[a.squad as SquadType]?.order === 'follow';
+    const cx = home ? p.x : an.x, cy = home ? p.y : an.y;
+    const rr = home ? p.stats.length / 2 + 2 : 3;
+    gx = cx + Math.cos(ang) * rr;
+    gy = cy + Math.sin(ang) * rr;
   }
   const dx = gx - a.x, dy = gy - a.y;
   const d = Math.hypot(dx, dy) || 1;
-  const sp = Math.min(d, 9 * dt);
+  const sp = Math.min(d, (d > 20 ? 18 : 9) * dt);
   a.x += (dx / d) * sp;
   a.y += (dy / d) * sp;
   a.face = dx >= 0 ? 1 : -1;
 }
 
-function updateMech(g: Game, a: Ally, dt: number): void {
-  const p = g.player;
-  const tgt = nearestHostile(g, a.x, a.y, 30);
+function updateMech(g: Game, a: Ally, dt: number, an: Anchor): void {
+  const tgt = targetFor(g, a, an, 30);
   let mx = 0, my = 0;
   if (tgt) {
     const d = Math.hypot(tgt.x - a.x, tgt.y - a.y);
@@ -258,15 +333,16 @@ function updateMech(g: Game, a: Ally, dt: number): void {
       g.hooks.sound('rocket', a.x, a.y, 0.7);
     }
   } else {
-    const dx = p.x - a.x, dy = p.y - a.y;
+    const dx = an.x - a.x, dy = an.y - a.y;
     const d = Math.hypot(dx, dy);
-    if (d > p.stats.length / 2 + 4) {
+    if (d > an.idle + 1) {
       mx = dx / d;
       my = dy / d;
       a.rot = turnToward(a.rot, Math.atan2(dy, dx), 3 * dt);
     }
   }
-  const r = moveSmall(g, a.x, a.y, 1, mx * 3.6 * dt, my * 3.6 * dt, false);
+  const far = a.squad && Math.hypot(an.x - a.x, an.y - a.y) > 30 ? 2 : 1;
+  const r = moveSmall(g, a.x, a.y, 1, mx * 3.6 * far * dt, my * 3.6 * far * dt, false);
   if (mx || my) {
     if (Math.floor(a.anim * 0.5) !== Math.floor((a.anim - dt * 6) * 0.5)) g.fx.push({ t: 'dust', x: a.x, y: a.y, color: '#a1887f' });
   }

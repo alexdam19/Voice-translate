@@ -3,8 +3,11 @@ import type { Game } from '../game';
 import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
 import { updateAllies } from './allies';
 import { updateArsenal } from './arsenal';
+import { updateBuilds } from './builds';
+import { updateCards } from './cards';
 import { healPlayer, injureRandomCrew } from './damage';
 import { updateBuffs, updateCrew, updateZones } from './crewsys';
+import { updateSquads } from './squads';
 import { driveTank, manualDrive, separateTanks } from './movement';
 import { updateFocus, updateInteract } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
@@ -13,7 +16,7 @@ import { updateSpawns } from './spawns';
 import { updateTankWeapons } from './weapons';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
 
-export const RESPAWN_TIME = 8;
+export const RESPAWN_TIME = 6;
 
 export function installHandlers(g: Game): void {
   g.onPlayerDestroyed = () => {
@@ -39,8 +42,9 @@ function respawn(g: Game): void {
   p.x = g.gen.spawn.x;
   p.y = g.gen.spawn.y;
   p.rot = -Math.PI / 2;
-  p.hp = p.stats.maxHp * 0.5;
-  p.shield = 0;
+  // Every respawn comes back at full health.
+  p.hp = p.stats.maxHp;
+  p.shield = p.stats.shield;
   p.buffs.clear();
   for (const m of p.modules) m.aim = p.rot;
   if (g.outrider && !g.outrider.dead) {
@@ -49,7 +53,8 @@ function respawn(g: Game): void {
     g.outrider.y = b.y;
     g.outriderOrder = { mode: 'follow' };
   }
-  g.hooks.toast('Your fortress was towed back to camp.', '#ffd740');
+  g.energy = Math.max(g.energy, g.maxEnergy() * 0.5);
+  g.hooks.toast('Your fortress was towed back to camp and fully repaired.', '#ffd740');
 }
 
 /** One fixed simulation step of the open world. */
@@ -101,6 +106,16 @@ export function stepWorld(g: Game, dt: number): void {
   updateProjectiles(g, dt);
   updateZones(g, dt);
   updateArsenal(g, dt);
+  updateCards(g, dt);
+  updateSquads(g, dt);
+  updateBuilds(g, dt);
+  // Flattened obstacles change the paths of everything that can't crush them.
+  g.timers.nav -= dt;
+  if (g.navDirty && g.timers.nav <= 0) {
+    g.timers.nav = 3;
+    g.navDirty = false;
+    g.map.invalidateNav(true);
+  }
   if (g.mode === 'world') {
     if (!p.dead) {
       updateHarvest(g, dt);

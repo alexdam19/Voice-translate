@@ -22,6 +22,9 @@ function lookup(g: Game, team: 'player' | 'enemy', id: number): Target | null {
   return team === 'player' ? g.hostileTarget(id) : g.friendlyTarget(id);
 }
 
+/** Soul Harvest (card) and Vampire Fang (relic) lifesteal. */
+const soul = (t: Tank): number => (t.buff('soul')?.v ?? 0) + (t.kind === 'main' ? t.crew.lifesteal : 0);
+
 /** Effective fire-rate multiplier from buffs and power. */
 function rateMult(g: Game, t: Tank): number {
   let m = 0.35 + 0.65 * t.stats.powerRatio;
@@ -48,29 +51,21 @@ export function updateTankWeapons(g: Game, t: Tank, dt: number): void {
     m.recoil = Math.max(0, m.recoil - dt * 4);
     if (m.cd < -0.8) m.ramp = 0;
     const pos = t.moduleWorld(m);
-    const manual = team === 'player' && t === g.player && (!g.autoFire || m.mode === 'manual');
-    let aimX: number, aimY: number;
-    let target: Target | null = null;
-    if (manual) {
-      aimX = g.aim.x;
-      aimY = g.aim.y;
-    } else {
-      target = pickTarget(g, t, m, d, s, pos.x, pos.y, cands, dt);
-      if (!target) {
-        // Rest facing forward.
-        m.aim = turnToward(m.aim, t.rot, s.turn * dt * 0.5);
-        continue;
-      }
-      // Lead moving targets a little.
-      aimX = target.x;
-      aimY = target.y;
-      if (s.speed > 0) {
-        const e = g.enemyById(target.id);
-        if (e) {
-          const tt = Math.hypot(e.x - pos.x, e.y - pos.y) / s.speed;
-          aimX += e.vx * tt * 0.7;
-          aimY += e.vy * tt * 0.7;
-        }
+    // Every gun picks its own target.
+    const target: Target | null = pickTarget(g, t, m, d, s, pos.x, pos.y, cands, dt);
+    if (!target) {
+      // Rest facing forward.
+      m.aim = turnToward(m.aim, t.rot, s.turn * dt * 0.5);
+      continue;
+    }
+    // Lead moving targets a little.
+    let aimX = target.x, aimY = target.y;
+    if (s.speed > 0) {
+      const e = g.enemyById(target.id);
+      if (e) {
+        const tt = Math.hypot(e.x - pos.x, e.y - pos.y) / s.speed;
+        aimX += e.vx * tt * 0.7;
+        aimY += e.vy * tt * 0.7;
       }
     }
     const want = Math.atan2(aimY - pos.y, aimX - pos.x);
@@ -78,14 +73,12 @@ export function updateTankWeapons(g: Game, t: Tank, dt: number): void {
     const dist = Math.hypot(aimX - pos.x, aimY - pos.y);
     const aligned = Math.abs(wrapAngle(want - m.aim)) < (d.arc || d.homing > 0 || s.speed === 0 ? 0.3 : 0.14);
     // Twin barrel: a death-ray that fires on its own cycle.
-    if (s.twinRate > 0 && aligned && m.cd2 <= 0 && (manual ? g.fireHeld : dist <= s.twinRange + (target?.r ?? 0))) {
+    if (s.twinRate > 0 && aligned && m.cd2 <= 0 && dist <= s.twinRange + target.r) {
       m.cd2 = 1 / s.twinRate;
       twinRay(g, t, m, pos.x, pos.y, target);
     }
     if (m.cd > 0 || !aligned) continue;
-    if (manual && !g.fireHeld) continue;
-    if (!manual && (dist > s.range + (target?.r ?? 0) || dist < s.minRange)) continue;
-    if (manual && dist < s.minRange) continue;
+    if (dist > s.range + target.r || dist < s.minRange) continue;
     m.cd = 1 / s.rate;
     m.recoil = 1;
     m.shots++;
@@ -181,7 +174,7 @@ export function fire(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponSta
   if (d.kind !== 'sky' && d.kind !== 'meteor' && d.kind !== 'jet') g.fx.push({ t: 'muzzle', x: mx, y: my, a, color: d.color, size: d.size === 'heavy' ? 1.6 : d.size === 'medium' ? 1.1 : 0.7 });
   if (d.size === 'heavy' && t.team === 'player' && t === g.player) g.fx.push({ t: 'shake', amt: 0.15 });
   const fx = shotFx(s, d, dmg);
-  const o: HitOpts = { srcTank: t.id, lifesteal: s.lifesteal, burn: burn || undefined, wkey, wr, fx };
+  const o: HitOpts = { srcTank: t.id, lifesteal: s.lifesteal + soul(t), burn: burn || undefined, wkey, wr, fx };
   // Mini fighter jets from a Hornet Launcher.
   if (d.jets) {
     if (t.team === 'player' && t.kind !== 'remote') {
@@ -203,7 +196,7 @@ export function fire(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponSta
     const crit = critRoll(t, s);
     const p = launch(g, t, d.kind, mx, my, ang, s.speed, dmg * (crit ? 2 : 1), s.splash, s.pierce + extraPierce, s.homing, target, s.range, burn, fx, wkey, wr, d.color, PROJ_SIZE[d.kind] ?? (d.size === 'heavy' ? 0.35 : d.size === 'medium' ? 0.25 : 0.16));
     p.crit = crit;
-    p.lifesteal = s.lifesteal;
+    p.lifesteal = s.lifesteal + soul(t);
     if (d.arc) {
       const land = Math.min(dist, s.range);
       const jitter = s.spread * land + (s.pellets > 1 ? 1.2 : 0);
@@ -424,7 +417,7 @@ function twinRay(g: Game, t: Tank, m: ModuleInst, x: number, y: number, target: 
   let endT = target ? Math.min(len, Math.hypot(target.x - x, target.y - y)) : len;
   if (hits.length) {
     const crit = critRoll(t, s);
-    applyHit(g, t.team, hits[0], s.twinDmg * (crit ? 2 : 1), { crit, srcTank: t.id, lifesteal: s.lifesteal, wkey: m.weapon!.key, wr: m.weapon!.rarity, silent: !crit });
+    applyHit(g, t.team, hits[0], s.twinDmg * (crit ? 2 : 1), { crit, srcTank: t.id, lifesteal: s.lifesteal + soul(t), wkey: m.weapon!.key, wr: m.weapon!.rarity, silent: !crit });
     endT = hits[0].t;
   }
   g.fx.push({ t: 'beam', x0: x, y0: y, x1: x + dx * endT, y1: y + dy * endT, color: d.twin?.color ?? '#69f0ae', w: 0.09, life: 0.12 });

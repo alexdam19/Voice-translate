@@ -75,7 +75,7 @@ export class Audio {
   }
 
   play(name: string, vol = 1): void {
-    if (this.muted || vol <= 0.02 || !this.throttle(name, name === 'harvest' ? 120 : name === 'smg' ? 45 : 30)) return;
+    if (this.muted || vol <= 0.02 || !this.throttle(name, name === 'harvest' || name === 'crunch' ? 120 : name === 'smg' ? 45 : 30)) return;
     switch (name) {
       case 'smg': this.noise(0.07, 0.3 * vol, 3200); this.tone(160, 0.05, 'square', 0.05 * vol, 0.6); break;
       case 'shotgun': this.noise(0.25, 0.6 * vol, 1400); this.tone(90, 0.18, 'sawtooth', 0.15 * vol, 0.4); break;
@@ -105,6 +105,11 @@ export class Audio {
       case 'build': this.tone(260, 0.06, 'square', 0.1 * vol, 0.8); this.noise(0.05, 0.2 * vol, 3000); break;
       case 'craft': this.tone(520, 0.08, 'square', 0.08 * vol, 1.2); setTimeout(() => this.tone(780, 0.1, 'square', 0.08 * vol, 1.2), 70); break;
       case 'hurt': this.tone(220, 0.2, 'sawtooth', 0.15 * vol, 0.5); break;
+      case 'crunch': this.noise(0.18, 0.35 * vol, 500, 0.8); this.tone(60, 0.12, 'square', 0.1 * vol, 0.6); break;
+      case 'card': this.noise(0.08, 0.12 * vol, 5000); this.tone(440, 0.1, 'triangle', 0.1 * vol, 2.2); break;
+      case 'draw': this.noise(0.05, 0.08 * vol, 7000); break;
+      case 'nope': this.tone(180, 0.1, 'square', 0.08 * vol, 0.7); break;
+      case 'finish': [523, 784, 1047].forEach((f, i) => setTimeout(() => this.tone(f, 0.14, 'triangle', 0.1 * vol), i * 70)); break;
     }
   }
 

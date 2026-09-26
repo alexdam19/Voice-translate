@@ -109,7 +109,15 @@ export class View {
   private rangeRing: Decal;
   private shadowMat: MeshBasicMaterial;
   private shadowGeo = new PlaneGeometry(1, 1);
-  cam = { x: 320, y: 320, zoom: 38 };
+  /** Camera target, distance, heading of "up the screen" (radians) and pitch (degrees). */
+  cam = { x: 320, y: 320, zoom: 38, yaw: -Math.PI / 2, pitch: 56 };
+  /** Card being aimed: a ring on the ground where it will land. */
+  aim: { x: number; y: number; r: number; color: string } | null = null;
+  private aimRing: Decal;
+  /** Tracking beacon: a beam of light over the place the objective tracker points at. */
+  beacon: { x: number; y: number; color: string } | null = null;
+  private beaconVis: Group | null = null;
+  private shadowExt = 48;
   private shakeAmt = 0;
   pixelScale = 3;
   width = 1;
@@ -167,6 +175,10 @@ export class View {
     this.rangeRing.fillMat.opacity = 0.06;
     this.rangeRing.root.visible = false;
     this.scene.add(this.rangeRing.root);
+    this.aimRing = makeDecal('circle', '#ffd740', true);
+    this.aimRing.fillMat.opacity = 0.14;
+    this.aimRing.root.visible = false;
+    this.scene.add(this.aimRing.root);
     getAtlas();
     this.resize();
   }
@@ -255,27 +267,47 @@ export class View {
   }
 
   private placeCamera(): void {
-    const pitch = (56 * Math.PI) / 180;
+    const pitch = (this.cam.pitch * Math.PI) / 180;
     const D = this.cam.zoom;
     let sx = 0, sy = 0;
     if (this.shakeAmt > 0.01) {
       sx = (Math.random() - 0.5) * this.shakeAmt;
       sy = (Math.random() - 0.5) * this.shakeAmt;
     }
-    this.camera.position.set(this.cam.x + sx, Math.sin(pitch) * D, this.cam.y + Math.cos(pitch) * D + sy);
+    // The camera sits behind "up the screen" and looks along it.
+    const bx = -Math.cos(this.cam.yaw) * Math.cos(pitch) * D, by = -Math.sin(this.cam.yaw) * Math.cos(pitch) * D;
+    this.camera.position.set(this.cam.x + bx + sx, Math.sin(pitch) * D, this.cam.y + by + sy);
     this.camera.lookAt(this.cam.x + sx, 0, this.cam.y + sy);
     this.camera.updateMatrixWorld();
     this.sun.position.set(this.cam.x - 26, 60, this.cam.y + 34);
     this.sun.target.position.set(this.cam.x, 0, this.cam.y);
+    // A big fortress needs a big shadow map.
+    const ext = Math.max(48, Math.round(D * 1.25 / 8) * 8);
+    if (ext !== this.shadowExt) {
+      this.shadowExt = ext;
+      const sc = this.sun.shadow.camera;
+      sc.left = -ext;
+      sc.right = ext;
+      sc.top = ext;
+      sc.bottom = -ext;
+      sc.far = 120 + ext * 2;
+      sc.updateProjectionMatrix();
+    }
+    this.camera.far = Math.max(400, D * 6);
+  }
+
+  /** Screen (CSS px) -> point on the horizontal plane at height h. */
+  screenToPlane(sx: number, sy: number, h: number): { x: number; y: number } {
+    const ndc = new Vector2((sx / this.width) * 2 - 1, -(sy / this.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const r = this.raycaster.ray;
+    const t = (h - r.origin.y) / (r.direction.y || -1e-6);
+    return { x: r.origin.x + r.direction.x * t, y: r.origin.z + r.direction.z * t };
   }
 
   /** Screen (CSS px) -> ground point. */
   screenToWorld(sx: number, sy: number): { x: number; y: number } {
-    const ndc = new Vector2((sx / this.width) * 2 - 1, -(sy / this.height) * 2 + 1);
-    this.raycaster.setFromCamera(ndc, this.camera);
-    const r = this.raycaster.ray;
-    const t = -r.origin.y / (r.direction.y || -1e-6);
-    return { x: r.origin.x + r.direction.x * t, y: r.origin.z + r.direction.z * t };
+    return this.screenToPlane(sx, sy, 0);
   }
 
   /** World -> screen (CSS px). */
@@ -315,6 +347,10 @@ export class View {
     }
     this.applyZoneLight(g, dt);
     this.placeCamera();
+    if (g.dirtyChunks.size) {
+      for (const k of g.dirtyChunks) this.terrain?.invalidate(k % 1000, Math.floor(k / 1000));
+      g.dirtyChunks.clear();
+    }
     this.terrain?.update(this.cam.x, this.cam.y, this.cam.zoom * 1.6 + 10, this.time);
     if (g.mode === 'world' && g.fogVersion !== this.lastFog) {
       this.lastFog = g.fogVersion;
@@ -335,6 +371,14 @@ export class View {
       this.marker.decal.root.scale.setScalar(s);
       this.marker.decal.root.visible = this.marker.t > 0;
     }
+    this.aimRing.root.visible = !!this.aim;
+    if (this.aim) {
+      this.aimRing.fillMat.color.set(this.aim.color);
+      this.aimRing.edgeMat.color.set(this.aim.color);
+      this.aimRing.root.position.set(this.aim.x, 0.06, this.aim.y);
+      this.aimRing.root.scale.setScalar(Math.max(1.2, this.aim.r) * (1 + Math.sin(this.time * 8) * 0.03));
+    }
+    this.syncBeacon();
     this.rangeRing.root.visible = this.rangeR > 0 && !g.player.dead;
     if (this.rangeRing.root.visible) {
       this.rangeRing.root.position.set(g.player.x, 0.04, g.player.y);
@@ -350,6 +394,35 @@ export class View {
     this.renderer.render(this.scene, this.camera);
     this.renderer.setRenderTarget(null);
     this.renderer.render(this.postScene, this.postCam);
+  }
+
+  private syncBeacon(): void {
+    const b = this.beacon;
+    if (!b) {
+      if (this.beaconVis) this.beaconVis.visible = false;
+      return;
+    }
+    if (!this.beaconVis) {
+      const grp = new Group();
+      const beam = new Mesh(new BoxGeometry(0.8, 40, 0.8), new MeshBasicMaterial({ color: '#ffd740', transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false }));
+      beam.position.y = 20;
+      const ring = makeDecal('circle', '#ffd740', true);
+      ring.fillMat.opacity = 0.1;
+      ring.root.scale.setScalar(3);
+      grp.add(beam, ring.root);
+      grp.userData.beam = beam;
+      grp.userData.ring = ring;
+      this.world.add(grp);
+      this.beaconVis = grp;
+    }
+    const grp = this.beaconVis;
+    grp.visible = true;
+    grp.position.set(b.x, 0.05, b.y);
+    ((grp.userData.beam as Mesh).material as MeshBasicMaterial).color.set(b.color);
+    ((grp.userData.beam as Mesh).material as MeshBasicMaterial).opacity = 0.25 + Math.sin(this.time * 4) * 0.1;
+    const ring = grp.userData.ring as Decal;
+    ring.edgeMat.color.set(b.color);
+    ring.root.scale.setScalar(2.5 + (this.time % 1.2) * 2);
   }
 
   /* ---------------------------------------------------------------- */
@@ -585,7 +658,7 @@ export class View {
       }
       m.root.position.set(a.x, a.z, a.y);
       m.root.rotation.y = -a.rot;
-      const size = a.kind === 'dragon' ? 3.5 : a.kind === 'mech' ? 2.2 : a.kind === 'jet' ? 1.2 : 0.6;
+      const size = a.kind === 'dragon' ? 3.5 : a.kind === 'mech' ? 2.2 : a.kind === 'jet' ? 1.2 : a.kind === 'buggy' ? 1.3 : 0.6;
       m.shadow.position.set(a.x, 0.04, a.y);
       m.shadow.scale.set(size, 1, size * 0.7);
       if (a.kind === 'jet') {
@@ -593,6 +666,9 @@ export class View {
         if (Math.random() < 0.6) this.addP.emit(a.x - Math.cos(a.rot) * 0.6, a.y - Math.sin(a.rot) * 0.6, a.z, 0, 0, 0, 0.2, 0.18, new Color('#ff9100'));
       } else if (a.kind === 'drone') {
         m.root.rotation.y = a.anim * 3;
+      } else if (a.kind === 'buggy') {
+        m.parts.forEach((w) => (w.rotation.z = -a.anim * 2));
+        m.root.position.y = Math.abs(Math.sin(a.anim * 2.2)) * 0.05;
       } else if (a.kind === 'mech') {
         m.parts.forEach((leg, i) => (leg.rotation.z = Math.sin(a.anim * 0.6 + i * Math.PI) * 0.35));
       } else if (a.kind === 'dragon') {
