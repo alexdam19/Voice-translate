@@ -16,9 +16,9 @@ function xpBar(c: CrewMember): string {
   return `<div class="xp"><div style="width:${f * 100}%"></div></div><small>L${c.level} · ${Math.floor(c.xp - lo)}/${hi - lo} xp</small>`;
 }
 
-function abilityText(c: CrewMember, cdr: number): string {
+function abilityText(c: CrewMember, cdr: number, bonus = 0): string {
   const a = abilityOf(c);
-  const P = abilityPower(c);
+  const P = abilityPower(c, bonus);
   const d = a.desc.replace(/\{([^}]+)\}/g, (_m, v: string) => {
     const n = parseFloat(v);
     if (Number.isNaN(n)) return v;
@@ -46,6 +46,7 @@ function draftHTML(ctx: PanelCtx, c: CrewMember): HTMLElement {
     card.innerHTML = `<div class="rk" style="color:${RARITIES[p.rarity].color}">${RARITIES[p.rarity].name}</div><b>${esc(d.name)}</b><div>${esc(perkText(p.id, p.rarity))}</div>`;
     card.addEventListener('click', () => {
       choosePerk(g, c.id, i);
+      ctx.app.sound('levelup');
       ctx.msg(`${c.name} learned ${d.name}.`);
       ctx.rerender();
     });
@@ -63,7 +64,7 @@ function crewCard(ctx: PanelCtx, c: CrewMember, compact = false): HTMLElement {
   const status = c.loc === 'away' ? `<span class="bad">walking back (${Math.ceil(c.returnIn)}s)</span>` : c.injured > 0 ? `<span class="bad">injured ${Math.ceil(c.injured)}s</span>` : c.loc === 'outrider' ? '<span class="cy">aboard Outrider</span>' : '<span class="good">on duty</span>';
   card.innerHTML = `<div class="cc-top"><img class="pt" src="${portrait(c)}"><div class="cc-id"><b>${esc(c.name)}</b><div class="role" style="color:${ROLES[c.role].color}">${esc(displayTitle(c))}</div><div class="rar" style="color:${RARITIES[c.rarity].color}">${RARITIES[c.rarity].name} · ${status}</div>${xpBar(c)}</div></div>`;
   if (!compact) {
-    card.innerHTML += abilityText(c, g.player.crew.cdr);
+    card.innerHTML += abilityText(c, g.player.crew.cdr, g.player.crew.abilityPower);
     card.innerHTML += `<div class="passive"><small>Side-crew passive:</small> ${esc(ROLES[c.role].passive)}${ex ? `<br><small>Exclusive:</small> <b style="color:#e040fb">${esc(ex.desc)}</b>` : ''}</div>`;
     card.innerHTML += `<div class="perks">${perksHTML(c)}</div>`;
   }
@@ -80,7 +81,7 @@ export function renderCrew(ctx: PanelCtx): void {
 function renderOfficers(ctx: PanelCtx): void {
   const g = ctx.app.game;
   const off = g.officers();
-  ctx.body.appendChild(h('div', 'hint', `<b>Main crew</b> are your 6 officers: each gives an ability on <kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><kbd>D</kbd><kbd>F</kbd> that goes on cooldown. Everyone else is <b>side crew</b> with a passive bonus. Put your best (Champions!) in these seats.`));
+  ctx.body.appendChild(h('div', 'hint', `<b>Main crew</b> are your officers: each gives an ability on <kbd>Q</kbd><kbd>E</kbd><kbd>F</kbd><kbd>G</kbd> (and <kbd>Z</kbd><kbd>X</kbd> once researched) that goes on cooldown. Everyone else is <b>side crew</b> with a passive bonus. Put your best (Champions!) in these seats.`));
   // Pending drafts first
   for (const c of g.crew) if (c.draft) ctx.body.appendChild(draftHTML(ctx, c));
   const grid = h('div', 'officer-grid');
@@ -88,6 +89,13 @@ function renderOfficers(ctx: PanelCtx): void {
     const c = off[i];
     const seat = h('div', 'seat');
     seat.appendChild(h('div', 'seat-key', OFFICER_LABELS[i]));
+    if (i >= g.officerSeats()) {
+      seat.classList.add('locked');
+      seat.appendChild(h('div', 'empty-seat', `🔒 Locked seat<br><small>Research ${i === 4 ? 'Officer School (COMMAND I)' : 'Chain of Command (COMMAND III)'} in RESEARCH > Personnel.</small>`));
+      seat.appendChild(button('Open research', () => ctx.app.panels.open('tech', 'personnel')));
+      grid.appendChild(seat);
+      continue;
+    }
     if (c) {
       seat.appendChild(crewCard(ctx, c));
       const row = h('div', 'row');
@@ -139,7 +147,7 @@ function renderRoster(ctx: PanelCtx): void {
     const card = crewCard(ctx, c, true);
     row.appendChild(card);
     const mid = h('div', 'roster-mid');
-    mid.innerHTML = `${abilityText(c, g.player.crew.cdr)}<div class="perks">${perksHTML(c)}</div><div class="passive"><small>Passive:</small> ${esc(ROLES[c.role].passive)}</div>`;
+    mid.innerHTML = `${abilityText(c, g.player.crew.cdr, g.player.crew.abilityPower)}<div class="perks">${perksHTML(c)}</div><div class="passive"><small>Passive:</small> ${esc(ROLES[c.role].passive)}</div>`;
     row.appendChild(mid);
     const act = h('div', 'roster-act');
     if (c.officer >= 0) act.appendChild(h('div', 'badge-off', `OFFICER ${OFFICER_LABELS[c.officer]}`));

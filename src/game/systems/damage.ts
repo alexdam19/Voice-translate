@@ -1,6 +1,6 @@
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
 import { NODE_INFO } from '../../shared/mapgen';
-import type { Enemy } from '../entities';
+import { eid, type Enemy, type ShotFx } from '../entities';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
 import { newWeapon } from '../templates';
@@ -18,6 +18,47 @@ export interface HitOpts {
   silent?: boolean;
   wkey?: string;
   wr?: number;
+  /** On-hit effects (slow, stun, execute, chain reactions...). */
+  fx?: ShotFx;
+  /** Acid: ignores armor. */
+  acid?: boolean;
+}
+
+/** On-hit effects of a shot against a creature. Returns the adjusted damage. */
+function preHit(e: Enemy, dmg: number, fx: ShotFx | undefined): number {
+  if (!fx) return dmg;
+  if (fx.specials.includes('execute') && e.hp < e.maxHp * 0.3) dmg *= 2;
+  if (fx.slow > 0) {
+    e.slow = Math.max(e.slow, 2);
+    e.slowAmt = Math.max(e.slowAmt, fx.slow * (e.titan ? 0.5 : 1));
+  }
+  if (fx.stun > 0 && Math.random() < fx.stun) e.stun = Math.max(e.stun, fx.stunTime * (e.titan ? 0.25 : 1));
+  return dmg;
+}
+
+/** Effects that trigger after a hit lands (storm, singularity, hellfire, execute, chain reactions). */
+function postHit(g: Game, e: Enemy, fx: ShotFx | undefined, o: HitOpts): void {
+  if (!fx) return;
+  if (fx.execute && e.hp > 0 && e.hp < e.maxHp * (e.titan ? 0.06 : 0.2)) {
+    g.float(e.x, e.y + 0.5, 'ERASED', '#b388ff', true);
+    e.hp = 0;
+  }
+  for (const sp of fx.specials) {
+    if (sp === 'storm' && Math.random() < 0.2) {
+      g.fx.push({ t: 'strike', x: e.x, y: e.y, color: '#82b1ff' });
+      damageEnemy(g, e, fx.base * 0.6, { srcTank: o.srcTank, silent: o.silent });
+    } else if (sp === 'singularity' && Math.random() < 0.25 && !g.zones.some((z) => z.kind === 'well' && Math.hypot(z.x - e.x, z.y - e.y) < 3)) {
+      g.zones.push({ id: eid(), x: e.x, y: e.y, r: 3.2, t: 1.4, kind: 'well', dps: fx.base * 0.15, team: 'player' });
+    } else if (sp === 'napalm' && Math.random() < 0.3) {
+      g.zones.push({ id: eid(), x: e.x, y: e.y, r: 1.8, t: 3, kind: 'fire', dps: Math.max(6, fx.base * 0.3), team: 'player' });
+    }
+  }
+}
+
+function onKill(g: Game, e: Enemy, fx: ShotFx | undefined, o: HitOpts): void {
+  if (!fx) return;
+  if (fx.specials.includes('chain_react')) explode(g, e.x, e.y, 2.6, fx.base * 0.4, 'player', { srcTank: o.srcTank }, '#ff6e40', true);
+  else if (fx.volatile) explode(g, e.x, e.y, 2, fx.base * 0.25, 'player', { srcTank: o.srcTank }, '#ffab40', true);
 }
 
 /** Heals the player's fortress (all repair goes through here so healing bonuses apply). */
@@ -38,6 +79,8 @@ function lifesteal(g: Game, src: number | undefined, dealt: number, frac: number
 
 export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): void {
   if (e.hp <= 0 || e.burrowed) return;
+  dmg = preHit(e, dmg, o.fx);
+  if (o.srcTank === g.player.id) g.ultGain(dmg);
   const dealt = Math.min(e.hp, dmg);
   e.hp -= dmg;
   e.hitFlash = 0.12;
@@ -53,7 +96,11 @@ export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): vo
   }
   lifesteal(g, o.srcTank, dealt, o.lifesteal);
   if (!o.silent && g.isVisible(e.x, e.y)) g.float(e.x, e.y, String(Math.round(dmg)), o.crit ? '#ffea00' : '#ffffff', !!o.crit);
-  if (e.hp <= 0) killEnemy(g, e);
+  if (e.hp > 0) postHit(g, e, o.fx, o);
+  if (e.hp <= 0) {
+    killEnemy(g, e);
+    onKill(g, e, o.fx, o);
+  }
 }
 
 export function killEnemy(g: Game, e: Enemy): void {
@@ -94,6 +141,14 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
     return;
   }
   let d = dmg;
+  if (o.srcTank === g.player.id && t.team === 'enemy') g.ultGain(dmg);
+  if (t.hasBuff('dome')) d *= 0.1;
+  if (t.hasBuff('smoke')) d *= 0.5;
+  // Slows and stuns from special weapons.
+  if (o.fx) {
+    if (o.fx.slow > 0) t.addBuff('chill', 2, o.fx.slow * (t.team === 'player' ? 0.5 : 0.7));
+    if (o.fx.stun > 0 && Math.random() < o.fx.stun * (t.team === 'player' ? 0.3 : 0.6)) t.addBuff('stun', o.fx.stunTime * (t.team === 'player' ? 0.35 : 0.6));
+  }
   const barrier = t.buff('barrier');
   if (barrier && barrier.v > 0) {
     const take = Math.min(barrier.v, d);
@@ -109,7 +164,7 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
   let armor = t.stats.armor;
   if (t.hasBuff('armorUp')) armor += t.buff('armorUp')!.v;
   if (t === g.player && t.speed > 1 && t.hasBuff('evasive')) armor += 0.1;
-  d *= 1 - Math.min(0.75, armor);
+  if (!o.acid) d *= 1 - Math.min(0.75, armor);
   t.shieldDelay = 4;
   t.lastHitAt = g.time;
   if (o.burn && t.team === 'enemy') t.addBuff('burn', 3, o.burn);
@@ -118,7 +173,7 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
   t.hitFlash = 0.1;
   lifesteal(g, o.srcTank, dealt, o.lifesteal);
   if (!o.silent && (t.team === 'enemy' || d >= 1)) g.float(t.x, t.y + 0.4, String(Math.round(d)), t.team === 'player' ? '#ff5252' : o.crit ? '#ffea00' : '#ffffff', !!o.crit);
-  if (t === g.player && d > t.stats.maxHp * 0.07 && Math.random() < 0.35) injureRandomCrew(g, 20 + Math.random() * 15);
+  if (t === g.player && d > t.stats.maxHp * 0.07 && Math.random() < 0.35 * (1 - g.crewFx.injuryResist)) injureRandomCrew(g, 20 + Math.random() * 15);
   if (t.hp <= 0) {
     t.hp = 0;
     onTankDestroyed(g, t);
@@ -148,11 +203,13 @@ export function damageFriendly(g: Game, id: number, dmg: number, o: HitOpts = {}
   }
 }
 
-/** Area damage centred at (x,y) against one side. */
-export function explode(g: Game, x: number, y: number, r: number, dmg: number, team: 'player' | 'enemy', o: HitOpts = {}, color = '#ffab40'): void {
+/** Area damage centred at (x,y) against one side. `quiet` skips the shake and boom sound (fragments, strikes). */
+export function explode(g: Game, x: number, y: number, r: number, dmg: number, team: 'player' | 'enemy', o: HitOpts = {}, color = '#ffab40', quiet = false): void {
   g.fx.push({ t: 'boom', x, y, r, color, big: r > 3 });
-  if (r >= 2.5) g.fx.push({ t: 'shake', amt: Math.min(0.8, r * 0.12) });
-  g.hooks.sound(r >= 2.5 ? 'bigboom' : 'boom', x, y, Math.min(1, 0.4 + r * 0.15));
+  if (!quiet) {
+    if (r >= 2.5) g.fx.push({ t: 'shake', amt: Math.min(0.8, r * 0.12) });
+    g.hooks.sound(r >= 2.5 ? 'bigboom' : 'boom', x, y, Math.min(1, 0.4 + r * 0.15));
+  }
   if (team === 'player') {
     for (const e of g.enemies) {
       if (e.hp <= 0 || e.burrowed) continue;

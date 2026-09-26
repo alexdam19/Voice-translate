@@ -28,15 +28,18 @@ export function renderCargo(ctx: PanelCtx): void {
 function renderWorkshop(ctx: PanelCtx): void {
   const g = ctx.app.game;
   const s = g.player.stats;
-  const sections: [string, 'refinery' | 'workshop' | 'none', boolean, string][] = [
+  const sections: [string, 'refinery' | 'workshop' | 'sanctum' | 'none', boolean, string][] = [
     ['REFINERY: ore into parts', 'refinery', s.refinery, 'Build a Refinery on your deck (BASE).'],
-    ['WORKSHOP: drive trains', 'workshop', s.workshop, 'Build a Workshop on your deck (BASE). Weapons are built in BASE > Armory.'],
+    ['WORKSHOP: drive trains', 'workshop', s.workshop, 'Build a Workshop on your deck (BASE). Weapons are built in ARSENAL (V) > Codex.'],
+    ['ARCANE SANCTUM: Mythic Essence', 'sanctum', s.sanctum > 0, 'Research Arcane Studies, then build an Arcane Sanctum.'],
     ['FIELD KITCHEN & KITS', 'none', true, ''],
   ];
   for (const [title, station, ok, need] of sections) {
     ctx.body.appendChild(h('div', 'cat', `${title} ${ok ? '' : `<small class="bad">${esc(need)}</small>`}`));
     const grid = h('div', 'recipe-grid');
     for (const r of recipesFor(station)) {
+      if (r.tech && !g.tech.has(r.tech)) continue;
+      if (r.id === 's_essence' && g.tech.has('essence_tap')) continue;
       const out = getItem(r.out);
       const el = h('div', `recipe ${ok ? '' : 'locked'}`);
       el.innerHTML = `<img src="${itemIcon(r.out)}"><div><b>${r.n > 1 ? `${r.n}× ` : ''}${esc(out.name)}</b> <small>(have ${g.player.cargo.count(r.out)})</small><br>${costHTML(r.cost, [g.player.cargo])}</div>`;

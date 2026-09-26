@@ -3,7 +3,7 @@ import { Inventory, type Slot } from '../shared/inventory';
 import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
 import { emptyBonus, type CrewBonus } from './crew';
-import { chassisDef, MODULES, type ModuleDef } from './defs';
+import { chassisDef, levelMult, MODULES, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
 
 export type Team = 'player' | 'enemy';
@@ -30,6 +30,15 @@ export interface ModuleInst {
   stats: WeaponStats | null;
   /** Burst counter for volleys. */
   burst: number;
+  /** Module level (1-3). */
+  lvl: number;
+  /** Shots fired (Overcharge counts every 4th). */
+  shots: number;
+  /** Ray Gun damage ramp (0-1) and the target it is locked on. */
+  ramp: number;
+  rampTarget: number;
+  /** Twin-barrel cooldown. */
+  cd2: number;
 }
 
 export interface TankStats {
@@ -63,6 +72,15 @@ export interface TankStats {
   radius: number;
   crush: number;
   loot: number;
+  /** Research speed from Science Labs. */
+  lab: number;
+  /** Forge level (0 = none). */
+  forge: number;
+  training: number;
+  sanctum: number;
+  depot: number;
+  uplink: number;
+  mess: boolean;
 }
 
 export interface Buff {
@@ -169,7 +187,8 @@ export class Tank {
     if (!this.canPlace(key, cx, cy)) return null;
     const d = MODULES[key];
     const m: ModuleInst = {
-      id: this.nextModId++, key, cx, cy, weapon, mode: 'auto', aim: this.rot, cd: Math.random() * 0.5, recoil: 0, targetId: 0, stats: null, burst: 0,
+      id: this.nextModId++, key, cx, cy, weapon, mode: 'auto', aim: this.rot, cd: d.hardpoint ? Math.random() * 0.5 : 0, recoil: 0, targetId: 0, stats: null, burst: 0,
+      lvl: 1, shots: 0, ramp: 0, rampTarget: 0, cd2: 0,
     };
     this.modules.push(m);
     for (let y = cy; y < cy + d.h; y++) for (let x = cx; x < cx + d.w; x++) this.grid[y * this.cols + x] = m.id;
@@ -254,31 +273,40 @@ export class Tank {
     const crew = this.crew;
     let hp = ch.hp, armor = ch.armor, power = 0, use = 0, thrust = 0, mass = ch.mass, cargo = BASE_CARGO, crewCap = 0;
     let vision = 0, drill = 1, harvest = 1, repair = 0, vault = 0, food = 0, radar = 0, shield = 0, shieldRegen = 0;
-    let refinery = false, workshop = false, garage = false, medbay = false;
+    let refinery = false, workshop = false, garage = false, medbay = false, mess = false;
+    let lab = 0, forge = 0, training = 0, sanctum = 0, depot = 0, uplink = 0;
     const protects = new Set<Hazard>();
     for (const m of this.modules) {
       const d: ModuleDef = MODULES[m.key];
-      hp += d.hp ?? 0;
-      armor += d.armor ?? 0;
-      power += d.power ?? 0;
+      const f = levelMult(m.lvl);
+      hp += (d.hp ?? 0) * f;
+      armor += (d.armor ?? 0) * f;
+      power += (d.power ?? 0) * f;
       use += d.use ?? 0;
-      thrust += d.thrust ?? 0;
+      thrust += (d.thrust ?? 0) * f;
       mass += d.w * d.h * 0.6;
-      cargo += d.cargo ?? 0;
-      crewCap += d.crew ?? 0;
-      vision += d.vision ?? 0;
+      cargo += Math.round((d.cargo ?? 0) * f);
+      crewCap += d.crew ? d.crew + (m.lvl - 1) : 0;
+      vision += (d.vision ?? 0) * f;
       drill = Math.max(drill, d.drill ?? 1);
-      harvest *= d.harvest ?? 1;
-      repair += d.repair ?? 0;
+      harvest *= 1 + ((d.harvest ?? 1) - 1) * f;
+      repair += (d.repair ?? 0) * f;
       vault += d.vault ?? 0;
-      food += d.food ?? 0;
-      radar = Math.max(radar, d.radar ?? 0);
-      shield += d.shield ?? 0;
-      shieldRegen += d.shieldRegen ?? 0;
+      food += (d.food ?? 0) * f;
+      radar = Math.max(radar, (d.radar ?? 0) * f);
+      shield += (d.shield ?? 0) * f;
+      shieldRegen += (d.shieldRegen ?? 0) * f;
       refinery ||= !!d.refinery;
       workshop ||= !!d.workshop;
       garage ||= !!d.garage;
       medbay ||= !!d.medbay;
+      mess ||= !!d.mess;
+      lab += (d.lab ?? 0) * f;
+      if (d.forge) forge = Math.max(forge, m.lvl);
+      training += (d.training ?? 0) * f;
+      if (d.sanctum) sanctum = Math.max(sanctum, m.lvl);
+      depot += (d.depot ?? 0) * f;
+      uplink += (d.uplink ?? 0) * f;
       for (const h of d.protects ?? []) protects.add(h);
       if (m.weapon) {
         const wd = WEAPONS[m.weapon.key];
@@ -293,10 +321,12 @@ export class Tank {
       }
       const fam = WEAPONS[m.weapon.key].family;
       const base: WeaponMods = this.team === 'player' ? weaponMods(this.tech, fam) : { ...BASE_WEAPON_MODS };
+      const depotF = fam === 'ballistic' || fam === 'artillery' || fam === 'missile' ? Math.min(0.4, depot) : 0;
+      const sanctumF = fam === 'arcane' && sanctum ? 0.1 * sanctum : 0;
       const mods: WeaponMods = {
         ...base,
-        dmg: base.dmg * (1 + crew.dmg) * this.dmgScale,
-        rate: base.rate * (1 + crew.rate),
+        dmg: base.dmg * (1 + crew.dmg) * (1 + sanctumF) * this.dmgScale,
+        rate: base.rate * (1 + crew.rate) * (1 + depotF),
         range: base.range * (1 + crew.range),
         crit: base.crit + crew.crit,
       };
@@ -322,6 +352,7 @@ export class Tank {
       drill, harvest: harvest * hull.harvest * (1 + crew.harvest),
       protects, repair: repair + crew.regen, vault, food, radar, refinery, workshop, garage, medbay,
       width, length, radius: width / 2, crush: hull.crush, loot: hull.loot * (1 + crew.loot),
+      lab, forge, training, sanctum, depot, uplink, mess,
     };
     if (this.cargo.size !== this.stats.cargo) this.cargo.resize(this.stats.cargo);
     this.hp = Math.min(this.hp, this.stats.maxHp);
@@ -410,7 +441,7 @@ export class Tank {
   serialize(): TankSave {
     return {
       chassis: this.chassis, drive: this.drive, x: this.x, y: this.y, rot: this.rot, hp: this.hp, shield: this.shield,
-      modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, weapon: m.weapon, mode: m.mode })),
+      modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined })),
       cargo: this.cargo.snapshot(),
     };
   }
@@ -427,6 +458,7 @@ export class Tank {
       if (inst) {
         inst.mode = m.mode ?? 'auto';
         inst.aim = t.rot;
+        inst.lvl = Math.max(1, Math.min(3, Math.round(m.lvl ?? 1)));
       }
     }
     if (!t.modules.some((m) => m.key === 'bridge')) t.autoAdd('bridge');
@@ -446,6 +478,6 @@ export interface TankSave {
   rot: number;
   hp: number;
   shield?: number;
-  modules: { key: string; cx: number; cy: number; weapon: WeaponItem | null; mode?: FireMode }[];
+  modules: { key: string; cx: number; cy: number; weapon: WeaponItem | null; mode?: FireMode; lvl?: number }[];
   cargo: Slot[];
 }

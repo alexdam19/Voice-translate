@@ -37,7 +37,7 @@ export function rewardCard(r: Reward): HTMLDivElement {
       <div class="rs">Ability: <b style="color:${ab.color}">${esc(ab.name)}</b></div>
       <div class="rd">${ex ? esc(ex.desc) : esc(ROLES[c.role].passive)}</div>`;
   } else if (r.type === 'tech') {
-    card.innerHTML = `<div class="rk">RESEARCH</div><img class="big" src="${itemIcon('tech_parts')}"><div class="rn" style="color:${col}">${r.n} Salvaged Tech</div><div class="rd">Spend it on the Tech Tree (T).</div>`;
+    card.innerHTML = `<div class="rk">RESEARCH</div><img class="big" src="${itemIcon('tech_parts')}"><div class="rn" style="color:${col}">${r.n} Salvaged Tech</div><div class="rd">Spend it on RESEARCH (T).</div>`;
   } else {
     card.innerHTML = `<div class="rk">MATERIALS</div><div class="stacks">${r.stacks.map((s) => `<span><img src="${itemIcon(s.id)}">${s.n} ${esc(getItem(s.id).name)}</span>`).join('')}</div>`;
   }

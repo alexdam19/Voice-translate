@@ -1,8 +1,9 @@
-import { OFFICER_SLOTS } from '../../shared/constants';
+import { OFFICER_LABELS, OFFICER_SLOTS } from '../../shared/constants';
 import { abilityCooldown, abilityOf, abilityPower, type CrewMember } from '../crew';
 import { eid } from '../entities';
+import { spawnMarines } from './allies';
 import type { Game } from '../game';
-import { damageEnemy, damageFriendly, explode, healPlayer } from './damage';
+import { damageEnemy, damageFriendly, damageTank, explode, healPlayer } from './damage';
 import { planPath, resolveTank } from './movement';
 import { revealFeatures } from './world';
 
@@ -10,7 +11,7 @@ import { revealFeatures } from './world';
 export function updateCrew(g: Game, dt: number): void {
   const p = g.player;
   let changed = false;
-  const medicRate = 1 + p.crew.recovery + (p.stats.medbay ? 2 : 0) + (p.modules.some((m) => m.key === 'quarters') ? 0.5 : 0);
+  const medicRate = 1 + p.crew.recovery + (p.stats.medbay ? 2 : 0) + (p.stats.mess ? 0.5 : 0) + (p.modules.some((m) => m.key === 'quarters') ? 0.5 : 0);
   for (const c of g.crew) {
     if (c.cd > 0) c.cd = Math.max(0, c.cd - dt);
     if (c.injured > 0) {
@@ -41,6 +42,14 @@ export function updateCrew(g: Game, dt: number): void {
       g.give('rations', 1, true);
     }
   }
+  // Training Grounds: everyone aboard learns a little every second.
+  if (p.stats.training > 0 && g.mode === 'world') {
+    g.timers.train += dt;
+    if (g.timers.train >= 2) {
+      g.timers.train = 0;
+      g.crewXp(p.stats.training * 2);
+    }
+  }
   g.timers.crew -= dt;
   if (changed || g.timers.crew <= 0) {
     g.timers.crew = 0.5;
@@ -51,6 +60,10 @@ export function updateCrew(g: Game, dt: number): void {
 /** Tries to fire the ability in officer slot `slot` at world point (x, y). */
 export function castAbility(g: Game, slot: number, x: number, y: number): boolean {
   if (slot < 0 || slot >= OFFICER_SLOTS || g.player.dead) return false;
+  if (slot >= g.officerSeats()) {
+    g.hooks.toast(`Seat ${OFFICER_LABELS[slot]} is locked. Research ${slot === 4 ? 'Officer School' : 'Chain of Command'} (RESEARCH > Personnel > COMMAND).`, '#ff8a80');
+    return false;
+  }
   const c = g.officers()[slot];
   if (!c) {
     g.hooks.toast('No officer in that slot. Assign one in CREW (C).', '#ff8a80');
@@ -72,6 +85,10 @@ export function castAbility(g: Game, slot: number, x: number, y: number): boolea
   }
   runAbility(g, c, a.key, x, y);
   c.cd = abilityCooldown(c, g.player.crew.cdr);
+  if (g.crewFx.blitz > 0) {
+    g.player.addBuff('blitz', 5, 0.3);
+    g.applyCrew();
+  }
   g.crewXp(0);
   c.xp += 3;
   g.hooks.sound('ability');
@@ -80,21 +97,9 @@ export function castAbility(g: Game, slot: number, x: number, y: number): boolea
   return true;
 }
 
-function spawnMarines(g: Game, n: number, heavy: boolean, life: number, power: number): void {
-  const p = g.player;
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    const r = p.stats.width / 2 + 1;
-    g.allies.push({
-      id: eid(), x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r, hp: (heavy ? 220 : 90) * power, maxHp: (heavy ? 220 : 90) * power, life,
-      dmg: (heavy ? 16 : 9) * power, range: heavy ? 11 : 9, cd: Math.random(), heavy, face: 1, anim: 0, targetId: 0,
-    });
-  }
-}
-
 function runAbility(g: Game, c: CrewMember, key: string, x: number, y: number): void {
   const p = g.player;
-  const P = abilityPower(c);
+  const P = abilityPower(c, p.crew.abilityPower);
   const heal = (frac: number, over: number): void => {
     p.addBuff('regen', over, (p.stats.maxHp * frac) / over);
   };
@@ -246,7 +251,7 @@ export function updateBuffs(g: Game, dt: number): void {
   }
 }
 
-/** Burning ground, acid puddles and gravity wells. */
+/** Burning ground, acid pools, time fields, radiation and gravity wells. */
 export function updateZones(g: Game, dt: number): void {
   for (let i = g.zones.length - 1; i >= 0; i--) {
     const z = g.zones[i];
@@ -255,20 +260,33 @@ export function updateZones(g: Game, dt: number): void {
       g.zones.splice(i, 1);
       continue;
     }
+    if (z.kind === 'smoke') continue;
+    const slow = z.kind === 'chrono' ? 0.7 : z.kind === 'frost' ? 0.4 : 0;
     if (z.team === 'player') {
       for (const e of g.enemies) {
+        if (e.hp <= 0) continue;
         const d = Math.hypot(e.x - z.x, e.y - z.y);
         if (d > z.r + e.r) continue;
         if (z.kind === 'well' && !e.titan && d > 0.5) {
           e.x += ((z.x - e.x) / d) * 6 * dt;
           e.y += ((z.y - e.y) / d) * 6 * dt;
         }
-        damageEnemy(g, e, z.dps * dt, { silent: true });
+        if (slow) {
+          e.slow = Math.max(e.slow, 0.3);
+          e.slowAmt = Math.max(e.slowAmt, slow * (e.titan ? 0.5 : 1));
+        }
+        if (z.dps > 0) damageEnemy(g, e, z.dps * dt, { silent: true, srcTank: g.player.id });
+      }
+      for (const t of g.tanks) {
+        if (t.dead || t.team !== 'enemy' || t.edgeDist(z.x, z.y) > z.r) continue;
+        if (slow) t.addBuff('chill', 0.3, slow * 0.7);
+        if (z.dps > 0) damageTank(g, t, z.dps * dt, { silent: true, acid: z.kind === 'acid', srcTank: g.player.id });
       }
     } else {
       for (const f of g.friendlies()) {
         if (g.friendlyEdgeDist(f.id, z.x, z.y) > z.r) continue;
-        damageFriendly(g, f.id, z.dps * dt, { silent: true });
+        if (slow && f.id === g.player.id) g.player.addBuff('chill', 0.3, slow * 0.5);
+        if (z.dps > 0) damageFriendly(g, f.id, z.dps * dt, { silent: true, acid: z.kind === 'acid' });
       }
     }
   }

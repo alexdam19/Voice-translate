@@ -1,10 +1,12 @@
-import { CENTER, OFFICER_KEYS } from './shared/constants';
+import { ACTIVE_KEYS, CENTER, KIT_KEY, OFFICER_KEYS, ULT_KEY } from './shared/constants';
 import { NODE_INFO, RUNE_INFO, SITE_INFO } from './shared/mapgen';
 import { Audio } from './game/audio';
 import type { ChestKind, Reward } from './game/entities';
 import { Game } from './game/game';
 import { Input } from './game/input';
 import { deserialize, loadSave, saveGame } from './game/save';
+import { choosePerk } from './game/actions';
+import { castActive, castUltimate } from './game/systems/arsenal';
 import { castAbility } from './game/systems/crewsys';
 import { orderAttack, orderHarvest, orderInteract, orderMove } from './game/systems/orders';
 import { launchOutrider, OUTRIDER_COST, sendOutrider } from './game/systems/outrider';
@@ -63,6 +65,9 @@ export class App {
     this.hud = new Hud(uiRoot, {
       openPanel: (n, t) => this.panels.open(n, t),
       cast: (i) => this.cast(i),
+      castActive: (i) => this.castActive(i),
+      castUlt: () => this.castUlt(),
+      pickPerk: (crewId, idx) => this.pickPerk(crewId, idx),
       toggleWeapon: (id) => this.toggleWeapon(id),
       toggleAutoFire: () => this.toggleAutoFire(),
       useKit: () => this.useKit(),
@@ -93,7 +98,7 @@ export class App {
 
   newGame(seed = Math.floor(Math.random() * 1e9)): void {
     this.start(new Game(seed));
-    this.hud.toast('Welcome, Commander. Right-click to drive. Your guns fire on their own.', '#ffd740');
+    this.hud.toast('Welcome, Commander. Drive with WASD (or right-click). Your guns fire on their own.', '#ffd740');
     this.panels.open('help');
   }
 
@@ -154,6 +159,27 @@ export class App {
     if (castAbility(g, slot, g.aim.x, g.aim.y)) this.view.moveMarker(g.aim.x, g.aim.y, '#ea80fc');
   }
 
+  castActive(slot: number): void {
+    const g = this.game;
+    if (!g || g.player.dead) return;
+    if (castActive(g, slot, g.aim.x, g.aim.y)) this.view.moveMarker(g.aim.x, g.aim.y, '#ff4081');
+  }
+
+  castUlt(): void {
+    const g = this.game;
+    if (!g || g.player.dead) return;
+    if (castUltimate(g, g.aim.x, g.aim.y)) {
+      this.view.moveMarker(g.aim.x, g.aim.y, '#ff1744');
+      this.sound('ability');
+    }
+  }
+
+  pickPerk(crewId: number, idx: number): void {
+    const r = choosePerk(this.game, crewId, idx);
+    if (r.ok) this.sound('levelup');
+    else this.hud.toast(r.msg, '#ff8a80');
+  }
+
   toggleWeapon(id: number): void {
     const m = this.game.player.moduleById(id);
     if (!m) return;
@@ -167,7 +193,7 @@ export class App {
   toggleAutoFire(): void {
     this.game.autoFire = !this.game.autoFire;
     if (this.game.autoFire) for (const w of this.game.player.weapons()) w.mode = 'auto';
-    this.hud.toast(this.game.autoFire ? 'Auto-fire ON: guns pick their own targets.' : 'Manual fire: guns aim at your cursor. Hold left mouse to shoot.', '#4dd0e1');
+    this.hud.toast(this.game.autoFire ? 'Auto-fire ON (Y): guns pick their own targets.' : 'Manual fire (Y): guns aim at your cursor. Hold left mouse to shoot.', '#4dd0e1');
     this.sound('ui');
   }
 
@@ -175,7 +201,7 @@ export class App {
     const p = this.game.player;
     if (p.dead) return;
     if (p.cargo.count('repair_kit') <= 0) {
-      this.hud.toast('No repair kits. Craft them in CARGO > Workshop.', '#ff8a80');
+      this.hud.toast('No repair kits (5). Craft them in CARGO > Workshop.', '#ff8a80');
       return;
     }
     if (p.hp >= p.stats.maxHp) return;
@@ -248,6 +274,7 @@ export class App {
     }
     const g = this.game;
     this.handleKeys();
+    this.readDrive();
     if (!this.uiBlocking) this.handleMouse(dt);
     const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen;
     if (!paused) {
@@ -308,18 +335,38 @@ export class App {
         if (m.y < edge) v.cam.y -= sp;
         if (m.y > v.height - edge) v.cam.y += sp;
       }
-      if (this.input.down('ArrowLeft')) v.cam.x -= sp;
-      if (this.input.down('ArrowRight')) v.cam.x += sp;
-      if (this.input.down('ArrowUp')) v.cam.y -= sp;
-      if (this.input.down('ArrowDown')) v.cam.y += sp;
       v.cam.x = Math.max(0, Math.min(g.map.size, v.cam.x));
       v.cam.y = Math.max(0, Math.min(g.map.size, v.cam.y));
     }
   }
 
+  /** WASD / arrow keys drive the fortress (screen-relative, or tank-style from the menu). */
+  private readDrive(): void {
+    const g = this.game;
+    const i = this.input;
+    const di = g.driveInput;
+    if (this.uiBlocking || g.player.dead) {
+      di.active = false;
+      return;
+    }
+    const x = (i.down('KeyD') || i.down('ArrowRight') ? 1 : 0) - (i.down('KeyA') || i.down('ArrowLeft') ? 1 : 0);
+    const y = (i.down('KeyS') || i.down('ArrowDown') ? 1 : 0) - (i.down('KeyW') || i.down('ArrowUp') ? 1 : 0);
+    di.x = x;
+    di.y = y;
+    const was = di.active;
+    di.active = x !== 0 || y !== 0;
+    if (di.active && !was) {
+      g.harvestId = 0;
+      this.objCounters('wasd');
+    }
+  }
+
+  private objCounters(k: string): void {
+    this.game.objectiveCounters[k] = (this.game.objectiveCounters[k] ?? 0) + 1;
+  }
+
   private handleKeys(): void {
     const i = this.input;
-    const g = this.game;
     if (i.consume('Escape')) {
       if (this.sendMode) this.sendMode = false;
       else if (this.chest.isOpen) this.chest.escape();
@@ -327,24 +374,26 @@ export class App {
       else this.panels.open('menu');
     }
     if (this.chest.isOpen) return;
-    const panelKeys: [string, string][] = [['KeyB', 'base'], ['KeyC', 'crew'], ['KeyT', 'tech'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help']];
+    const panelKeys: [string, string][] = [
+      ['KeyB', 'base'], ['KeyV', 'arsenal'], ['KeyC', 'crew'], ['KeyT', 'tech'], ['KeyK', 'abilities'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'],
+    ];
     for (const [k, p] of panelKeys) if (i.consume(k)) this.panels.toggle(p);
     if (this.panels.isOpen) return;
     OFFICER_KEYS.forEach((k, slot) => {
       if (i.consume(k)) this.cast(slot);
     });
-    if (i.consume('KeyS')) {
-      g.stop();
-      this.sound('ui');
-    }
-    if (i.consume('KeyZ')) this.toggleAutoFire();
-    if (i.consume('Digit1')) this.useKit();
-    if (i.consume('KeyY')) {
+    ACTIVE_KEYS.forEach((k, slot) => {
+      if (i.consume(k)) this.castActive(slot);
+    });
+    if (i.consume(ULT_KEY)) this.castUlt();
+    if (i.consume(KIT_KEY)) this.useKit();
+    if (i.consume('KeyY')) this.toggleAutoFire();
+    if (i.consume('KeyL')) {
       this.camLocked = !this.camLocked;
-      this.hud.toast(this.camLocked ? 'Camera locked to your fortress (Y).' : 'Camera unlocked: move the mouse to the screen edge or use arrow keys. Hold Space to recenter.', '#4dd0e1');
+      this.hud.toast(this.camLocked ? 'Camera locked to your fortress (L).' : 'Camera unlocked (L): move the mouse to the screen edge to pan. Hold Space to recenter.', '#4dd0e1');
     }
     if (i.consume('KeyP')) this.paused = !this.paused;
-    if (i.consume('KeyG')) {
+    if (i.consume('KeyJ')) {
       if (this.hover && (this.hover.kind === 'node' || this.hover.kind === 'site')) this.trySend(this.hover);
       else this.outriderCmd('send');
     }
@@ -469,7 +518,7 @@ export class App {
         const n = g.gen.nodes.find((k) => k.id === hv.id)!;
         const info = NODE_INFO[n.type];
         const ok = info.tier <= g.player.stats.drill;
-        return `<b>${info.name}</b> (${n.amount} left) · ${ok ? 'right-click: harvest' : `<span class="bad">needs Mk${info.tier} Drill</span>`}${g.outrider ? ' · G: send Outrider' : ''}`;
+        return `<b>${info.name}</b> (${n.amount} left) · ${ok ? 'right-click: harvest' : `<span class="bad">needs Mk${info.tier} Drill</span>`}${g.outrider ? ' · J: send Outrider' : ''}`;
       }
       case 'site': {
         const s = g.gen.sites.find((k) => k.id === hv.id)!;

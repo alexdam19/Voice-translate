@@ -29,7 +29,7 @@ export function updateHarvest(g: Game, dt: number): void {
   const info = NODE_INFO[n.type];
   if (p.edgeDist(n.x, n.y) > 3.2) return; // still driving there
   if (info.tier > p.stats.drill) {
-    g.hooks.toast(`${info.name} needs a Mk${info.tier} Drill Rig (BASE > Build, unlocked in the Tech Tree).`, '#ff8a80');
+    g.hooks.toast(`${info.name} needs a Mk${info.tier} Drill Rig (BASE > Build, unlocked in RESEARCH).`, '#ff8a80');
     g.harvestId = 0;
     return;
   }

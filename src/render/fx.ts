@@ -55,9 +55,16 @@ export class Particles {
     this.points.frustumCulled = false;
   }
 
+  private cursor = 0;
+
   emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, size: number, color: Color, grav = 0, drag = 1, grow = 0): void {
-    if (this.list.length >= this.cap) this.list.shift();
-    this.list.push({ x, y, z, vx, vy, vz, life, max: life, size, r: color.r, g: color.g, b: color.b, grav, drag, grow });
+    const p: P = { x, y, z, vx, vy, vz, life, max: life, size, r: color.r, g: color.g, b: color.b, grav, drag, grow };
+    if (this.list.length < this.cap) this.list.push(p);
+    else {
+      // Full: overwrite a slot in rotation instead of shifting the whole list.
+      this.cursor = (this.cursor + 1) % this.cap;
+      this.list[this.cursor] = p;
+    }
   }
 
   update(dt: number): void {
@@ -176,6 +183,28 @@ export class Transients {
       if (c === '#ffffff') line.position.y = 0.02;
       this.group.add(line);
       this.list.push({ obj: line, life: 0.14, max: 0.14, kind: 'bolt', mat, grow: 0 });
+    }
+  }
+
+  /** A jagged lightning bolt from the sky down to (x, y). */
+  skyBolt(x: number, y: number, color: string): void {
+    const verts: number[] = [];
+    let px = x + (Math.random() - 0.5) * 3, pz = y + (Math.random() - 0.5) * 3;
+    for (let h = 16; h >= 0; h -= 1.2) {
+      const t = h / 16;
+      px += (x - px) * 0.35 + (Math.random() - 0.5) * 0.9 * t;
+      pz += (y - pz) * 0.35 + (Math.random() - 0.5) * 0.9 * t;
+      verts.push(h <= 1.2 ? x : px, Math.max(0, h), h <= 1.2 ? y : pz);
+    }
+    verts.push(x, 0, y);
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(new Float32Array(verts), 3));
+    for (const c of [color, '#ffffff']) {
+      const mat = new LineBasicMaterial({ color: c, transparent: true, depthWrite: false });
+      const line = new Line(g, mat);
+      if (c === '#ffffff') line.position.x = 0.04;
+      this.group.add(line);
+      this.list.push({ obj: line, life: 0.22, max: 0.22, kind: 'bolt', mat, grow: 0 });
     }
   }
 

@@ -4,9 +4,11 @@ import type { DriveKey } from '../shared/types';
 import { AFFIXES, WEAPONS, weaponScore, weaponStats, type WeaponItem } from '../shared/weapons';
 import { ZONES } from '../shared/zones';
 import { ZONE } from '../shared/map';
-import { buildModule, craftWeapon, installDrive, mountWeapon, moveModule, removeModule, scrapValue, scrapWeapon, unmountWeapon, upgradeChassis } from '../game/actions';
-import { CATEGORIES, chassisDef, DRIVE_INFO, MODULE_LIST, MODULES, UPGRADE_CHASSIS, type ModuleDef } from '../game/defs';
-import { moduleUnlocked, TECH_BY_ID, weaponCraftable } from '../game/tech';
+import { buildModule, craftWeapon, installDrive, mountWeapon, moveModule, removeModule, scrapValue, scrapWeapon, setUltimate, unmountWeapon, upgradeChassis, upgradeModule } from '../game/actions';
+import { ACTIVES, ULTIMATES } from '../game/arsenal';
+import { CATEGORIES, chassisDef, DRIVE_INFO, levelCost, levelMult, maxModuleLevel, MODULE_LIST, MODULES, UPGRADE_CHASSIS, type ModuleDef } from '../game/defs';
+import { BRANCHES, moduleUnlocked, TECH_BY_ID, TIER_NAMES, weaponCraftable } from '../game/tech';
+import { selectArsenalHardpoint, selectArsenalWeapon } from './arsenalPanel';
 import { itemIcon, moduleIcon, weaponIcon } from '../render/icons';
 import { MODULE_COLOR } from '../render/textures';
 import { button, costHTML, esc, h, tooltip } from './dom';
@@ -14,21 +16,38 @@ import type { PanelCtx } from './panels';
 
 const state = { build: '' as string, selected: -1, moving: -1, armorySel: -1, weaponSel: -1 };
 
-function moduleStats(d: ModuleDef): string {
+function moduleStats(d: ModuleDef, lvl = 1): string {
+  const f = levelMult(lvl);
+  const n = (v: number): string => String(Math.round(v * f * 10) / 10);
   const s: string[] = [];
-  if (d.power) s.push(`+${d.power} power`);
+  if (d.power) s.push(`+${n(d.power)} power`);
   if (d.use) s.push(`-${d.use} power`);
-  if (d.thrust) s.push(`+${d.thrust} thrust`);
-  if (d.crew) s.push(`+${d.crew} crew bunks`);
-  if (d.cargo) s.push(`+${d.cargo} cargo`);
-  if (d.hp) s.push(`+${d.hp} hull`);
-  if (d.armor) s.push(`+${Math.round(d.armor * 1000) / 10}% armor`);
-  if (d.shield) s.push(`+${d.shield} shield`);
-  if (d.vision) s.push(`+${d.vision} vision`);
+  if (d.thrust) s.push(`+${n(d.thrust)} thrust`);
+  if (d.crew) s.push(`+${d.crew + lvl - 1} crew bunks`);
+  if (d.cargo) s.push(`+${Math.round(d.cargo * f)} cargo`);
+  if (d.hp) s.push(`+${n(d.hp)} hull`);
+  if (d.armor) s.push(`+${Math.round(d.armor * f * 1000) / 10}% armor`);
+  if (d.shield) s.push(`+${n(d.shield)} shield`);
+  if (d.repair) s.push(`+${n(d.repair)} repair/s`);
+  if (d.vision) s.push(`+${n(d.vision)} vision`);
   if (d.drill) s.push(`drill tier ${d.drill}`);
   if (d.protects) s.push(`protects: ${d.protects.join(', ')}`);
   if (d.hardpoint) s.push(`mounts 1 ${d.hardpoint} weapon`);
+  if (d.lab) s.push(`+${n(d.lab)} research speed`);
+  if (d.forge) s.push(`forge speed ×${f}`);
+  if (d.training) s.push(`+${n(d.training)} crew XP/s`);
+  if (d.sanctum) s.push(`arcane weapons +${10 * lvl}% damage`);
+  if (d.depot) s.push(`+${Math.round(d.depot * f * 100)}% fire rate (ballistic/artillery/missile)`);
+  if (d.uplink) s.push(`ultimate charges +${Math.round(d.uplink * f * 100)}% faster`);
+  if (d.active) s.push(`ACTIVE: ${ACTIVES[d.active].name}${lvl > 1 ? ` (+${Math.round((f - 1) * 100)}% power)` : ''}`);
+  if (d.ult) s.push(`ULTIMATE: ${ULTIMATES[d.ult].name}${lvl > 1 ? ` (+${Math.round((f - 1) * 100)}% power)` : ''}`);
   return s.join(' · ');
+}
+
+function lockText(d: ModuleDef): string {
+  const n = d.tech ? TECH_BY_ID.get(d.tech) : undefined;
+  if (!n) return '';
+  return `🔒 ${esc(n.name)} <small>(${esc(BRANCHES.find((b) => b.key === n.branch)?.name ?? '')} ${TIER_NAMES[n.tier]})</small>`;
 }
 
 export function weaponLine(w: WeaponItem): string {
@@ -42,6 +61,13 @@ export function renderBase(ctx: PanelCtx): void {
   if (ctx.tab === 'armory') return renderArmory(ctx);
   if (ctx.tab === 'chassis') return renderChassis(ctx);
   renderDeck(ctx);
+}
+
+/** Weapon mounting now lives in the Arsenal panel. */
+function openArsenal(ctx: PanelCtx, hpId: number, uid?: number): void {
+  if (uid) selectArsenalWeapon(uid);
+  else selectArsenalHardpoint(hpId);
+  ctx.app.panels.open('arsenal', 'weapons');
 }
 
 /* ---------------------------------------------------------------------- */
@@ -64,11 +90,11 @@ function renderDeck(ctx: PanelCtx): void {
       const owned = d.unique && p.modules.some((m) => m.key === d.key);
       const afford = g.canPay(d.cost);
       const b = h('div', `pal-item ${state.build === d.key ? 'on' : ''} ${!unlocked || owned ? 'locked' : ''} ${afford ? '' : 'poor'}`);
-      b.innerHTML = `<img src="${moduleIcon(d.key)}"><div><b>${esc(d.name)}</b> <small>${d.w}×${d.h}</small><div class="st">${unlocked ? (owned ? 'Built (only one allowed)' : costHTML(d.cost, [p.cargo])) : `🔒 Research: ${esc(TECH_BY_ID.get(d.tech!)?.name ?? '')}`}</div></div>`;
+      b.innerHTML = `<img src="${moduleIcon(d.key)}"><div><b>${esc(d.name)}</b> <small>${d.w}×${d.h}</small><div class="st">${unlocked ? (owned ? 'Built (only one allowed)' : costHTML(d.cost, [p.cargo])) : lockText(d)}</div></div>`;
       tooltip(b, () => `<h4>${esc(d.name)}</h4><div>${esc(d.desc)}</div><div class="d">${moduleStats(d)}</div>`);
       b.addEventListener('click', () => {
         if (!unlocked) {
-          ctx.msg(`Research ${TECH_BY_ID.get(d.tech!)?.name} in the Tech Tree first.`, false);
+          ctx.msg(`Research ${TECH_BY_ID.get(d.tech!)?.name} first (RESEARCH, T).`, false);
           return;
         }
         state.build = state.build === d.key ? '' : d.key;
@@ -103,7 +129,8 @@ function renderDeck(ctx: PanelCtx): void {
       el.appendChild(wi);
     } else if (d.hardpoint) el.appendChild(h('span', 'empty-hp', 'EMPTY'));
     if (d.w * d.h >= 4) el.appendChild(h('span', 'lbl', esc(d.name)));
-    tooltip(el, () => `<h4>${esc(d.name)}</h4><div class="d">${moduleStats(d)}</div>${m.weapon ? `<div>${weaponLine(m.weapon)}</div>` : ''}<div class="d">Click to select</div>`);
+    if (m.lvl > 1) el.appendChild(h('span', 'lvl', `L${m.lvl}`));
+    tooltip(el, () => `<h4>${esc(d.name)}${m.lvl > 1 ? ` L${m.lvl}` : ''}</h4><div class="d">${moduleStats(d, m.lvl)}</div>${m.weapon ? `<div>${weaponLine(m.weapon)}</div>` : ''}<div class="d">Click to select</div>`);
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       if (state.build) return;
@@ -171,14 +198,37 @@ function renderDeck(ctx: PanelCtx): void {
   const sel = state.selected >= 0 ? p.moduleById(state.selected) : undefined;
   if (sel) {
     const d = MODULES[sel.key];
-    const card = h('div', 'selcard', `<div class="sh"><img src="${moduleIcon(sel.key)}"><b>${esc(d.name)}</b></div><div class="d">${esc(d.desc)}</div><div class="d">${moduleStats(d)}</div>`);
+    const maxL = maxModuleLevel(d);
+    const card = h('div', 'selcard', `<div class="sh"><img src="${moduleIcon(sel.key)}"><b>${esc(d.name)}</b>${maxL > 1 ? ` <span class="lvlpill">L${sel.lvl}/${maxL}</span>` : ''}</div><div class="d">${esc(d.desc)}</div><div class="d">${moduleStats(d, sel.lvl)}</div>`);
+    if (maxL > 1) {
+      const lr = h('div', 'lvlrow');
+      if (sel.lvl < maxL) {
+        const cost = levelCost(d, sel.lvl);
+        lr.innerHTML = `<div class="d">Level ${sel.lvl + 1}: ${moduleStats(d, sel.lvl + 1)}</div><div>${costHTML(cost, [p.cargo])}</div>`;
+        lr.appendChild(button(`⬆ Upgrade to L${sel.lvl + 1}`, () => {
+          const r = upgradeModule(g, sel.id);
+          ctx.msg(r.msg ?? '', r.ok);
+          ctx.rerender();
+        }, 'primary'));
+      } else lr.innerHTML = '<div class="good">Max level</div>';
+      card.appendChild(lr);
+    }
+    if (d.active) {
+      const slot = g.activeSlots.indexOf(sel.id);
+      card.appendChild(h('div', 'd', slot >= 0 ? `Bound to key <kbd>${slot + 1}</kbd>. Change slots in ABILITIES (K).` : 'Not on a key: all four slots are full. Rebind in ABILITIES (K).'));
+    }
+    if (d.ult) {
+      if (g.ultModule === sel.id) card.appendChild(h('div', 'good', `Armed on <kbd>R</kbd> · ${Math.floor(g.ultCharge * 100)}% charged`));
+      else card.appendChild(button('Arm this ultimate (R)', () => {
+        const r = setUltimate(g, sel.id);
+        ctx.msg(r.msg ?? '', r.ok);
+        ctx.rerender();
+      }, 'primary'));
+    }
     if (d.hardpoint) {
       card.appendChild(h('div', 'wline', sel.weapon ? weaponLine(sel.weapon) : '<i>No weapon mounted.</i>'));
       const row = h('div', 'row');
-      row.appendChild(button(sel.weapon ? 'Swap weapon' : 'Mount weapon', () => {
-        state.armorySel = sel.id;
-        ctx.setTab('armory');
-      }, 'primary'));
+      row.appendChild(button(sel.weapon ? 'Open in Arsenal' : 'Mount weapon', () => openArsenal(ctx, sel.id, sel.weapon?.uid), 'primary'));
       if (sel.weapon) {
         row.appendChild(button(`Mode: ${sel.mode === 'auto' ? 'AUTO' : 'MANUAL'}`, () => {
           sel.mode = sel.mode === 'auto' ? 'manual' : 'auto';
@@ -210,9 +260,9 @@ function renderDeck(ctx: PanelCtx): void {
     info.appendChild(card);
   } else if (state.build) {
     const d = MODULES[state.build];
-    info.appendChild(h('div', 'selcard', `<div class="sh"><img src="${moduleIcon(d.key)}"><b>Placing: ${esc(d.name)}</b></div><div class="d">${esc(d.desc)}</div><div>${costHTML(d.cost, [p.cargo])}</div><div class="d">Click the deck to place. Click the palette entry again to cancel.</div>`));
+    info.appendChild(h('div', 'selcard', `<div class="sh"><img src="${moduleIcon(d.key)}"><b>Placing: ${esc(d.name)}</b></div><div class="d">${esc(d.desc)}</div><div class="d">${moduleStats(d)}</div><div>${costHTML(d.cost, [p.cargo])}</div><div class="d">Click the deck to place. Click the palette entry again to cancel.</div>`));
   } else {
-    info.appendChild(h('div', 'hint', 'Tip: click a facility on the deck to move it, remove it or mount a weapon. The deck is large: fill it with barracks, living space, weapons and your hold.'));
+    info.appendChild(h('div', 'hint', 'Tip: click a facility on the deck to level it up (L1-L3), move it, remove it or mount a weapon. Fill the deck with barracks, living quarters, science labs, a forge and your actives.'));
   }
   wrap.append(pal, deckCol, info);
   ctx.body.appendChild(wrap);

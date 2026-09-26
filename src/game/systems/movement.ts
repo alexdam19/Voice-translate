@@ -67,7 +67,23 @@ export function resolveTank(g: Game, t: Tank): boolean {
  * Steers a tank along its path. Tanks pivot in place for sharp turns and slow on bad ground.
  * `speedMult` covers buffs like Nitro.
  */
-export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1): void {
+export interface ManualDrive {
+  /** -0.5 (reverse) to 1 (full ahead). */
+  throttle: number;
+  wantRot: number;
+  /** Tank-style turning: -1 left, 1 right (overrides wantRot). */
+  turn?: number;
+}
+
+/** WASD input -> manual drive command. Screen-relative by default: W is up the screen. */
+export function manualDrive(t: Tank, ix: number, iy: number, tankStyle: boolean): ManualDrive {
+  if (tankStyle) return { throttle: iy < 0 ? 1 : iy > 0 ? -0.5 : 0, wantRot: t.rot, turn: ix };
+  const want = Math.atan2(iy, ix);
+  const diff = Math.abs(wrapAngle(want - t.rot));
+  return { throttle: diff > 1.1 ? 0.08 : Math.cos(diff) ** 2, wantRot: want };
+}
+
+export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: ManualDrive): void {
   if (t.anchored || t.dead) {
     t.speed = 0;
     return;
@@ -75,7 +91,13 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1): void {
   const stunned = t.hasBuff('stun');
   let throttle = 0;
   let wantRot = t.rot;
-  while (t.path.length) {
+  let turnDir = 0;
+  if (manual) {
+    throttle = manual.throttle;
+    wantRot = manual.wantRot;
+    turnDir = manual.turn ?? 0;
+  }
+  while (!manual && t.path.length) {
     const wp = t.path[0];
     const d = Math.hypot(wp.x - t.x, wp.y - t.y);
     const last = t.path.length === 1;
@@ -99,7 +121,8 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1): void {
   else t.speed = Math.max(target, t.speed - accel * 1.5 * dt);
   if (!stunned) {
     const turn = t.stats.turnRate * (0.55 + 0.45 * Math.min(1, trac)) * (speedMult > 1 ? 1.3 : 1);
-    t.rot = turnToward(t.rot, wantRot, turn * dt);
+    if (turnDir) t.rot = wrapAngle(t.rot + turnDir * turn * dt);
+    else t.rot = turnToward(t.rot, wantRot, turn * dt);
   }
   const dx = Math.cos(t.rot) * t.speed * dt + t.pushX * dt;
   const dy = Math.sin(t.rot) * t.speed * dt + t.pushY * dt;

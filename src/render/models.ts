@@ -138,6 +138,80 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
       case 'drill_mk3':
         gb.box(lx + fx / 2, DECK, lz - 0.12, lx + fx / 2 + 0.3, DECK + 0.24, lz + 0.12, metal, metal);
         break;
+      case 'science_lab':
+        gl.box(lx - 0.25, y1, lz - 0.25, lx + 0.25, y1 + 0.35, lz + 0.25, atlas.get('glow_cyan'), atlas.get('glow_cyan'));
+        gb.box(lx + 0.3, y1, lz + 0.2, lx + 0.4, y1 + 0.5, lz + 0.3, metal, metal);
+        break;
+      case 'forge':
+        gb.box(lx + fx * 0.2, y1, lz + fz * 0.2, lx + fx * 0.38, y1 + 0.8, lz + fz * 0.38, dark, dark);
+        gl.box(lx - 0.2, y1, lz - 0.2, lx + 0.1, y1 + 0.08, lz + 0.1, atlas.get('glow_orange'), atlas.get('glow_orange'));
+        break;
+      case 'arcane_sanctum':
+        gb.box(lx - 0.3, y1, lz - 0.3, lx + 0.3, y1 + 0.08, lz + 0.3, dark, dark);
+        gl.box(lx - 0.1, y1 + 0.25, lz - 0.1, lx + 0.1, y1 + 0.65, lz + 0.1, atlas.get('glow_purple'), atlas.get('glow_purple'));
+        break;
+      case 'command_uplink':
+      case 'airstrike':
+        gb.box(lx - 0.04, y1, lz - 0.04, lx + 0.04, y1 + 1.1, lz + 0.04, metal, metal);
+        gl.box(lx - 0.07, y1 + 1.1, lz - 0.07, lx + 0.07, y1 + 1.2, lz + 0.07, atlas.get('glow_red'), atlas.get('glow_red'));
+        break;
+      case 'jet_hangar': {
+        // A mini fighter jet parked on the catapult.
+        const jy = y1 + 0.05;
+        gb.box(lx - 0.45, jy, lz - 0.08, lx + 0.45, jy + 0.14, lz + 0.08, atlas.get('white'), metal);
+        gb.box(lx - 0.1, jy + 0.02, lz - 0.45, lx + 0.12, jy + 0.08, lz + 0.45, metal, metal);
+        gb.box(lx - 0.45, jy + 0.1, lz - 0.02, lx - 0.3, jy + 0.35, lz + 0.02, metal, metal);
+        gl.box(lx + 0.15, jy + 0.12, lz - 0.05, lx + 0.3, jy + 0.18, lz + 0.05, atlas.get('glow_cyan'), atlas.get('glow_cyan'));
+        break;
+      }
+      case 'drone_bay':
+        for (const [ox, oz] of [[-0.25, -0.25], [0.25, 0.25]]) {
+          gb.box(lx + ox - 0.12, y1 + 0.05, lz + oz - 0.12, lx + ox + 0.12, y1 + 0.12, lz + oz + 0.12, metal, metal);
+          gl.box(lx + ox - 0.04, y1 + 0.12, lz + oz - 0.04, lx + ox + 0.04, y1 + 0.16, lz + oz + 0.04, atlas.get('glow_blue'), atlas.get('glow_blue'));
+        }
+        break;
+      case 'salvo_rack':
+        gb.box(lx - fx * 0.35, y1, lz - fz * 0.4, lx + fx * 0.35, y1 + 0.3, lz + fz * 0.4, dark, metal);
+        break;
+      case 'teleporter':
+      case 'chrono_engine': {
+        const c = m.key === 'teleporter' ? 'glow_cyan' : 'glow_blue';
+        gl.box(lx - 0.35, y1, lz - 0.35, lx + 0.35, y1 + 0.04, lz + 0.35, atlas.get(c), atlas.get(c));
+        gb.box(lx - 0.25, y1, lz - 0.25, lx + 0.25, y1 + 0.06, lz + 0.25, dark, dark);
+        break;
+      }
+      case 'dome_projector':
+        gl.box(lx - 0.22, y1, lz - 0.22, lx + 0.22, y1 + 0.3, lz + 0.22, atlas.get('glow_green'), atlas.get('glow_green'));
+        break;
+      case 'nuke_silo':
+        gb.box(lx - fx * 0.4, y1, lz - fz * 0.4, lx - 0.03, y1 + 0.06, lz + fz * 0.4, atlas.get('hazard'), dark);
+        gb.box(lx + 0.03, y1, lz - fz * 0.4, lx + fx * 0.4, y1 + 0.06, lz + fz * 0.4, atlas.get('hazard'), dark);
+        gl.box(lx - 0.08, y1 + 0.06, lz - 0.08, lx + 0.08, y1 + 0.14, lz + 0.08, atlas.get('glow_yellow'), atlas.get('glow_yellow'));
+        break;
+      case 'mech_bay':
+        gb.box(lx - 0.3, y1, lz - 0.35, lx + 0.1, y1 + 0.5, lz - 0.1, atlas.get('rust'), metal);
+        gb.box(lx - 0.3, y1, lz + 0.1, lx + 0.1, y1 + 0.5, lz + 0.35, atlas.get('rust'), metal);
+        gb.box(lx - 0.35, y1 + 0.5, lz - 0.4, lx + 0.2, y1 + 0.95, lz + 0.4, metal, atlas.get('rust'));
+        gl.box(lx + 0.2, y1 + 0.7, lz - 0.2, lx + 0.22, y1 + 0.8, lz + 0.2, atlas.get('glow_cyan'), atlas.get('glow_cyan'));
+        break;
+      case 'orbital':
+        gb.box(lx - 0.05, y1, lz - 0.05, lx + 0.05, y1 + 0.5, lz + 0.05, metal, metal);
+        gb.box(lx - 0.35, y1 + 0.5, lz - 0.35, lx + 0.35, y1 + 0.58, lz + 0.35, atlas.get('white'), metal);
+        gl.box(lx - 0.06, y1 + 0.58, lz - 0.06, lx + 0.06, y1 + 0.66, lz + 0.06, atlas.get('glow_red'), atlas.get('glow_red'));
+        break;
+      case 'obelisk':
+        gb.box(lx - 0.15, y1, lz - 0.15, lx + 0.15, y1 + 1.5, lz + 0.15, dark, dark);
+        gl.box(lx - 0.16, y1 + 0.3, lz - 0.02, lx + 0.16, y1 + 1.4, lz + 0.02, atlas.get('glow_orange'), atlas.get('glow_orange'));
+        break;
+      case 'dragon_roost':
+        for (const [ox, oz] of [[-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]]) gb.box(lx + ox - 0.15, y1, lz + oz - 0.15, lx + ox + 0.15, y1 + 0.25, lz + oz + 0.15, atlas.get('wood'), atlas.get('wood'));
+        gl.box(lx - 0.12, y1, lz - 0.1, lx + 0.12, y1 + 0.3, lz + 0.1, atlas.get('glow_orange'), atlas.get('glow_orange'));
+        break;
+      case 'storm_engine':
+        gb.box(lx - 0.1, y1, lz - 0.1, lx + 0.1, y1 + 1.2, lz + 0.1, metal, metal);
+        for (let i = 0; i < 3; i++) gb.box(lx - 0.28, y1 + 0.3 + i * 0.3, lz - 0.28, lx + 0.28, y1 + 0.36 + i * 0.3, lz + 0.28, dark, dark);
+        gl.box(lx - 0.2, y1 + 1.2, lz - 0.2, lx + 0.2, y1 + 1.5, lz + 0.2, atlas.get('glow_blue'), atlas.get('glow_blue'));
+        break;
     }
     if (d.hardpoint) {
       const obj = new Group();
@@ -236,6 +310,91 @@ function buildTurret(obj: Object3D, key: string, size: 'light' | 'medium' | 'hea
       break;
     case 'maw':
       for (let i = -1; i <= 1; i++) for (let j = 0; j < 2; j++) bar(0.45, 0.1, i * 0.18, 0.12 + j * 0.16);
+      break;
+    case 'grenade_launcher':
+      bar(0.55, 0.2, 0, 0.2);
+      gbb.box(0.1 * s, 0.05 * s, -0.25 * s, 0.35 * s, 0.35 * s, 0.25 * s, dark, dark);
+      break;
+    case 'scattergun':
+      bar(0.6, 0.1, -0.1);
+      bar(0.6, 0.1, 0.1);
+      gbb.box(0.75 * s, 0.05 * s, -0.22 * s, 0.85 * s, 0.32 * s, 0.22 * s, dark, dark);
+      break;
+    case 'raygun':
+      bar(0.6, 0.1, 0);
+      for (let i = 0; i < 3; i++) gbb.box((0.3 + i * 0.15) * s, 0.05 * s, -0.14 * s, (0.36 + i * 0.15) * s, 0.31 * s, 0.14 * s, metal, metal);
+      gl.box(0.8 * s, 0.1 * s, -0.07 * s, 0.9 * s, 0.26 * s, 0.07 * s, glowFor('glow_green'), glowFor('glow_green'));
+      break;
+    case 'cryo_blaster':
+      bar(0.7, 0.12, 0);
+      gl.box(0.3 * s, 0.3 * s, -0.08 * s, 0.6 * s, 0.4 * s, 0.08 * s, glowFor('glow_cyan'), glowFor('glow_cyan'));
+      break;
+    case 'flamethrower':
+    case 'dragons_breath': {
+      bar(0.6, 0.14, 0);
+      gbb.box(-0.3 * s, 0.35 * s, -0.2 * s, 0.1 * s, 0.6 * s, 0.2 * s, key === 'dragons_breath' ? metal : dark, dark);
+      gl.box(0.8 * s, 0.12 * s, -0.06 * s, 0.86 * s, 0.24 * s, 0.06 * s, glowFor('glow_orange'), glowFor('glow_orange'));
+      if (key === 'dragons_breath') gl.box(-0.25 * s, 0.6 * s, -0.12 * s, 0.05 * s, 0.75 * s, 0.12 * s, glowFor('glow_red'), glowFor('glow_red'));
+      break;
+    }
+    case 'acid_launcher':
+    case 'kraken':
+      bar(0.5, 0.22, 0, 0.25);
+      gl.box(-0.2 * s, 0.35 * s, -0.15 * s, 0.1 * s, 0.55 * s, 0.15 * s, glowFor(key === 'kraken' ? 'glow_purple' : 'glow_green'), glowFor(key === 'kraken' ? 'glow_purple' : 'glow_green'));
+      break;
+    case 'soul_reaper':
+    case 'arcane_orb':
+      bar(0.4, 0.1, 0);
+      gl.box(0.45 * s, 0.1 * s, -0.12 * s, 0.7 * s, 0.35 * s, 0.12 * s, glowFor('glow_purple'), glowFor('glow_purple'));
+      break;
+    case 'swarm_hive':
+      gbb.box(-0.35 * s, 0.05 * s, -0.4 * s, 0.4 * s, 0.6 * s, 0.4 * s, metal, dark);
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) gl.box(0.4 * s, (0.1 + j * 0.16) * s, (-0.3 + i * 0.3) * s - 0.03 * s, 0.42 * s, (0.16 + j * 0.16) * s, (-0.3 + i * 0.3) * s + 0.03 * s, glowFor('glow_orange'), glowFor('glow_orange'));
+      break;
+    case 'hornet_nest':
+      // A catapult rail with a mini jet ready to launch.
+      gbb.box(-0.4 * s, 0.05 * s, -0.08 * s, 0.6 * s, 0.12 * s, 0.08 * s, metal, dark);
+      gbb.box(-0.2 * s, 0.14 * s, -0.06 * s, 0.35 * s, 0.26 * s, 0.06 * s, atlas.get('white'), metal);
+      gbb.box(-0.05 * s, 0.16 * s, -0.3 * s, 0.1 * s, 0.2 * s, 0.3 * s, metal, metal);
+      gl.box(0.35 * s, 0.18 * s, -0.03 * s, 0.4 * s, 0.22 * s, 0.03 * s, glowFor('glow_cyan'), glowFor('glow_cyan'));
+      break;
+    case 'plasma_launcher':
+    case 'chrono_cannon':
+      bar(1, 0.2, 0, 0.2);
+      gl.box(0.4 * s, 0.32 * s, -0.12 * s, 0.9 * s, 0.38 * s, 0.12 * s, glowFor(key === 'plasma_launcher' ? 'glow_purple' : 'glow_cyan'), glowFor(key === 'plasma_launcher' ? 'glow_purple' : 'glow_cyan'));
+      break;
+    case 'sonic_cannon':
+      bar(0.4, 0.2, 0);
+      gbb.box(0.6 * s, -0.05 * s, -0.35 * s, 0.75 * s, 0.45 * s, 0.35 * s, metal, dark);
+      break;
+    case 'howitzer':
+      bar(1.9, 0.26, 0, 0.3);
+      gbb.box(-0.2 * s, 0.02 * s, -0.45 * s, 0.4 * s, 0.5 * s, 0.45 * s, dark, metal);
+      break;
+    case 'ray_rail':
+      bar(1.8, 0.12, -0.16, 0.2);
+      bar(1.3, 0.1, 0.18, 0.2);
+      gl.box(0.3 * s, 0.14 * s, -0.2 * s, 1.9 * s, 0.26 * s, -0.12 * s, glowFor('glow_purple'), glowFor('glow_purple'));
+      gl.box(1.4 * s, 0.14 * s, 0.13 * s, 1.55 * s, 0.26 * s, 0.23 * s, glowFor('glow_green'), glowFor('glow_green'));
+      break;
+    case 'storm_spire':
+    case 'stormcaller':
+      gbb.box(-0.1 * s, 0.3 * s, -0.1 * s, 0.1 * s, 1.5 * s, 0.1 * s, metal, metal);
+      for (let i = 0; i < 4; i++) gbb.box(-0.25 * s, (0.5 + i * 0.25) * s, -0.25 * s, 0.25 * s, (0.55 + i * 0.25) * s, 0.25 * s, dark, dark);
+      gl.box(-0.15 * s, 1.5 * s, -0.15 * s, 0.15 * s, 1.8 * s, 0.15 * s, glowFor('glow_blue'), glowFor('glow_blue'));
+      break;
+    case 'gravity_cannon':
+    case 'void_lance':
+      bar(1.5, 0.3, 0, 0.22);
+      gl.box(1.3 * s, 0.05 * s, -0.2 * s, 1.75 * s, 0.4 * s, 0.2 * s, glowFor('glow_purple'), glowFor('glow_purple'));
+      break;
+    case 'phoenix_launcher':
+      bar(1.2, 0.3, 0, 0.22);
+      gl.box(0.3 * s, 0.38 * s, -0.25 * s, 1.1 * s, 0.44 * s, 0.25 * s, glowFor('glow_orange'), glowFor('glow_orange'));
+      break;
+    case 'starfall':
+      gbb.box(-0.3 * s, 0.3 * s, -0.3 * s, 0.3 * s, 0.5 * s, 0.3 * s, metal, dark);
+      gl.box(-0.2 * s, 0.5 * s, -0.2 * s, 0.2 * s, 1.2 * s, 0.2 * s, glowFor('glow_yellow'), glowFor('glow_yellow'));
       break;
     default:
       bar(0.8, 0.12, 0);
@@ -469,3 +628,110 @@ export function buildTitanModel(kind: string, color: string): TitanModel {
 }
 
 export { DECK };
+
+/* ---------------------------------------------------------------------- */
+/* Summoned units: jets, drones, mechs, dragons, mines                     */
+/* ---------------------------------------------------------------------- */
+
+const allyMats = new Map<string, MeshLambertMaterial | MeshBasicMaterial>();
+function amat(color: string, glow = false): MeshLambertMaterial | MeshBasicMaterial {
+  const k = `${color}:${glow}`;
+  let m = allyMats.get(k);
+  if (!m) {
+    m = glow ? new MeshBasicMaterial({ color }) : new MeshLambertMaterial({ color });
+    allyMats.set(k, m);
+  }
+  return m;
+}
+
+const UNIT = new BoxGeometry(1, 1, 1);
+function vox(parent: Object3D, color: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, glow = false): Mesh {
+  const m = new Mesh(UNIT, amat(color, glow));
+  m.position.set(x, y, z);
+  m.scale.set(sx, sy, sz);
+  m.castShadow = !glow;
+  parent.add(m);
+  return m;
+}
+
+export interface AllyModel {
+  root: Group;
+  /** Parts that animate: wings, legs, rotors. */
+  parts: Object3D[];
+}
+
+/** Voxel models for summoned units. Local +X is forward. */
+export function buildAllyModel(kind: string): AllyModel {
+  const root = new Group();
+  const parts: Object3D[] = [];
+  switch (kind) {
+    case 'jet': {
+      vox(root, '#eceff1', 0, 0, 0, 1.1, 0.18, 0.2);
+      vox(root, '#90a4ae', -0.1, 0, 0, 0.3, 0.06, 1.1);
+      vox(root, '#90a4ae', -0.45, 0.02, 0, 0.18, 0.05, 0.5);
+      vox(root, '#90a4ae', -0.45, 0.15, 0, 0.15, 0.28, 0.04);
+      vox(root, '#18ffff', 0.25, 0.1, 0, 0.22, 0.08, 0.12, true);
+      vox(root, '#ff9100', -0.58, 0, 0, 0.08, 0.1, 0.12, true);
+      break;
+    }
+    case 'drone': {
+      vox(root, '#546e7a', 0, 0, 0, 0.35, 0.12, 0.35);
+      vox(root, '#40c4ff', 0.18, 0, 0, 0.06, 0.06, 0.1, true);
+      for (const [x, z] of [[-0.25, -0.25], [0.25, -0.25], [-0.25, 0.25], [0.25, 0.25]]) {
+        const r = vox(root, '#b0bec5', x, 0.08, z, 0.28, 0.02, 0.04);
+        parts.push(r);
+      }
+      break;
+    }
+    case 'mech': {
+      const body = new Group();
+      body.position.y = 1.5;
+      root.add(body);
+      vox(body, '#ff8f00', 0, 0.3, 0, 1.2, 0.8, 1.3);
+      vox(body, '#37474f', 0.2, 0.8, 0, 0.7, 0.35, 0.8);
+      vox(body, '#18ffff', 0.56, 0.85, 0, 0.04, 0.12, 0.5, true);
+      // Arm cannon and missile pod.
+      vox(body, '#455a64', 0.6, 0.2, 0.8, 1.4, 0.26, 0.26);
+      vox(body, '#455a64', 0, 0.5, -0.85, 0.7, 0.5, 0.4);
+      vox(body, '#ff1744', 0.36, 0.55, -0.85, 0.02, 0.3, 0.3, true);
+      for (const z of [-0.35, 0.35]) {
+        const leg = new Group();
+        leg.position.set(0, 1.5, z);
+        vox(leg, '#5d4037', 0, -0.75, 0, 0.35, 1.5, 0.35);
+        vox(leg, '#37474f', 0.1, -1.45, 0, 0.7, 0.15, 0.45);
+        root.add(leg);
+        parts.push(leg);
+      }
+      break;
+    }
+    case 'dragon': {
+      vox(root, '#b71c1c', 0, 0, 0, 2.2, 0.6, 0.7);
+      vox(root, '#d32f2f', 1.4, 0.25, 0, 0.8, 0.35, 0.35);
+      vox(root, '#b71c1c', 1.95, 0.3, 0, 0.6, 0.4, 0.5);
+      vox(root, '#ffd740', 2.2, 0.42, 0.14, 0.08, 0.08, 0.08, true);
+      vox(root, '#ffd740', 2.2, 0.42, -0.14, 0.08, 0.08, 0.08, true);
+      vox(root, '#ffcc80', 1.9, 0.6, 0.18, 0.3, 0.08, 0.06);
+      vox(root, '#ffcc80', 1.9, 0.6, -0.18, 0.3, 0.08, 0.06);
+      vox(root, '#8e0000', -1.5, -0.05, 0, 1.2, 0.3, 0.3);
+      vox(root, '#ff6d00', -2.15, -0.05, 0, 0.3, 0.25, 0.4, true);
+      vox(root, '#ffab40', 0, -0.3, 0, 1.8, 0.1, 0.5);
+      for (const side of [-1, 1]) {
+        const wing = new Group();
+        wing.position.set(0.2, 0.25, side * 0.35);
+        vox(wing, '#7f0000', 0, 0, side * 1.1, 1.4, 0.06, 2.2);
+        vox(wing, '#ff5252', -0.4, 0.02, side * 1.4, 0.6, 0.04, 1.4);
+        root.add(wing);
+        parts.push(wing);
+      }
+      break;
+    }
+    case 'mine': {
+      vox(root, '#424242', 0, 0.06, 0, 0.45, 0.12, 0.45);
+      vox(root, '#ff1744', 0, 0.14, 0, 0.1, 0.05, 0.1, true);
+      break;
+    }
+    default:
+      vox(root, '#1565c0', 0, 0.3, 0, 0.3, 0.6, 0.3);
+  }
+  return { root, parts };
+}

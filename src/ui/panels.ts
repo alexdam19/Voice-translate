@@ -9,6 +9,12 @@ import { renderBase } from './basePanel';
 import { renderCrew } from './crewPanel';
 import { renderTech } from './techPanel';
 import { renderCargo } from './cargoPanel';
+import { renderArsenal } from './arsenalPanel';
+import { renderAbilities } from './abilitiesPanel';
+
+const SWITCH: [string, string][] = [
+  ['base', 'BASE · tank (B)'], ['arsenal', 'ARSENAL · weapons (V)'], ['crew', 'CREW · people (C)'], ['tech', 'RESEARCH (T)'], ['abilities', 'ABILITIES (K)'],
+];
 
 export interface PanelCtx {
   app: App;
@@ -51,14 +57,25 @@ export class Panels {
     this.msgEl = h('div', 'panel-msg');
     this.defs = {
       base: {
-        title: 'BASE', sub: 'Upgrade your TANK: facilities, weapons, hull and drive. Everything here is bolted to the fortress.',
-        tabs: [['deck', 'Deck & Build'], ['armory', 'Armory'], ['chassis', 'Chassis & Drive']], render: renderBase, wide: true, cls: 'base',
+        title: 'BASE', sub: 'Upgrade your TANK: facilities, labs, weapons, actives, ultimates, hull and drive. Click a facility to level it up.',
+        tabs: [['deck', 'Deck & Build'], ['chassis', 'Chassis & Drive']], render: renderBase, wide: true, cls: 'base',
+      },
+      arsenal: {
+        title: 'ARSENAL', sub: 'Your weapons: forge them from 1★ to 6★, spend star points in each weapon\'s upgrade tree, mount and build them.',
+        tabs: [['weapons', 'My Weapons'], ['codex', 'Codex & Workshop']], render: renderArsenal, wide: true, cls: 'arsenal',
       },
       crew: {
         title: 'CREW', sub: 'Upgrade your PEOPLE: officers with abilities, perks, recruits and the Outrider. Max 15 aboard the fortress.',
-        tabs: [['officers', 'Officers (Q W E R D F)'], ['roster', 'Roster'], ['recruit', 'Recruit'], ['outrider', 'Outrider']], render: renderCrew, wide: true, cls: 'crew',
+        tabs: [['officers', 'Officers (Q E F G Z X)'], ['roster', 'Roster'], ['recruit', 'Recruit'], ['outrider', 'Outrider']], render: renderCrew, wide: true, cls: 'crew',
       },
-      tech: { title: 'TECH TREE', sub: 'Spend Salvaged Tech (from raider tanks, outposts, titans and chests) to unlock and upgrade military equipment.', render: renderTech, wide: true, cls: 'tech' },
+      tech: {
+        title: 'RESEARCH', sub: 'Timed research. MILITARY unlocks gear and upgrades; PERSONNEL (needs a Science Lab) upgrades your crew. One project of each at a time.',
+        tabs: [['military', 'Military'], ['personnel', 'Personnel']], render: renderTech, wide: true, cls: 'tech',
+      },
+      abilities: {
+        title: 'ABILITIES', sub: 'Your loadout: officer abilities, arsenal actives (1-4) and your ultimate (R), plus how to unlock every one.',
+        render: renderAbilities, wide: true, cls: 'abilities',
+      },
       cargo: { title: 'CARGO', sub: 'Your hold, and the Workshop where ore becomes parts.', tabs: [['hold', 'Hold'], ['workshop', 'Workshop']], render: renderCargo, wide: true },
       map: { title: 'WORLD MAP', sub: 'Right-click to drive there. Zones further from camp are more dangerous and need special gear.', render: (c) => this.renderMap(c), wide: true },
       help: { title: 'HOW TO PLAY', sub: 'Commander\'s field manual', render: (c) => this.renderHelp(c), wide: true },
@@ -78,7 +95,6 @@ export class Panels {
   open(name: string, tab?: string): void {
     const d = this.defs[name];
     if (!d || !this.app.game) return;
-    if (name === 'tech' && this.current === 'base') tab = undefined;
     this.current = name;
     this.tab = tab ?? (this.current === name && this.tab && d.tabs?.some((t) => t[0] === this.tab) ? this.tab : d.tabs?.[0][0] ?? '');
     this.pauses = this.app.game.mode === 'world';
@@ -109,10 +125,10 @@ export class Panels {
     const head = h('div', 'panel-head', `<div class="pt">${esc(d.title)}</div><div class="ps">${esc(d.sub)}</div>`);
     head.appendChild(button('✕', () => this.close(), 'close'));
     this.win.appendChild(head);
-    if (name === 'base' || name === 'crew' || name === 'tech') {
-      // Always show the BASE vs CREW switcher so the split is obvious.
+    if (SWITCH.some(([k]) => k === name)) {
+      // Always show the upgrade switcher so every screen is one click away.
       const sw = h('div', 'switcher');
-      for (const [k, label] of [['base', 'BASE · tank upgrades (B)'], ['crew', 'CREW · character upgrades (C)'], ['tech', 'TECH TREE (T)']] as [string, string][]) {
+      for (const [k, label] of SWITCH) {
         const b = button(label, () => this.open(k), `sw ${k} ${name === k ? 'on' : ''}`);
         sw.appendChild(b);
       }
@@ -227,47 +243,46 @@ export class Panels {
   <div class="help-col">
     <h3>CONTROLS</h3>
     <table class="keys">
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Drive (or right-click to path there)</td></tr>
       <tr><td><kbd>Right-click</kbd></td><td>Drive / attack / harvest / interact</td></tr>
-      <tr><td><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><kbd>R</kbd><kbd>D</kbd><kbd>F</kbd></td><td>Officer abilities (cooldowns)</td></tr>
+      <tr><td><kbd>Q</kbd><kbd>E</kbd><kbd>F</kbd><kbd>G</kbd><kbd>Z</kbd><kbd>X</kbd></td><td>Officer abilities</td></tr>
+      <tr><td><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></td><td>Arsenal actives (jets, drones, salvo...)</td></tr>
+      <tr><td><kbd>R</kbd></td><td>ULTIMATE (nuke, dragon, mech...)</td></tr>
+      <tr><td><kbd>5</kbd></td><td>Repair kit</td></tr>
       <tr><td><kbd>Left mouse</kbd></td><td>Fire weapons set to MANUAL</td></tr>
-      <tr><td><kbd>Z</kbd></td><td>Auto-fire on/off for all weapons</td></tr>
-      <tr><td><kbd>S</kbd></td><td>Stop</td></tr>
-      <tr><td><kbd>1</kbd></td><td>Repair kit</td></tr>
-      <tr><td><kbd>Y</kbd> / <kbd>Space</kbd></td><td>Lock camera / recenter</td></tr>
-      <tr><td><kbd>Wheel</kbd></td><td>Zoom</td></tr>
-      <tr><td><kbd>G</kbd></td><td>Send the Outrider</td></tr>
-      <tr><td><kbd>M</kbd> <kbd>I</kbd> <kbd>Esc</kbd></td><td>Map · Cargo · Menu</td></tr>
+      <tr><td><kbd>Y</kbd></td><td>Auto-fire on/off</td></tr>
+      <tr><td><kbd>L</kbd> / <kbd>Space</kbd></td><td>Lock camera / recenter · <kbd>Wheel</kbd> zoom</td></tr>
+      <tr><td><kbd>B</kbd><kbd>V</kbd><kbd>C</kbd><kbd>T</kbd><kbd>K</kbd></td><td>Base · Arsenal · Crew · Research · Abilities</td></tr>
+      <tr><td><kbd>I</kbd><kbd>M</kbd><kbd>J</kbd><kbd>Esc</kbd></td><td>Cargo · Map · send Outrider · Menu</td></tr>
     </table>
+    <p class="d">Everything is also clickable: the buttons at the top right, the ability bar at the bottom and the perk cards on the left.</p>
   </div>
   <div class="help-col base">
-    <h3>UPGRADE YOUR BASE <kbd>B</kbd></h3>
-    <p class="d">Things bolted to the tank.</p>
+    <h3>BASE <kbd>B</kbd> &amp; ARSENAL <kbd>V</kbd></h3>
     <ul>
-      <li><b>Deck:</b> build facilities: reactors, engines, quarters, barracks, cargo, medbay, drills, hazard gear.</li>
-      <li><b>Armory:</b> mount weapons on hardpoints. Weapons come in <span class="r1">Uncommon</span>, <span class="r2">Rare</span>, <span class="r3">Epic</span> and <span class="r4">Legendary</span>. Rarer = stronger, with bonus traits.</li>
-      <li><b>Chassis & Drive:</b> a bigger hull means more deck space. Tracks, chains and hover skirts open new zones.</li>
-      <li><b>Tech Tree <kbd>T</kbd>:</b> unlock new weapons and whole-family upgrades.</li>
+      <li><b>Deck:</b> reactors, engines, <b>barracks</b>, <b>living quarters</b>, <b>science labs</b>, a <b>forge</b>, training grounds, mess hall, arcane sanctum, hardpoints, and modules for your actives and ultimate. Click a facility to <b>level it up</b> (L1-L3).</li>
+      <li><b>Arsenal:</b> weapons go from <span class="r0">1★</span> to <span class="r5">6★ Mythic</span>. <b>Forge</b> them to add stars (takes time: 6★ takes 6 minutes). Every star is a point in that weapon's own <b>upgrade tree</b> (Firepower, Handling, Payload, with capstones like Double Tap or Chain Reaction).</li>
+      <li>35 weapons: grenade launchers, flamethrowers, acid and plasma launchers, ray guns, a <b>Ray-Rail twin cannon</b>, hornet jet launchers, storm spires, gravity cannons, a phoenix launcher, the <b>Void Lance</b>...</li>
     </ul>
   </div>
   <div class="help-col crew">
-    <h3>UPGRADE YOUR CREW <kbd>C</kbd></h3>
-    <p class="d">Your people.</p>
+    <h3>CREW <kbd>C</kbd> · RESEARCH <kbd>T</kbd> · ABILITIES <kbd>K</kbd></h3>
     <ul>
-      <li><b>Officers</b> (main crew) sit in 6 seats: each gives an ability on <kbd>Q</kbd>–<kbd>F</kbd> that goes on cooldown.</li>
-      <li><b>Side crew</b> give passive bonuses by role.</li>
-      <li><b>Level up</b> to pick 1 of 3 <b>perks</b>. Perks have rarities too.</li>
-      <li><b>Max 15 aboard.</b> At 15 you can build the <b>Outrider</b>: a mini tank crewed by side crew that follows you or goes out for resources. Crew aboard may die if it's destroyed.</li>
-      <li><b>Champions</b> (Legendary) and <b>exclusive characters</b> (Epic) only come from Rune Chests.</li>
+      <li><b>Officers</b> give abilities on <kbd>Q</kbd><kbd>E</kbd><kbd>F</kbd><kbd>G</kbd>; research unlocks seats <kbd>Z</kbd> and <kbd>X</kbd>.</li>
+      <li><b>Level up</b> → click 1 of 3 perk cards (left side of the screen). Level 5 and 8 unlock veteran and master perks: much stronger.</li>
+      <li><b>Research</b> is timed. Military tiers I-VI: 30s up to 8 minutes. The longer it takes, the stronger it is. <b>Science Labs</b> speed it up and unlock the <b>Personnel</b> tree.</li>
+      <li><b>Actives</b> (1-4) and your <b>ultimate</b> (R) come from deck modules. The ultimate charges over time and faster when you deal damage.</li>
+      <li><b>Max 15 aboard.</b> At 15 the <b>Outrider</b> mini tank unlocks.</li>
     </ul>
   </div>
   <div class="help-col">
     <h3>LOOT</h3>
     <ul>
-      <li><b class="y">◆ Loot areas:</b> park inside the ring and hold. Defenders attack. May drop a <b>This-or-That chest</b>: pick one of two rewards.</li>
-      <li><b style="color:#b388ff">● Runes:</b> beat the guardians, then park next to the altar for a buff and a <b>Rune Chest</b>. It can hold an exclusive weapon, an exclusive character or a champion.</li>
-      <li><b class="bad">■ Outposts</b> and raider tanks are enemy bases. Their wrecks drop Salvaged Tech.</li>
+      <li><b class="y">◆ Loot areas:</b> park inside the ring and hold. May drop a <b>This-or-That chest</b>.</li>
+      <li><b style="color:#b388ff">● Runes:</b> beat the guardians, then park next to the altar for a buff and a <b>Rune Chest</b> (exclusive weapons, characters, champions).</li>
+      <li><b class="bad">■ Outposts</b> and raider tanks drop Salvaged Tech. Titans and runes drop <b style="color:#ff4f7b">Mythic Essence</b>.</li>
       <li>Further from camp: bigger enemies, <b>titans</b> and better loot.</li>
-      <li><b class="bad">Dead Zone</b> (NE of camp): multiplayer. If you die there, other players can loot your cargo.</li>
+      <li><b class="bad">Dead Zone</b> (NE of camp): multiplayer. Die there and others loot your cargo.</li>
     </ul>
   </div>
 </div>`;
@@ -293,8 +308,12 @@ export class Panels {
         a.view.outlines = !a.view.outlines;
         this.render();
       }),
-      button(`Camera: ${a.camLocked ? 'LOCKED' : 'FREE'} (Y)`, () => {
+      button(`Camera: ${a.camLocked ? 'LOCKED' : 'FREE'} (L)`, () => {
         a.camLocked = !a.camLocked;
+        this.render();
+      }),
+      button(`WASD: ${a.game.tankControls ? 'TANK-STYLE (W/S throttle, A/D turn)' : 'SCREEN-RELATIVE (W = up)'}`, () => {
+        a.game.tankControls = !a.game.tankControls;
         this.render();
       }),
       button('Quit to title', () => {

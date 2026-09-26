@@ -1,4 +1,4 @@
-import { CENTER, MAP_SIZE, MAX_BASE_CREW, OFFICER_SLOTS } from '../shared/constants';
+import { ACTIVE_SLOTS, BASE_OFFICER_SEATS, CENTER, MAP_SIZE, MAX_BASE_CREW, OFFICER_SLOTS } from '../shared/constants';
 import { canAfford, payCost, type Cost, type Stack } from '../shared/inventory';
 import { getItem } from '../shared/items';
 import { rollLoot } from '../shared/loot';
@@ -9,7 +9,8 @@ import type { WeaponItem } from '../shared/weapons';
 import { computeCrewBonus, giveXp, makeRecruit, type CrewMember } from './crew';
 import { eid, type Ally, type ChestKind, type Enemy, type FloatText, type Pickup, type Projectile, type Reward, type Telegraph, type Zone } from './entities';
 import { ENEMIES } from './enemyDefs';
-import { freeTech } from './tech';
+import { MODULES } from './defs';
+import { crewFx, emptyCrewFx, freeTech, type CrewFx, type TreeKind } from './tech';
 import { Tank } from './tank';
 import { buildStarterTank, starterCrew } from './templates';
 
@@ -22,7 +23,28 @@ export type FxEvent =
   | { t: 'ring'; x: number; y: number; r: number; color: string }
   | { t: 'dust'; x: number; y: number; color: string }
   | { t: 'heal'; x: number; y: number }
-  | { t: 'shake'; amt: number };
+  | { t: 'shake'; amt: number }
+  | { t: 'nuke'; x: number; y: number; r: number }
+  | { t: 'wave'; x: number; y: number; a: number; r: number; spread: number; color: string }
+  | { t: 'strike'; x: number; y: number; color: string }
+  | { t: 'teleport'; x: number; y: number };
+
+export interface ResearchJob {
+  id: string;
+  t: number;
+  total: number;
+  /** Paid up front; refunded on cancel. */
+  cost?: Record<string, number>;
+}
+export type TreeKindJob = ResearchJob;
+
+export interface ForgeJob {
+  uid: number;
+  to: number;
+  t: number;
+  total: number;
+  cost?: Record<string, number>;
+}
 
 export interface GameHooks {
   toast(text: string, color?: string): void;
@@ -105,7 +127,7 @@ export class Game {
   autoFire = true;
   respawnIn = 0;
   deadZoneMode = false;
-  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30 };
+  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0 };
   hazardWarn: string | null = null;
   hooks: GameHooks = { toast: () => {}, sound: () => {}, chest: () => {}, died: () => {}, enterDeadZone: () => {} };
   revealAll = false;
@@ -118,6 +140,28 @@ export class Game {
   /** Dead Zone extraction points and progress. */
   extracts: { x: number; y: number; r: number }[] = [];
   extractProgress = 0;
+  /** Timed research: one military and one personnel project at a time. */
+  research: Record<TreeKind, ResearchJob | null> = { military: null, personnel: null };
+  forgeJob: ForgeJob | null = null;
+  /** Deck module ids bound to keys 1-4 (0 = empty). */
+  activeSlots: number[] = new Array(ACTIVE_SLOTS).fill(0);
+  /** Deck module id of the armed ultimate (key R), and its charge 0-1. */
+  ultModule = 0;
+  ultCharge = 0;
+  /** Damage dealt that has not been turned into ultimate charge yet. */
+  ultBank = 0;
+  /** Seconds of Time Stop left. */
+  timeStop = 0;
+  /** Orbital laser being steered by the cursor. */
+  orbital: { x: number; y: number; t: number; dps: number } | null = null;
+  /** Cataclysm storm around the fortress. */
+  storm: { t: number; P: number; cd: number } | null = null;
+  /** Personnel research effects. */
+  crewFx: CrewFx = emptyCrewFx();
+  /** WASD drive input (screen-relative unit vector, or tank-style throttle/turn). */
+  driveInput = { x: 0, y: 0, active: false };
+  /** Tank-style controls: W/S throttle, A/D turn. Off = screen-relative. */
+  tankControls = false;
 
   constructor(seed: number, gen?: WorldGen) {
     this.gen = gen ?? generateWorld(seed);
@@ -149,10 +193,21 @@ export class Game {
     return this.crew.filter((c) => c.loc === 'outrider');
   }
 
+  /** Officer seats unlocked so far (4, plus COMMAND research). */
+  officerSeats(): number {
+    return Math.min(OFFICER_SLOTS, BASE_OFFICER_SEATS + this.crewFx.seats);
+  }
+
   officers(): (CrewMember | null)[] {
     const out: (CrewMember | null)[] = new Array(OFFICER_SLOTS).fill(null);
-    for (const c of this.crew) if (c.loc === 'main' && c.officer >= 0 && c.officer < OFFICER_SLOTS) out[c.officer] = c;
+    const seats = this.officerSeats();
+    for (const c of this.crew) if (c.loc === 'main' && c.officer >= 0 && c.officer < seats) out[c.officer] = c;
     return out;
+  }
+
+  /** Perk choices per level-up (3, or 4 with Legendary Leadership). */
+  draftChoices(): number {
+    return 3 + this.crewFx.draft;
   }
 
   crewCap(): number {
@@ -169,7 +224,30 @@ export class Game {
   }
 
   applyCrew(): void {
+    this.crewFx = crewFx(this.tech);
     const bonus = computeCrewBonus(this.crew);
+    const fx = this.crewFx;
+    bonus.dmg += fx.dmg;
+    bonus.rate += fx.rate;
+    bonus.crit += fx.crit;
+    bonus.range += fx.range;
+    bonus.recovery += fx.recovery;
+    bonus.regen += fx.regen;
+    bonus.hp += fx.hp;
+    bonus.armor += fx.armor;
+    bonus.shield += fx.shield;
+    bonus.power += fx.power;
+    bonus.cargo += fx.cargo;
+    bonus.cdr = Math.min(0.55, bonus.cdr + fx.cdr);
+    bonus.ult += fx.ult;
+    bonus.actcd = Math.min(0.55, bonus.actcd + fx.actcd);
+    bonus.abilityPower += fx.abilityPower;
+    bonus.xp += fx.xp;
+    const blitz = this.player.buff('blitz');
+    if (blitz) {
+      bonus.dmg += blitz.v;
+      bonus.rate += blitz.v;
+    }
     if (this.runeBuff?.rune === 'crimson') bonus.dmg += 0.25;
     if (this.runeBuff?.rune === 'gilded') {
       bonus.loot += 0.6;
@@ -177,6 +255,7 @@ export class Game {
     }
     if (this.runeBuff?.rune === 'azure') bonus.cdr = Math.min(0.6, bonus.cdr + 0.35);
     this.player.applyBonuses(this.tech, bonus);
+    this.syncArsenal();
   }
 
   /** Space for one more crew member somewhere (fortress, then Outrider). */
@@ -193,7 +272,7 @@ export class Game {
     c.officer = -1;
     if (room === 'main') {
       const used = new Set(this.crew.filter((x) => x.loc === 'main' && x.officer >= 0).map((x) => x.officer));
-      for (let i = 0; i < OFFICER_SLOTS; i++) {
+      for (let i = 0; i < this.officerSeats(); i++) {
         if (!used.has(i)) {
           c.officer = i;
           break;
@@ -206,20 +285,54 @@ export class Game {
   }
 
   crewXp(amount: number): void {
+    const bonus = 1 + this.player.crew.xp;
+    const ups: string[] = [];
     for (const c of this.crew) {
       if (c.loc === 'away') continue;
       const mult = c.officer >= 0 ? 1.5 : 1;
-      const ups = giveXp(c, amount * mult, () => this.rng.next());
-      if (ups) {
-        this.hooks.toast(`${c.name} reached level ${c.level}. Pick a perk in CREW (C).`, '#ffd740');
-        this.hooks.sound('levelup');
-      }
+      if (giveXp(c, amount * mult * bonus, () => this.rng.next(), this.draftChoices())) ups.push(`${c.name} (L${c.level})`);
     }
+    if (!ups.length) return;
+    this.hooks.sound('levelup');
+    // Big fights level people up in bursts: one toast every few seconds is plenty.
+    if (this.time - this.lastLevelToast < 4) return;
+    this.lastLevelToast = this.time;
+    const who = ups.length > 3 ? `${ups.slice(0, 3).join(', ')} and ${ups.length - 3} more` : ups.join(', ');
+    this.hooks.toast(`Level up: ${who}! Click a perk card on the left to pick.`, '#ffd740');
   }
+  private lastLevelToast = -99;
 
   rollRecruits(): void {
     const t = Math.max(1, threatAt(this.player.x, this.player.y));
-    this.recruits = [0, 1, 2].map(() => makeRecruit(() => this.rng.next(), t));
+    this.recruits = [0, 1, 2].map(() => makeRecruit(() => this.rng.next(), t, this.crewFx.recruitLuck));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Arsenal: active slots and the armed ultimate                      */
+  /* ---------------------------------------------------------------- */
+
+  /** Damage dealt by the fortress feeds the ultimate. */
+  ultGain(dmg: number): void {
+    if (this.ultModule && dmg > 0) this.ultBank = Math.min(this.ultBank + dmg, 20000);
+  }
+
+  /** Keeps active slots and the ultimate pointing at real modules; fills empty slots automatically. */
+  syncArsenal(): void {
+    const p = this.player;
+    const actives = p.modules.filter((m) => MODULES[m.key].active);
+    const ids = new Set(actives.map((m) => m.id));
+    for (let i = 0; i < this.activeSlots.length; i++) if (this.activeSlots[i] && !ids.has(this.activeSlots[i])) this.activeSlots[i] = 0;
+    for (const m of actives) {
+      if (this.activeSlots.includes(m.id)) continue;
+      const free = this.activeSlots.indexOf(0);
+      if (free < 0) break;
+      this.activeSlots[free] = m.id;
+    }
+    const ults = p.modules.filter((m) => MODULES[m.key].ult);
+    if (!ults.some((m) => m.id === this.ultModule)) {
+      this.ultModule = ults[0]?.id ?? 0;
+      if (!this.ultModule) this.ultCharge = Math.min(this.ultCharge, 0.5);
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -278,7 +391,7 @@ export class Game {
     if (id === this.player.id && !this.player.dead) return { id, x: this.player.x, y: this.player.y, r: this.player.stats.width / 2, flying: false };
     if (this.outrider && id === this.outrider.id && !this.outrider.dead) return { id, x: this.outrider.x, y: this.outrider.y, r: this.outrider.stats.width / 2, flying: false };
     const a = this.allies.find((x) => x.id === id);
-    if (a) return { id, x: a.x, y: a.y, r: 0.35, flying: false };
+    if (a && a.kind !== 'jet' && a.kind !== 'dragon' && a.kind !== 'mine') return { id, x: a.x, y: a.y, r: a.kind === 'mech' ? 1.2 : 0.35, flying: a.kind === 'drone' };
     return null;
   }
 
@@ -287,7 +400,7 @@ export class Game {
     const out: Target[] = [];
     if (!this.player.dead) out.push({ id: this.player.id, x: this.player.x, y: this.player.y, r: this.player.stats.width / 2, flying: false });
     if (this.outrider && !this.outrider.dead) out.push({ id: this.outrider.id, x: this.outrider.x, y: this.outrider.y, r: this.outrider.stats.width / 2, flying: false });
-    for (const a of this.allies) out.push({ id: a.id, x: a.x, y: a.y, r: 0.35, flying: false });
+    for (const a of this.allies) if (a.kind !== 'jet' && a.kind !== 'dragon' && a.kind !== 'mine') out.push({ id: a.id, x: a.x, y: a.y, r: a.kind === 'mech' ? 1.2 : 0.35, flying: a.kind === 'drone' });
     return out;
   }
 
@@ -296,7 +409,7 @@ export class Game {
     const t = this.tankById(id);
     if (t) return t.edgeDist(x, y);
     const a = this.allies.find((k) => k.id === id);
-    return a ? Math.max(0, Math.hypot(a.x - x, a.y - y) - 0.35) : Infinity;
+    return a ? Math.max(0, Math.hypot(a.x - x, a.y - y) - (a.kind === 'mech' ? 1.2 : 0.35)) : Infinity;
   }
 
   isVisible(x: number, y: number): boolean {
@@ -354,7 +467,7 @@ export class Game {
     const e: Enemy = {
       id: eid(), kind: d.kind, x, y, vx: 0, vy: 0, face: 1, hp: d.hp * hpScale, maxHp: d.hp * hpScale, r: d.r * (elite ? 1.2 : 1),
       speed: d.speed * (elite ? 1.1 : 1), dmg: d.dmg * dmgScale, range: d.range, atkCd: 1 + Math.random(), atkRate: d.rate, threat, elite,
-      flying: !!d.flying, state: 'idle', stateT: 0, targetId: 0, homeX: x, homeY: y, leash: 0, camp: 0, stun: 0, slow: 0, burn: 0, burnDps: 0,
+      flying: !!d.flying, state: 'idle', stateT: 0, targetId: 0, homeX: x, homeY: y, leash: 0, camp: 0, stun: 0, slow: 0, slowAmt: 0, burn: 0, burnDps: 0,
       hitFlash: 0, anim: Math.random() * 10, burrowed: false, lastHitBy: 0, aggro: false, parts: [], loot: d.loot, xp: d.xp * (elite ? 2 : 1),
       titan: kind.startsWith('titan'), name: d.name, z: d.flying ? 1.6 : 0,
     };

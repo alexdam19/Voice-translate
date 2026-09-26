@@ -147,12 +147,40 @@ export function weaponIcon(key: string, rarity: Rarity): string {
       case 'rail_cannon': p.rect(12, 12, 10, 1, m); p.rect(12, 16, 10, 1, m); p.rect(12, 14, 10, 1, '#ff7af0'); break;
       case 'sunspear': p.rect(12, 13, 10, 3, '#ffee58'); p.rect(12, 14, 10, 1, '#ffffff'); break;
       case 'maw': for (let i = 0; i < 3; i++) p.rect(12, 12 + i * 2, 6, 1, m); break;
+      case 'grenade_launcher': p.rect(12, 13, 6, 4, m); p.circle(19, 9, 2, '#c5e1a5'); break;
+      case 'scattergun': p.rect(12, 13, 7, 2, m); p.rect(12, 16, 7, 2, m); p.rect(19, 12, 2, 7, dk); break;
+      case 'raygun': p.rect(12, 14, 7, 2, m); for (let i = 0; i < 3; i++) p.rect(13 + i * 2, 12, 1, 6, '#b0bec5'); p.circle(20, 15, 1.5, '#69f0ae'); break;
+      case 'cryo_blaster': p.rect(12, 14, 8, 2, m); p.rect(8, 9, 6, 2, '#80deea'); p.set(20, 15, '#e0f7fa'); break;
+      case 'flamethrower': case 'dragons_breath': p.rect(12, 14, 7, 2, m); p.circle(8, 9, 3, key === 'dragons_breath' ? '#ff3d00' : '#795548'); p.rect(19, 12, 3, 5, '#ff9100'); p.set(21, 14, '#ffea00'); break;
+      case 'acid_launcher': p.rect(12, 13, 6, 3, m); p.circle(9, 9, 3, '#76ff03'); p.circle(19, 17, 1.5, '#76ff03'); break;
+      case 'soul_reaper': p.circle(15, 12, 4, '#b388ff'); p.rect(13, 11, 1, 1, '#1a1030'); p.rect(16, 11, 1, 1, '#1a1030'); p.rect(14, 14, 3, 1, '#1a1030'); break;
+      case 'arcane_orb': p.circle(15, 11, 5, '#ea80fc'); p.circle(14, 10, 2, '#ffffff'); break;
+      case 'swarm_hive': p.rect(8, 6, 12, 12, m); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) p.set(10 + i * 3, 8 + j * 3, '#ff9100'); break;
+      case 'hornet_nest': p.rect(6, 15, 14, 2, dk); p.rect(9, 12, 8, 2, '#eceff1'); p.rect(12, 9, 2, 8, '#90caf9'); p.set(17, 12, '#18ffff'); break;
+      case 'plasma_launcher': p.rect(12, 13, 8, 3, m); p.circle(20, 14.5, 2.5, '#e040fb'); break;
+      case 'chrono_cannon': p.rect(12, 13, 8, 3, m); p.circle(10, 9, 3.5, '#18ffff'); p.rect(10, 7, 1, 3, '#0e2a30'); break;
+      case 'kraken': p.rect(12, 13, 6, 3, m); for (let i = 0; i < 3; i++) p.rect(16 + i * 2, 16, 1, 5, '#7c4dff'); break;
+      case 'sonic_cannon': p.rect(12, 14, 4, 2, m); p.rect(16, 10, 2, 10, dk); p.rect(19, 12, 1, 6, '#b2ebf2'); p.rect(21, 11, 1, 8, '#b2ebf2'); break;
+      case 'howitzer': p.rect(11, 12, 11, 4, m); p.rect(20, 11, 2, 6, dk); p.circle(8, 8, 2, '#ffcc80'); break;
+      case 'ray_rail': p.rect(12, 12, 10, 1, '#ff7af0'); p.rect(12, 13, 10, 1, m); p.rect(12, 16, 7, 1, '#69f0ae'); break;
+      case 'storm_spire': case 'stormcaller': p.rect(10, 3, 3, 12, m); p.circle(11.5, 3, 3, '#40c4ff'); p.rect(15, 6, 1, 3, '#82b1ff'); p.rect(16, 9, 1, 3, '#82b1ff'); p.rect(15, 12, 1, 3, '#82b1ff'); break;
+      case 'gravity_cannon': p.rect(12, 13, 8, 3, m); p.circle(15, 8, 3, '#1a0a24'); p.ring(15, 8, 3, '#d500f9'); break;
+      case 'phoenix_launcher': p.rect(12, 14, 8, 3, m); p.rect(8, 7, 10, 2, '#ff6d00'); p.rect(11, 5, 4, 6, '#ff9100'); p.set(13, 6, '#ffea00'); break;
+      case 'void_lance': p.rect(11, 13, 11, 3, '#311b92'); p.rect(11, 14, 11, 1, '#b388ff'); p.circle(8, 8, 2, '#651fff'); break;
+      case 'starfall': p.circle(15, 8, 3, '#ffd740'); p.rect(9, 11, 3, 3, '#ff9100'); p.rect(6, 14, 3, 3, '#ff6d00'); break;
       default: p.rect(12, 14, 8, 2, m);
     }
     if (d?.exclusive) {
       p.set(3, 3, '#ffea00');
       p.set(4, 3, '#ffea00');
       p.set(3, 4, '#ffea00');
+    }
+    if (rarity >= 5) {
+      p.set(20, 3, '#ffffff');
+      p.set(19, 3, '#ff4f7b');
+      p.set(21, 3, '#ff4f7b');
+      p.set(20, 2, '#ff4f7b');
+      p.set(20, 4, '#ff4f7b');
     }
   });
 }

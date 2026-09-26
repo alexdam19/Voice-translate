@@ -7,10 +7,13 @@ import type { WeaponSize } from '../shared/weapons';
  * block of deck cells (w across the hull, h along it).
  */
 
-export type ModuleCat = 'command' | 'power' | 'crew' | 'industry' | 'defense' | 'weapon' | 'utility';
+export type ModuleCat = 'command' | 'power' | 'crew' | 'industry' | 'defense' | 'weapon' | 'utility' | 'facility' | 'arsenal' | 'ultimate';
 
 export const CATEGORIES: { key: ModuleCat; name: string; color: string }[] = [
   { key: 'weapon', name: 'Weapons', color: '#ff7043' },
+  { key: 'arsenal', name: 'Actives (1-4)', color: '#ff4081' },
+  { key: 'ultimate', name: 'Ultimates (R)', color: '#ff1744' },
+  { key: 'facility', name: 'Labs & Facilities', color: '#ffd54f' },
   { key: 'defense', name: 'Defense', color: '#80d8ff' },
   { key: 'power', name: 'Power & Drive', color: '#ffd740' },
   { key: 'crew', name: 'Crew', color: '#a5d6a7' },
@@ -54,6 +57,23 @@ export interface ModuleDef {
   refinery?: boolean;
   workshop?: boolean;
   radar?: number;
+  /** Research speed added (Science Lab). */
+  lab?: number;
+  forge?: boolean;
+  /** Passive crew XP per second (Training Grounds). */
+  training?: number;
+  sanctum?: boolean;
+  /** Fire-rate bonus for ballistic, artillery and missile weapons. */
+  depot?: number;
+  /** Ultimate charge speed bonus. */
+  uplink?: number;
+  mess?: boolean;
+  /** Arsenal active ability this module provides (keys 1-4). */
+  active?: string;
+  /** Ultimate this module provides (key R). */
+  ult?: string;
+  /** Highest module level (default 3). */
+  maxLevel?: number;
 }
 
 const M = (d: ModuleDef): ModuleDef => d;
@@ -87,11 +107,58 @@ add(M({ key: 'radar', name: 'Radar Mast', w: 1, h: 1, cat: 'utility', cost: { co
 add(M({ key: 'rad_baffles', name: 'Rad Baffles', w: 1, h: 2, cat: 'utility', cost: { iron_plate: 12, titanium_alloy: 3 }, height: 0.9, protects: ['rad'], desc: 'Shields the crew from radiation (Glass Crater).' }));
 add(M({ key: 'thermal', name: 'Thermal Regulator', w: 1, h: 2, cat: 'utility', cost: { titanium_alloy: 6, copper_wire: 12, circuit: 3 }, height: 0.9, protects: ['heat', 'cold'], use: 1, desc: 'Protects against extreme heat and cold (Magma Rift, Cryo Spires).' }));
 add(M({ key: 'sealant', name: 'Sealant Pumps', w: 1, h: 2, cat: 'utility', cost: { titanium_alloy: 6, sulfur: 10, cryo_core: 2 }, height: 0.9, protects: ['toxic'], use: 1, desc: 'Seals the hull against toxic fumes (Acid Marsh).' }));
+/* Labs & facilities */
+add(M({ key: 'science_lab', name: 'Science Lab', w: 2, h: 2, cat: 'facility', tech: 'science_lab', cost: { iron_plate: 12, circuit: 6, copper_wire: 8 }, height: 1, lab: 0.5, crew: 1, use: 1, desc: 'Research runs faster (+0.5 speed, more per level). Unlocks the Personnel tree. Bunks 1 scientist.' }));
+add(M({ key: 'forge', name: 'Weapon Forge', w: 2, h: 2, cat: 'facility', tech: 'forging', unique: true, cost: { iron_plate: 20, scrap: 40, explosive: 4 }, height: 1.1, forge: true, use: 2, desc: 'Raises weapons to higher stars (ARSENAL, V). Each level works 50% faster.' }));
+add(M({ key: 'training_grounds', name: 'Training Grounds', w: 2, h: 3, cat: 'facility', tech: 'drill_yards', unique: true, cost: { iron_plate: 16, scrap: 40 }, height: 0.35, training: 1.2, desc: 'Every crew member aboard earns experience over time (+1.2 XP/s, more per level).' }));
+add(M({ key: 'mess_hall', name: 'Mess Hall', w: 2, h: 2, cat: 'facility', tech: 'drill_yards', unique: true, cost: { scrap: 30, iron_plate: 8, biomass: 6 }, height: 0.8, mess: true, food: 1, crew: 1, desc: 'Injured crew recover 50% faster. Cooks rations and bunks 1.' }));
+add(M({ key: 'arcane_sanctum', name: 'Arcane Sanctum', w: 2, h: 2, cat: 'facility', tech: 'arcane_studies', unique: true, cost: { xenite: 6, cryo_core: 3, titanium_alloy: 8 }, height: 1.3, sanctum: true, use: 2, desc: 'Distils Mythic Essence (CARGO > Workshop). Arcane weapons +10% damage per level.' }));
+add(M({ key: 'ammo_depot', name: 'Ammo Depot', w: 1, h: 2, cat: 'facility', tech: 'logistics_depot', cost: { iron_plate: 12, explosive: 6 }, height: 0.7, depot: 0.08, desc: 'Ballistic, artillery and missile weapons fire 8% faster (more per level, max +40%).' }));
+add(M({ key: 'command_uplink', name: 'Command Uplink', w: 1, h: 1, cat: 'facility', tech: 'command_uplink', cost: { circuit: 8, copper_wire: 12 }, height: 1.5, uplink: 0.25, use: 1, desc: 'Your ultimate (R) charges 25% faster (more per level).' }));
+
+/* Arsenal actives (keys 1-4) */
+add(M({ key: 'salvo_rack', name: 'Salvo Rack', w: 2, h: 1, cat: 'arsenal', tech: 'salvo', cost: { iron_plate: 12, explosive: 8 }, height: 0.6, active: 'salvo', desc: 'ACTIVE: 12 rockets slam into the area under the cursor.' }));
+add(M({ key: 'smoke_launcher', name: 'Smoke Launchers', w: 1, h: 1, cat: 'arsenal', tech: 'smoke', cost: { iron_plate: 6, sulfur: 6 }, height: 0.5, active: 'smoke', desc: 'ACTIVE: a smoke screen halves incoming damage for 5s.' }));
+add(M({ key: 'drone_bay', name: 'Drone Bay', w: 2, h: 2, cat: 'arsenal', tech: 'drone_bay', cost: { circuit: 10, copper_wire: 16, iron_plate: 10 }, height: 0.7, active: 'drones', use: 1, desc: 'ACTIVE: launches 4 laser drones that hunt nearby enemies.' }));
+add(M({ key: 'mine_layer', name: 'Mine Layer', w: 1, h: 2, cat: 'arsenal', tech: 'mines', cost: { explosive: 10, iron_plate: 10 }, height: 0.5, active: 'mines', desc: 'ACTIVE: scatters 8 proximity mines around the fortress.' }));
+add(M({ key: 'jet_hangar', name: 'Jet Hangar', w: 2, h: 3, cat: 'arsenal', tech: 'jet_fighters', cost: { titanium_alloy: 12, circuit: 10, iron_plate: 16 }, height: 0.7, active: 'jets', use: 1, desc: 'ACTIVE: scrambles mini fighter jets that strafe and bomb around the cursor.' }));
+add(M({ key: 'teleporter', name: 'Blink Drive', w: 2, h: 2, cat: 'arsenal', tech: 'blink', cost: { cryo_core: 4, uranium_rod: 2, circuit: 8 }, height: 0.9, active: 'blink', use: 2, desc: 'ACTIVE: teleports the whole fortress to the cursor.' }));
+add(M({ key: 'dome_projector', name: 'Dome Projector', w: 2, h: 2, cat: 'arsenal', tech: 'aegis', cost: { titanium_alloy: 10, cryo_core: 3, circuit: 8 }, height: 1, active: 'dome', use: 2, desc: 'ACTIVE: an energy dome blocks 90% of damage for 4s.' }));
+add(M({ key: 'airstrike', name: 'Airstrike Beacon', w: 1, h: 1, cat: 'arsenal', tech: 'carpet_bomb', cost: { explosive: 16, circuit: 6 }, height: 1.4, active: 'airstrike', desc: 'ACTIVE: a bomber carpet-bombs a line toward the cursor.' }));
+
+/* Ultimates (key R) */
+add(M({ key: 'nuke_silo', name: 'Nuclear Silo', w: 3, h: 3, cat: 'ultimate', tech: 'nuclear_program', unique: true, cost: { uranium_rod: 12, titanium_alloy: 20, xeno_alloy: 4 }, height: 0.5, ult: 'nuke', desc: 'ULTIMATE: launch a tactical nuke at the cursor.' }));
+add(M({ key: 'mech_bay', name: 'Mech Bay', w: 3, h: 3, cat: 'ultimate', tech: 'mech_drop', unique: true, cost: { titanium_alloy: 30, uranium_rod: 6, circuit: 16 }, height: 1.2, ult: 'mech', desc: 'ULTIMATE: drop a giant battle mech that fights for 30s.' }));
+add(M({ key: 'orbital', name: 'Orbital Uplink', w: 2, h: 2, cat: 'ultimate', tech: 'orbital_laser', unique: true, cost: { xeno_alloy: 8, cryo_core: 6, circuit: 16 }, height: 1.4, ult: 'orbital_laser', desc: 'ULTIMATE: a laser from orbit follows your cursor for 7s.' }));
+add(M({ key: 'obelisk', name: 'Star Obelisk', w: 2, h: 2, cat: 'ultimate', tech: 'meteor_storm', unique: true, cost: { mythic_essence: 3, xeno_alloy: 6, xenite: 10 }, height: 1.8, ult: 'meteors', desc: 'ULTIMATE: a storm of meteors around the cursor.' }));
+add(M({ key: 'chrono_engine', name: 'Chrono Engine', w: 2, h: 2, cat: 'ultimate', tech: 'time_stop', unique: true, cost: { mythic_essence: 3, cryo_core: 8, circuit: 12 }, height: 1.2, ult: 'timestop', desc: 'ULTIMATE: stop time for every enemy for 6s.' }));
+add(M({ key: 'dragon_roost', name: 'Dragon Roost', w: 3, h: 3, cat: 'ultimate', tech: 'dragon_pact', unique: true, cost: { mythic_essence: 6, sulfur: 40, xeno_alloy: 8 }, height: 0.9, ult: 'dragon', desc: 'ULTIMATE: summon a fire-breathing dragon for 25s.' }));
+add(M({ key: 'storm_engine', name: 'Storm Engine', w: 3, h: 3, cat: 'ultimate', tech: 'cataclysm', unique: true, cost: { mythic_essence: 6, cryo_core: 10, copper_wire: 60 }, height: 1.6, ult: 'cataclysm', desc: 'ULTIMATE: a 10s lightning cataclysm around the fortress.' }));
+
 add(M({ key: 'hp_light', name: 'Light Hardpoint', w: 1, h: 1, cat: 'weapon', cost: { scrap: 15, iron_plate: 3 }, height: 0.5, hardpoint: 'light', desc: 'Mounts one light weapon.' }));
 add(M({ key: 'hp_medium', name: 'Medium Hardpoint', w: 2, h: 2, cat: 'weapon', cost: { iron_plate: 12, circuit: 2 }, height: 0.6, hardpoint: 'medium', desc: 'Mounts one medium weapon.' }));
 add(M({ key: 'hp_heavy', name: 'Heavy Hardpoint', w: 3, h: 3, cat: 'weapon', cost: { iron_plate: 30, circuit: 4 }, height: 0.7, hardpoint: 'heavy', desc: 'Mounts one heavy weapon.' }));
 
 export const MODULE_LIST: readonly ModuleDef[] = Object.values(MODULES);
+
+/* ---------------------------------------------------------------------- */
+/* Module levels (1-3)                                                     */
+/* ---------------------------------------------------------------------- */
+
+export const maxModuleLevel = (d: ModuleDef): number => d.maxLevel ?? (d.hardpoint || d.key === 'vault' ? 1 : 3);
+
+/** Effect multiplier for a module at a level: +50% per level above 1. */
+export const levelMult = (lvl: number): number => 1 + 0.5 * (Math.max(1, lvl) - 1);
+
+/** What it costs to raise a module from `lvl` to `lvl + 1`. */
+export function levelCost(d: ModuleDef, lvl: number): Cost {
+  const base: Cost = Object.keys(d.cost).length ? d.cost : { iron_plate: 20, circuit: 6 };
+  const f = lvl <= 1 ? 1.2 : 2.4;
+  const out: Cost = {};
+  for (const [k, n] of Object.entries(base)) out[k] = Math.ceil(n * f);
+  out.tech_parts = (out.tech_parts ?? 0) + (lvl <= 1 ? 1 : 3);
+  return out;
+}
 
 export interface ChassisDef {
   key: string;
@@ -138,7 +205,7 @@ export interface Recipe {
   out: string;
   n: number;
   cost: Cost;
-  station: 'refinery' | 'workshop' | 'none';
+  station: 'refinery' | 'workshop' | 'sanctum' | 'none';
   tech?: string;
 }
 
@@ -157,4 +224,6 @@ export const RECIPES: Recipe[] = [
   { id: 'd_chains', out: 'drive_chains', n: 1, cost: { titanium_alloy: 6, iron_plate: 10 }, station: 'workshop' },
   { id: 'd_magma', out: 'drive_magma', n: 1, cost: { titanium_alloy: 10, cryo_core: 3, uranium_rod: 1 }, station: 'workshop' },
   { id: 'd_hover', out: 'drive_hover', n: 1, cost: { uranium_rod: 3, cryo_core: 3, titanium_alloy: 10, sulfur: 10 }, station: 'workshop' },
+  { id: 's_essence', out: 'mythic_essence', n: 1, cost: { xenite: 8, xeno_alloy: 2, cryo_core: 2 }, station: 'sanctum' },
+  { id: 's_essence_cheap', out: 'mythic_essence', n: 1, cost: { xenite: 4, xeno_alloy: 1, cryo_core: 1 }, station: 'sanctum', tech: 'essence_tap' },
 ];

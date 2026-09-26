@@ -534,6 +534,170 @@ const MODULE_ART: Record<string, (p: Pix) => void> = {
     p.stripes(0, 0, 3, 3, '#ffc400', '#222', 2);
     p.stripes(13, 13, 3, 3, '#ffc400', '#222', 2);
   },
+  /* Labs & facilities */
+  science_lab: (p) => {
+    p.fill('#e0e6ea');
+    p.rect(2, 2, 12, 12, '#b0bec5');
+    p.rect(4, 3, 3, 8, '#80deea');
+    p.rect(4, 9, 3, 2, '#00e5ff');
+    p.rect(9, 5, 4, 6, '#b39ddb');
+    p.rect(9, 9, 4, 2, '#7c4dff');
+    p.bevel(0, 0, 16, 16, '#ffffff', '#78909c');
+  },
+  forge: (p) => {
+    p.fill('#3a2a24');
+    p.circle(8, 8, 6, '#1e1410');
+    p.circle(8, 8, 4, '#ff6d00');
+    p.circle(8, 8, 2, '#ffea00');
+    p.rect(1, 13, 14, 2, '#6d6d6d');
+    p.bevel(0, 0, 16, 16, '#6a4a3a', '#1a0e0a');
+  },
+  training_grounds: (p) => {
+    p.ground(['#6a5a3a', '#74643e', '#7e6e46'], 3, 0.3);
+    p.ring(8, 8, 5, '#f5f5f5');
+    p.ring(8, 8, 3, '#e53935');
+    p.set(8, 8, '#e53935');
+    p.rect(0, 0, 16, 1, '#fafafa');
+    p.rect(0, 15, 16, 1, '#fafafa');
+  },
+  mess_hall: (p) => {
+    p.fill('#6d4c41');
+    for (let y = 2; y < 16; y += 5) p.rect(2, y, 12, 3, '#a1887f');
+    p.circle(5, 3, 1, '#ffca28');
+    p.circle(11, 8, 1, '#ef5350');
+    p.circle(6, 13, 1, '#66bb6a');
+  },
+  arcane_sanctum: (p) => {
+    p.fill('#1a1030');
+    p.ring(8, 8, 7, '#7c4dff');
+    p.ring(8, 8, 4, '#ea80fc');
+    for (let a = 0; a < 5; a++) {
+      const ang = (a / 5) * Math.PI * 2 - Math.PI / 2;
+      p.set(Math.round(8 + Math.cos(ang) * 5.5), Math.round(8 + Math.sin(ang) * 5.5), '#ffd740');
+    }
+    p.circle(8, 8, 1.5, '#ff4f7b');
+  },
+  ammo_depot: (p) => {
+    p.fill('#4a4a36');
+    for (let x = 1; x < 16; x += 3) {
+      p.rect(x, 3, 2, 10, '#c8a44a');
+      p.rect(x, 3, 2, 2, '#8d6e2a');
+    }
+    p.bevel(0, 0, 16, 16, '#6a6a50', '#22221a');
+  },
+  command_uplink: (p) => {
+    p.fill('#263238');
+    p.circle(8, 8, 6, '#455a64');
+    p.circle(8, 8, 3, '#ffd740');
+    p.set(8, 8, '#ff1744');
+  },
+  /* Actives */
+  salvo_rack: (p) => {
+    p.fill('#3a3e44');
+    for (let y = 1; y < 16; y += 4) for (let x = 1; x < 16; x += 4) {
+      p.rect(x, y, 3, 3, '#1e2226');
+      p.set(x + 1, y + 1, '#ff5722');
+    }
+  },
+  smoke_launcher: (p) => {
+    p.fill('#3a4046');
+    for (let i = 0; i < 4; i++) p.circle(4 + (i % 2) * 8, 4 + Math.floor(i / 2) * 8, 2.5, '#9e9e9e');
+    p.bevel(0, 0, 16, 16, '#5a6068', '#20262c');
+  },
+  drone_bay: (p) => {
+    p.fill('#37474f');
+    p.stripes(0, 0, 16, 2, '#29b6f6', '#1e2226', 4);
+    for (const [x, y] of [[4, 6], [11, 6], [4, 12], [11, 12]]) {
+      p.circle(x, y, 2, '#90a4ae');
+      p.set(x, y, '#40c4ff');
+    }
+  },
+  mine_layer: (p) => {
+    p.fill('#3e3a2a');
+    p.stripes(0, 0, 16, 16, '#ffd740', '#2a2a2a', 8);
+    p.circle(8, 8, 4, '#424242');
+    p.set(8, 8, '#ff1744');
+  },
+  jet_hangar: (p) => {
+    p.fill('#455a64');
+    p.rect(7, 0, 2, 16, '#fafafa');
+    for (let y = 1; y < 16; y += 4) p.rect(7, y, 2, 2, '#ffc400');
+    p.rect(2, 5, 12, 2, '#90caf9');
+    p.rect(6, 3, 4, 8, '#90caf9');
+  },
+  teleporter: (p) => {
+    p.fill('#102030');
+    p.ring(8, 8, 7, '#18ffff');
+    p.ring(8, 8, 4, '#00b8d4');
+    p.circle(8, 8, 2, '#e0f7fa');
+  },
+  dome_projector: (p) => {
+    p.fill('#1b3a2a');
+    p.circle(8, 8, 6, '#2e7d32');
+    p.circle(8, 8, 4, '#69f0ae');
+    p.circle(6, 6, 1.5, '#e8f5e9');
+  },
+  airstrike: (p) => {
+    p.fill('#3a3a3a');
+    p.circle(8, 8, 6, '#b71c1c');
+    p.circle(8, 8, 3, '#ff6e40');
+    p.rect(7, 2, 2, 12, '#fafafa');
+    p.rect(2, 7, 12, 2, '#fafafa');
+  },
+  /* Ultimates */
+  nuke_silo: (p) => {
+    p.fill('#37474f');
+    p.circle(8, 8, 7, '#263238');
+    p.circle(8, 8, 5, '#ffd600');
+    p.circle(8, 8, 1.6, '#212121');
+    for (let a = 0; a < 3; a++) {
+      const ang = a * 2.094 - 1.57;
+      p.circle(8 + Math.cos(ang) * 3.2, 8 + Math.sin(ang) * 3.2, 1.3, '#212121');
+    }
+  },
+  mech_bay: (p) => {
+    p.fill('#4e342e');
+    p.stripes(0, 0, 16, 3, '#ffc400', '#222', 4);
+    p.stripes(0, 13, 16, 3, '#ffc400', '#222', 4);
+    p.rect(4, 5, 8, 6, '#ff8f00');
+    p.rect(6, 6, 4, 2, '#18ffff');
+  },
+  orbital: (p) => {
+    p.fill('#212121');
+    p.circle(8, 8, 6, '#b0bec5');
+    p.circle(8, 8, 4, '#eceff1');
+    p.circle(8, 8, 2, '#ff1744');
+  },
+  obelisk: (p) => {
+    p.fill('#1a1024');
+    p.rect(6, 1, 4, 14, '#3a2a4a');
+    p.rect(7, 2, 2, 12, '#ff9100');
+    p.set(7, 4, '#ffea00');
+    p.set(8, 9, '#ffea00');
+  },
+  chrono_engine: (p) => {
+    p.fill('#0e2a30');
+    p.ring(8, 8, 6, '#18ffff');
+    p.rect(8, 3, 1, 5, '#e0f7fa');
+    p.rect(8, 8, 4, 1, '#e0f7fa');
+    for (let a = 0; a < 12; a++) {
+      const ang = (a / 12) * Math.PI * 2;
+      p.set(Math.round(8 + Math.cos(ang) * 7), Math.round(8 + Math.sin(ang) * 7), '#80deea');
+    }
+  },
+  dragon_roost: (p) => {
+    p.ground(['#3a2218', '#44281c', '#4e2e20'], 3, 0.3);
+    p.circle(8, 8, 6, '#5d4037');
+    p.circle(8, 8, 4, '#ff3d00');
+    p.circle(7, 7, 1.5, '#ffd740');
+    p.circle(10, 9, 1, '#ffd740');
+  },
+  storm_engine: (p) => {
+    p.fill('#1a2336');
+    p.circle(8, 8, 6, '#283593');
+    for (const [x, y] of [[8, 2], [6, 6], [9, 8], [7, 12]]) p.rect(x, y, 2, 3, '#82b1ff');
+    p.rect(6, 5, 1, 2, '#e3f2fd');
+  },
 };
 
 export const MODULE_COLOR: Record<string, string> = {
@@ -542,6 +706,11 @@ export const MODULE_COLOR: Record<string, string> = {
   workshop: '#ffca28', drill_mk2: '#ffb300', drill_mk3: '#e040fb', garage: '#78909c', armor: '#90a4ae', heavy_armor: '#8d9a7a',
   shield: '#40c4ff', repair_bay: '#ffca28', radar: '#b0bec5', rad_baffles: '#ffd600', thermal: '#ff7043', sealant: '#00c853',
   hp_light: '#ff8a65', hp_medium: '#ff7043', hp_heavy: '#f4511e',
+  science_lab: '#80deea', forge: '#ff6d00', training_grounds: '#fafafa', mess_hall: '#a1887f', arcane_sanctum: '#b388ff',
+  ammo_depot: '#c8a44a', command_uplink: '#ffd740', salvo_rack: '#ff5722', smoke_launcher: '#9e9e9e', drone_bay: '#40c4ff',
+  mine_layer: '#ffd740', jet_hangar: '#90caf9', teleporter: '#18ffff', dome_projector: '#69f0ae', airstrike: '#ff6e40',
+  nuke_silo: '#ffd600', mech_bay: '#ff8f00', orbital: '#ff1744', obelisk: '#ff9100', chrono_engine: '#18ffff', dragon_roost: '#ff3d00',
+  storm_engine: '#82b1ff',
 };
 
 let atlas: Atlas | null = null;

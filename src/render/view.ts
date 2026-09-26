@@ -1,7 +1,7 @@
 import {
   BoxGeometry, Color, DepthTexture, Fog, Group, HalfFloatType, HemisphereLight, DirectionalLight, Mesh, MeshBasicMaterial, MeshLambertMaterial,
   NearestFilter, Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, Raycaster, Scene, ShaderMaterial, Sprite,
-  Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, AdditiveBlending, PCFShadowMap,
+  Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, AdditiveBlending, PCFShadowMap, SphereGeometry,
 } from 'three';
 import { getItem } from '../shared/items';
 import { RARITIES } from '../shared/rarity';
@@ -14,7 +14,7 @@ import type { Tank } from '../game/tank';
 import { CHEST_INFO } from '../game/chests';
 import { makeDecal, Particles, Transients, type Decal } from './fx';
 import { fowUniforms, updateFow, fillFow } from './fow';
-import { buildGateModel, buildNodeModel, buildRuneModel, buildSiteModel, buildTankModel, buildTitanModel, disposeModel, type TankModel, type TitanModel } from './models';
+import { buildAllyModel, buildGateModel, buildNodeModel, buildRuneModel, buildSiteModel, buildTankModel, buildTitanModel, disposeModel, type AllyModel, type TankModel, type TitanModel } from './models';
 import { shadowTexture, spriteMat } from './sprites';
 import { TerrainView } from './terrain';
 import { getAtlas } from './textures';
@@ -66,6 +66,13 @@ interface EnemyVis {
 
 const PROJ_GEO = new BoxGeometry(1, 1, 1);
 
+/** Projectiles that shed glowing particles (and how often). */
+const GLOW_KINDS: Partial<Record<string, number>> = {
+  plasma: 0.9, orb: 0.9, soul: 0.8, chrono: 0.8, gravity: 1, phoenix: 1, fireball: 0.9, flame: 0.4, cryo: 0.6, acid: 0.5, ink: 0.5, nuke: 1, meteor: 1, grenade: 0.2,
+};
+const ROUND_KINDS = new Set(['plasma', 'orb', 'soul', 'chrono', 'gravity', 'fireball', 'acid', 'ink', 'grenade', 'meteor', 'boulder']);
+const ZONE_COLOR: Record<string, string> = { fire: '#ff6d00', acid: '#76ff03', well: '#d500f9', chrono: '#18ffff', rad: '#c6ff00', frost: '#80deea', smoke: '#9e9e9e' };
+
 export class View {
   renderer: WebGLRenderer;
   scene = new Scene();
@@ -79,13 +86,15 @@ export class View {
   terrain: TerrainView | null = null;
   private world = new Group();
   private units = new Group();
-  private addP = new Particles(1800, true);
-  private normP = new Particles(1400, false);
+  private addP = new Particles(4000, true);
+  private normP = new Particles(3000, false);
   private trans = new Transients();
   private tankModels = new Map<Tank, TankModel>();
   private enemyVis = new Map<number, EnemyVis>();
   private titanVis = new Map<number, TitanModel>();
   private allyVis = new Map<number, EnemyVis>();
+  private allyModels = new Map<number, AllyModel & { shadow: Mesh }>();
+  private domeVis: Mesh | null = null;
   private projPool: Mesh[] = [];
   private projMats = new Map<string, MeshBasicMaterial>();
   private pickupVis = new Map<number, Object3D>();
@@ -547,28 +556,81 @@ export class View {
     const seen = new Set<number>();
     for (const a of g.allies) {
       seen.add(a.id);
-      let v = this.allyVis.get(a.id);
-      const kind = a.heavy ? 'heavy' : 'marine';
-      if (!v) {
-        const sprite = new Sprite(spriteMat(kind, '#1565c0', 0, 'n', false));
-        sprite.center.set(0.5, 0.08);
-        const shadow = new Mesh(this.shadowGeo, this.shadowMat);
-        this.units.add(sprite, shadow);
-        v = { sprite, shadow, kind };
-        this.allyVis.set(a.id, v);
+      if (a.kind === 'marine' || a.kind === 'heavy') {
+        let v = this.allyVis.get(a.id);
+        const kind = a.heavy ? 'heavy' : 'marine';
+        if (!v) {
+          const sprite = new Sprite(spriteMat(kind, '#1565c0', 0, 'n', false));
+          sprite.center.set(0.5, 0.08);
+          const shadow = new Mesh(this.shadowGeo, this.shadowMat);
+          this.units.add(sprite, shadow);
+          v = { sprite, shadow, kind };
+          this.allyVis.set(a.id, v);
+        }
+        v.sprite.material = spriteMat(kind, '#1565c0', Math.floor(a.anim) % 2, 'n', a.face < 0);
+        v.sprite.position.set(a.x, 0, a.y);
+        const sc = a.heavy ? 1.4 : 1.1;
+        v.sprite.scale.set(sc, sc, 1);
+        v.shadow.position.set(a.x, 0.04, a.y);
+        v.shadow.scale.set(0.8, 1, 0.5);
+        continue;
       }
-      v.sprite.material = spriteMat(kind, '#1565c0', Math.floor(a.anim) % 2, 'n', a.face < 0);
-      v.sprite.position.set(a.x, 0, a.y);
-      const s = a.heavy ? 1.4 : 1.1;
-      v.sprite.scale.set(s, s, 1);
-      v.shadow.position.set(a.x, 0.04, a.y);
-      v.shadow.scale.set(0.8, 1, 0.5);
+      let m = this.allyModels.get(a.id);
+      if (!m) {
+        const built = buildAllyModel(a.kind);
+        const shadow = new Mesh(this.shadowGeo, this.shadowMat);
+        m = { ...built, shadow };
+        this.units.add(built.root, shadow);
+        this.allyModels.set(a.id, m);
+      }
+      m.root.position.set(a.x, a.z, a.y);
+      m.root.rotation.y = -a.rot;
+      const size = a.kind === 'dragon' ? 3.5 : a.kind === 'mech' ? 2.2 : a.kind === 'jet' ? 1.2 : 0.6;
+      m.shadow.position.set(a.x, 0.04, a.y);
+      m.shadow.scale.set(size, 1, size * 0.7);
+      if (a.kind === 'jet') {
+        m.root.rotation.x = Math.sin(a.anim * 0.7) * 0.25;
+        if (Math.random() < 0.6) this.addP.emit(a.x - Math.cos(a.rot) * 0.6, a.y - Math.sin(a.rot) * 0.6, a.z, 0, 0, 0, 0.2, 0.18, new Color('#ff9100'));
+      } else if (a.kind === 'drone') {
+        m.root.rotation.y = a.anim * 3;
+      } else if (a.kind === 'mech') {
+        m.parts.forEach((leg, i) => (leg.rotation.z = Math.sin(a.anim * 0.6 + i * Math.PI) * 0.35));
+      } else if (a.kind === 'dragon') {
+        m.parts.forEach((w, i) => (w.rotation.x = Math.sin(a.anim * 0.9) * 0.5 * (i === 0 ? -1 : 1)));
+        if (Math.random() < 0.3) this.addP.emit(a.x, a.y, a.z, 0, 0, -0.5, 0.5, 0.25, new Color('#ff6d00'), 0, 0.8);
+      }
+      if (a.life < 1.2 && a.kind === 'jet') m.root.position.y = a.z + (1.2 - a.life) * 6;
     }
     for (const [id, v] of this.allyVis) {
       if (!seen.has(id)) {
         this.units.remove(v.sprite, v.shadow);
         this.allyVis.delete(id);
       }
+    }
+    for (const [id, m] of this.allyModels) {
+      if (!seen.has(id)) {
+        this.units.remove(m.root, m.shadow);
+        this.allyModels.delete(id);
+      }
+    }
+    // Aegis dome and smoke screen around the fortress.
+    const p = g.player;
+    const dome = p.hasBuff('dome') && !p.dead;
+    if (dome && !this.domeVis) {
+      this.domeVis = new Mesh(new SphereGeometry(1, 16, 10), new MeshBasicMaterial({ color: '#69f0ae', transparent: true, opacity: 0.18, blending: AdditiveBlending, depthWrite: false }));
+      this.units.add(this.domeVis);
+    }
+    if (this.domeVis) {
+      this.domeVis.visible = dome;
+      if (dome) {
+        this.domeVis.position.set(p.x, 0, p.y);
+        this.domeVis.scale.set(p.stats.length * 0.62, p.stats.length * 0.4, p.stats.length * 0.62);
+        (this.domeVis.material as MeshBasicMaterial).opacity = 0.14 + 0.06 * Math.sin(this.time * 8);
+      }
+    }
+    if (p.hasBuff('smoke') && Math.random() < 0.8) {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * p.stats.length * 0.7;
+      this.normP.emit(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, 0.5, (Math.random() - 0.5), (Math.random() - 0.5), 0.6, 2.2, 1.2, new Color('#9e9e9e'), 0, 0.6, 0.8);
     }
   }
 
@@ -597,9 +659,11 @@ export class View {
       m.visible = g.mode !== 'world' || p.team === 'player' || g.isVisible(p.x, p.y);
       m.material = this.projMat(p.kind === 'shell' || p.kind === 'mortar' ? '#fff3c4' : p.color);
       const sp = Math.hypot(p.vx, p.vy);
-      const len = p.kind === 'bullet' || p.kind === 'pellet' || p.kind === 'pd' ? Math.min(1.2, 0.3 + sp * 0.02) : p.size * 2.2;
+      const round = ROUND_KINDS.has(p.kind);
+      const len = p.kind === 'bullet' || p.kind === 'pellet' || p.kind === 'pd' ? Math.min(1.2, 0.3 + sp * 0.02) : round ? p.size : p.size * 2.2;
       const s = p.size;
       m.scale.set(len, s, s);
+      if (p.kind === 'flame') m.visible = false;
       m.position.set(p.x, p.z, p.y);
       m.rotation.set(0, -Math.atan2(p.vy, p.vx), p.arc ? Math.atan2(p.vz, sp) : 0);
       // Trails
@@ -608,6 +672,13 @@ export class View {
         if (p.kind === 'missile') this.addP.emit(p.x, p.y, p.z, 0, 0, 0, 0.12, 0.3, new Color('#ff9100'));
       }
       if (p.kind === 'spit' && Math.random() < 0.5) this.addP.emit(p.x, p.y, p.z, 0, 0, 0, 0.3, 0.3, new Color('#76ff03'));
+      const glow = GLOW_KINDS[p.kind];
+      if (glow && Math.random() < glow) {
+        const c = new Color(p.kind === 'nuke' ? '#ff9100' : p.color);
+        const sz = p.kind === 'flame' ? 0.5 : p.size * 1.6;
+        this.addP.emit(p.x + (Math.random() - 0.5) * p.size, p.y + (Math.random() - 0.5) * p.size, p.z, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, p.kind === 'flame' ? 1.2 : 0.3, p.kind === 'flame' ? 0.25 : 0.35, sz, c, 0, 0.7, p.kind === 'flame' ? 1.2 : 0);
+      }
+      if ((p.kind === 'nuke' || p.kind === 'meteor') && Math.random() < 0.8) this.normP.emit(p.x, p.y, p.z + 0.5, 0, 0, 0.5, 1.2, 0.6, new Color('#5d4037'), 0, 0.5, 0.8);
     }
   }
 
@@ -699,7 +770,7 @@ export class View {
     for (const z of g.zones) {
       zs.add(z.id);
       let d = this.zoneDecals.get(z.id);
-      const color = z.kind === 'fire' ? '#ff6d00' : z.kind === 'acid' ? '#76ff03' : '#d500f9';
+      const color = ZONE_COLOR[z.kind] ?? '#d500f9';
       if (!d) {
         d = makeDecal('circle', color);
         d.fillMat.blending = AdditiveBlending;
@@ -708,10 +779,12 @@ export class View {
       }
       d.root.position.set(z.x, 0.03, z.y);
       d.root.scale.setScalar(z.r * (1 + 0.05 * Math.sin(this.time * 8)));
-      d.fillMat.opacity = 0.25 + 0.1 * Math.sin(this.time * 10 + z.id);
+      d.fillMat.opacity = (z.kind === 'well' || z.kind === 'rad' ? 0.12 : 0.2) + 0.08 * Math.sin(this.time * 10 + z.id);
       if (Math.random() < 0.5) {
         const a = Math.random() * Math.PI * 2, r = Math.random() * z.r;
         if (z.kind === 'well') this.addP.emit(z.x + Math.cos(a) * z.r, z.y + Math.sin(a) * z.r, 0.3, -Math.cos(a) * z.r * 1.5, -Math.sin(a) * z.r * 1.5, 0, 0.6, 0.3, new Color(color));
+        else if (z.kind === 'smoke') this.normP.emit(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, 0.4, 0, 0, 0.5, 1.8, 1, new Color('#9e9e9e'), 0, 0.6, 0.6);
+        else if (z.kind === 'chrono') this.addP.emit(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, 0.6, 0, 0, 0.1, 1, 0.2, new Color(color), 0, 0.2);
         else this.addP.emit(z.x + Math.cos(a) * r, z.y + Math.sin(a) * r, 0.1, 0, 0, 2, 0.6, 0.35, new Color(color), 0, 0.9);
       }
     }
@@ -775,6 +848,65 @@ export class View {
       case 'shake':
         this.shake(e.amt);
         break;
+      case 'strike':
+        this.trans.skyBolt(e.x, e.y, e.color);
+        this.trans.flash(e.x, e.y, 0.4, 1.2, e.color, 0.15);
+        for (let i = 0; i < 8; i++) {
+          const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 4;
+          this.addP.emit(e.x, e.y, 0.3, Math.cos(a) * sp, Math.sin(a) * sp, 2 + Math.random() * 2, 0.3, 0.2, new Color(e.color), 8, 0.4);
+        }
+        break;
+      case 'wave':
+        for (let i = 0; i < 26; i++) {
+          const a = e.a + (Math.random() - 0.5) * 2 * e.spread, sp = e.r * (1.6 + Math.random());
+          this.addP.emit(e.x, e.y, 1, Math.cos(a) * sp, Math.sin(a) * sp, 0, 0.35, 0.35, new Color(e.color), 0, 0.3, 1.2);
+        }
+        break;
+      case 'teleport':
+        this.trans.pillar(e.x, e.y, '#18ffff', 3, 0.5);
+        this.trans.ring(e.x, e.y, 6, '#18ffff', 0.5);
+        for (let i = 0; i < 40; i++) {
+          const a = Math.random() * Math.PI * 2, r = Math.random() * 3;
+          this.addP.emit(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, Math.random() * 2, 0, 0, 4 + Math.random() * 4, 0.6, 0.25, new Color('#18ffff'));
+        }
+        break;
+      case 'nuke':
+        this.nuke(e.x, e.y, e.r);
+        break;
     }
   }
+
+  /** Blinding flash, a fireball, shockwave rings and a rising mushroom cloud. */
+  private nuke(x: number, y: number, r: number): void {
+    this.trans.flash(x, y, 2, r * 0.6, '#ffffff', 0.35);
+    this.trans.flash(x, y, 1, r * 0.45, '#ffea00', 0.6);
+    this.trans.ring(x, y, r * 2.2, '#ffd740', 1.1);
+    this.trans.ring(x, y, r * 1.4, '#ff6d00', 0.8);
+    const fire = [new Color('#ffea00'), new Color('#ff9100'), new Color('#ff3d00'), new Color('#fff3c4')];
+    const smoke = [new Color('#bcaaa4'), new Color('#8d6e63'), new Color('#a1887f'), new Color('#d7ccc8')];
+    // Fireball dome hugging the ground.
+    for (let i = 0; i < 320; i++) {
+      const a = Math.random() * Math.PI * 2, rr = Math.random() * r * 0.55, sp = 1 + Math.random() * r * 0.25;
+      this.addP.emit(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 0.4 + Math.random() * 2.5, Math.cos(a) * sp, Math.sin(a) * sp, 0.5 + Math.random() * 2, 0.9 + Math.random() * 0.9, 1.2 + Math.random() * 1.4, fire[i % fire.length], 0, 0.8, 0.8);
+    }
+    // Stem.
+    for (let i = 0; i < 140; i++) {
+      const a = Math.random() * Math.PI * 2, rr = Math.random() * r * 0.14;
+      this.normP.emit(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 0.5 + Math.random() * 2, 0, 0, 2.5 + Math.random() * 3, 2.6 + Math.random() * 1.5, 1.4 + Math.random(), smoke[i % smoke.length], 0, 0.8, 0.6);
+      if (i % 2 === 0) this.addP.emit(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 1, 0, 0, 3 + Math.random() * 3, 1.2, 1, fire[i % fire.length], 0, 0.8, 0.4);
+    }
+    // Cap: a wide ring of smoke with fire underneath, low enough to stay on screen.
+    for (let i = 0; i < 260; i++) {
+      const a = Math.random() * Math.PI * 2, sp = r * (0.15 + Math.random() * 0.3);
+      this.normP.emit(x, y, 5 + Math.random() * 2, Math.cos(a) * sp, Math.sin(a) * sp, 1 + Math.random(), 3 + Math.random() * 2, 2 + Math.random() * 1.5, smoke[i % smoke.length], 0, 0.6, 1);
+      if (i % 2 === 0) this.addP.emit(x, y, 4.5, Math.cos(a) * sp * 0.8, Math.sin(a) * sp * 0.8, 0.8, 1.3 + Math.random(), 1.5, fire[i % fire.length], 0, 0.65, 0.6);
+    }
+    // Ground shockwave debris.
+    for (let i = 0; i < 140; i++) {
+      const a = Math.random() * Math.PI * 2, sp = r * (1 + Math.random());
+      this.normP.emit(x, y, 0.3, Math.cos(a) * sp, Math.sin(a) * sp, 0.5, 1.2, 0.9, smoke[i % smoke.length], 0, 0.5, 1);
+    }
+    this.shake(2.5);
+  }
+
 }

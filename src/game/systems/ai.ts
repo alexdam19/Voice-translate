@@ -49,6 +49,7 @@ function telegraph(g: Game, x: number, y: number, r: number, total: number, dmg:
 export function updateTelegraphs(g: Game, dt: number): void {
   for (let i = g.telegraphs.length - 1; i >= 0; i--) {
     const t = g.telegraphs[i];
+    if (g.timeStop > 0 && t.team === 'enemy') continue;
     t.t += dt;
     if (t.t < t.total) continue;
     g.telegraphs.splice(i, 1);
@@ -175,7 +176,7 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
   // Default: stride toward the target, stepping over terrain.
   const want = e.kind === 'titan_beast' ? 5 : 4;
   if (dist > want) {
-    const sp = e.speed * dt * (e.slow > 0 ? 0.6 : 1);
+    const sp = e.speed * dt * slowMul(e);
     e.x += (dx / dist) * sp;
     e.y += (dy / dist) * sp;
   }
@@ -185,6 +186,11 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
     damageFriendly(g, tgt.id, e.dmg * 0.6);
     g.fx.push({ t: 'shake', amt: 0.5 });
   }
+}
+
+/** Movement multiplier from slows (cryo, chrono fields). */
+export function slowMul(e: Enemy): number {
+  return e.slow > 0 ? 1 - Math.min(0.85, e.slowAmt || 0.4) : 1;
 }
 
 function shootAt(g: Game, e: Enemy, tx: number, ty: number, kind: 'spit' | 'bullet', sp: number, dmg: number, splash: number): void {
@@ -218,6 +224,7 @@ export function updateEnemies(g: Game, dt: number): void {
       continue;
     }
     e.slow = Math.max(0, e.slow - dt);
+    if (e.slow <= 0) e.slowAmt = 0;
     // Knockback decay.
     const kb = Math.hypot(e.vx, e.vy);
     const aggroR = e.camp ? 12 : 17 + e.threat * 1.5;
@@ -328,7 +335,7 @@ export function updateEnemies(g: Game, dt: number): void {
         my += (dy / dd) * 0.6;
       }
     }
-    const sp = e.speed * (e.slow > 0 ? 0.55 : 1) * (e.burrowed ? 1.3 : 1);
+    const sp = e.speed * slowMul(e) * (e.burrowed ? 1.3 : 1);
     const mlen = Math.hypot(mx, my);
     if (mlen > 1) {
       mx /= mlen;
@@ -401,64 +408,7 @@ export function updateEnemyTank(g: Game, t: Tank, dt: number): void {
     const a = Math.random() * Math.PI * 2;
     planPath(g, t, t.x + Math.cos(a) * 20, t.y + Math.sin(a) * 20);
   }
-  driveTank(g, t, dt, t.hasBuff('stun') ? 0 : 1);
+  driveTank(g, t, dt, t.hasBuff('stun') ? 0 : 1 - (t.buff('chill')?.v ?? 0));
   // Face roughly toward the player when parked so front guns engage.
   if (!t.path.length && aggro) t.rot = turnToward(t.rot, Math.atan2(p.y - t.y, p.x - t.x), t.stats.turnRate * dt * 0.5);
-}
-
-/* ---------------------------------------------------------------------- */
-/* Allied marines (from abilities)                                         */
-/* ---------------------------------------------------------------------- */
-
-export function updateAllies(g: Game, dt: number): void {
-  for (let i = g.allies.length - 1; i >= 0; i--) {
-    const a = g.allies[i];
-    a.life -= dt;
-    a.anim += dt * 6;
-    if (a.life <= 0 || a.hp <= 0) {
-      g.allies.splice(i, 1);
-      continue;
-    }
-    let best: Enemy | null = null;
-    let bd = a.range + 6;
-    for (const e of g.enemies) {
-      if (e.hp <= 0 || e.burrowed) continue;
-      const d = Math.hypot(e.x - a.x, e.y - a.y);
-      if (d < bd) {
-        bd = d;
-        best = e;
-      }
-    }
-    let mx = 0, my = 0;
-    if (best) {
-      a.face = best.x >= a.x ? 1 : -1;
-      if (bd > a.range * 0.8) {
-        mx = (best.x - a.x) / bd;
-        my = (best.y - a.y) / bd;
-      }
-      a.cd -= dt;
-      if (a.cd <= 0 && bd <= a.range) {
-        a.cd = a.heavy ? 0.5 : 0.7;
-        const ang = Math.atan2(best.y - a.y, best.x - a.x);
-        g.projectiles.push({
-          id: eid(), x: a.x, y: a.y, z: 0.6, vx: Math.cos(ang) * 28, vy: Math.sin(ang) * 28, vz: 0, team: 'player', kind: 'bullet', dmg: a.dmg,
-          splash: a.heavy ? 0.8 : 0, pierce: 0, life: 0, maxLife: a.range / 28 + 0.1, color: '#ff8a80', homing: 0, targetId: best.id, arc: false,
-          tx: 0, ty: 0, burn: 0, crit: false, lifesteal: 0, srcTank: g.player.id, hit: [], flyer: 0, interceptable: false, hp: 1, size: 0.12,
-        });
-        g.hooks.sound('smg', a.x, a.y, 0.2);
-      }
-    } else {
-      // Stay near the fortress.
-      const p = g.player;
-      const dx = p.x - a.x, dy = p.y - a.y;
-      const d = Math.hypot(dx, dy);
-      if (d > p.stats.length / 2 + 3) {
-        mx = dx / d;
-        my = dy / d;
-      }
-    }
-    const r = moveSmall(g, a.x, a.y, 0.3, mx * 4.5 * dt, my * 4.5 * dt, false);
-    a.x = r.x;
-    a.y = r.y;
-  }
 }

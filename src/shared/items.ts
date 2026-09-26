@@ -50,10 +50,11 @@ item('cryo_core', 'Cryo Core', 'material', 'core', '#8af6ff', '#2c6a8a', { value
 item('circuit', 'Circuit Board', 'material', 'chip', '#2ecc71', '#f1c40f', { value: 6 });
 item('xeno_alloy', 'Xeno Alloy', 'material', 'alloy', '#ff6ae6', '#7a2a8a', { value: 45 });
 item('explosive', 'Explosive Charge', 'material', 'explosive', '#e84a3a', '#ffe246', { value: 6 });
-item('tech_parts', 'Salvaged Tech', 'material', 'tech', '#80d8ff', '#ff6e40', { value: 25, desc: 'Military components from raider tanks, outposts, titans and rune chests. Spent on the Tech Tree.' });
+item('tech_parts', 'Salvaged Tech', 'material', 'tech', '#80d8ff', '#ff6e40', { value: 25, desc: 'Military components from raider tanks, outposts, titans and rune chests. Spent on research.' });
+item('mythic_essence', 'Mythic Essence', 'material', 'crystal', '#ff4f7b', '#ffd740', { value: 80, desc: 'Condensed magic. Drops from titans, rune chests and deep outposts, or distil it at an Arcane Sanctum. Forges 6★ weapons and powers arcane gear.' });
 
 /* Consumables */
-item('repair_kit', 'Repair Kit', 'consumable', 'kit', '#e8e8e8', '#ffb300', { value: 8, desc: 'Press 1: restores 25% hull over 3 seconds.' });
+item('repair_kit', 'Repair Kit', 'consumable', 'kit', '#e8e8e8', '#ffb300', { value: 8, desc: 'Press 5: restores 25% hull over 3 seconds.' });
 item('rations', 'Rations', 'consumable', 'ration', '#8a7a4a', '#d4c48a', { value: 2, desc: 'Crew food. Hiring costs rations; medics use them to revive the injured.' });
 
 /* Drive trains (install from BASE > Chassis & Drive) */

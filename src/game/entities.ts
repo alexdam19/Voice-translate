@@ -1,6 +1,6 @@
 import type { Stack } from '../shared/inventory';
 import type { Rarity } from '../shared/rarity';
-import type { ProjKind, WeaponItem } from '../shared/weapons';
+import type { PoolKind, ProjKind, Special, WeaponItem } from '../shared/weapons';
 import type { CrewMember } from './crew';
 
 export type EnemyKind =
@@ -36,7 +36,9 @@ export interface Enemy {
   /** Rune altar id for guardians. */
   camp: number;
   stun: number;
+  /** Seconds of slow left, and how strong it is (0-0.9). */
   slow: number;
+  slowAmt: number;
   burn: number;
   burnDps: number;
   hitFlash: number;
@@ -54,6 +56,22 @@ export interface Enemy {
 }
 
 export type Team = 'player' | 'enemy';
+
+/** On-hit effects a shot carries (from the weapon, its tree and affixes). */
+export interface ShotFx {
+  slow: number;
+  stun: number;
+  stunTime: number;
+  knock: number;
+  pool?: PoolKind;
+  split: number;
+  pull: boolean;
+  execute: boolean;
+  volatile: boolean;
+  specials: Special[];
+  /** Damage of the original hit (fragments, pools and chain reactions scale from it). */
+  base: number;
+}
 
 export interface Projectile {
   id: number;
@@ -93,6 +111,7 @@ export interface Projectile {
   wr?: number;
   /** Purely cosmetic (other players' shots in the Dead Zone). */
   visual?: boolean;
+  fx?: ShotFx;
 }
 
 export type PickupKind = 'stack' | 'weapon' | 'chest';
@@ -141,30 +160,46 @@ export interface Telegraph {
   onDone?: () => void;
 }
 
+export type AllyKind = 'marine' | 'heavy' | 'drone' | 'jet' | 'mech' | 'dragon' | 'mine';
+
 export interface Ally {
   id: number;
+  kind: AllyKind;
   x: number;
   y: number;
+  /** Height above ground (flyers). */
+  z: number;
+  /** Heading (radians) for vehicles and flyers. */
+  rot: number;
   hp: number;
   maxHp: number;
   life: number;
   dmg: number;
   range: number;
   cd: number;
+  /** Secondary cooldown (bombs, missiles, breath). */
+  cd2: number;
   heavy: boolean;
   face: number;
   anim: number;
   targetId: number;
+  /** Where it was sent (jets, dragon) or its home (mines). */
+  tx: number;
+  ty: number;
+  /** Turret module that launched it (Hornet jets). */
+  owner: number;
 }
 
-/** Burning ground and gravity wells. */
+export type ZoneKind = 'fire' | 'well' | 'acid' | 'chrono' | 'rad' | 'frost' | 'smoke';
+
+/** Burning ground, acid pools, time fields, gravity wells and radiation. */
 export interface Zone {
   id: number;
   x: number;
   y: number;
   r: number;
   t: number;
-  kind: 'fire' | 'well' | 'acid';
+  kind: ZoneKind;
   dps: number;
   team: Team;
 }

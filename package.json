@@ -1,6 +1,6 @@
 {
   "name": "ironcrawl",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "IRONCRAWL - an overhead 3D pixel-art wasteland game about commanding a giant tank-fortress.",
   "private": true,
   "type": "module",

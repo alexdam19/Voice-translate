@@ -255,9 +255,11 @@ export class WarzoneServer {
         const range = w ? weaponStats(w).range * 1.6 : 45;
         if (Math.hypot(target.x - p.x, target.y - p.y) > range + target.radius + 6) return;
         if (this.time - p.dmgWindow.t > 1) p.dmgWindow = { t: this.time, dmg: 0 };
-        if (p.dmgWindow.dmg + dmg > p.dpsCap) return;
-        p.dmgWindow.dmg += dmg;
-        this.damage(target, dmg, p.name);
+        // Anything past this attacker's per-second budget is dropped.
+        const allowed = Math.min(dmg, p.dpsCap - p.dmgWindow.dmg);
+        if (allowed <= 0) return;
+        p.dmgWindow.dmg += allowed;
+        this.damage(target, allowed, p.name);
         return;
       }
       case 'heal': {
@@ -522,7 +524,12 @@ function clampNum(v: unknown, a: number, b: number): number {
 function sanitizeBlueprint(bp: Blueprint): Blueprint {
   const out: Blueprint = { chassis: String(bp?.chassis ?? 'crawler'), drive: bp?.drive ?? 'wheels', modules: [] };
   for (const m of (bp?.modules ?? []).slice(0, 300)) {
-    const w = m.weapon && WEAPONS[m.weapon.key] ? { uid: Number(m.weapon.uid) || 0, key: m.weapon.key, rarity: Math.max(0, Math.min(4, Math.round(m.weapon.rarity))) as WeaponItem['rarity'], affixes: (m.weapon.affixes ?? []).slice(0, 4) } : null;
+    const w = m.weapon && WEAPONS[m.weapon.key]
+      ? {
+        uid: Number(m.weapon.uid) || 0, key: m.weapon.key, rarity: Math.max(0, Math.min(5, Math.round(m.weapon.rarity))) as WeaponItem['rarity'],
+        affixes: (m.weapon.affixes ?? []).slice(0, 4).map(String), tree: (Array.isArray(m.weapon.tree) ? m.weapon.tree : []).slice(0, 9).map(String),
+      }
+      : null;
     out.modules.push({ key: String(m.key), cx: Number(m.cx) || 0, cy: Number(m.cy) || 0, weapon: w });
   }
   return out;

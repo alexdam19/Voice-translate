@@ -175,6 +175,12 @@ export class DeadZoneClient {
     raid.armory = [...w.armory];
     raid.autoFire = w.autoFire;
     raid.runeBuff = w.runeBuff;
+    // Module ids are reassigned on copy: map active slots and the ultimate by deck order.
+    const idx = (id: number): number => w.player.modules.findIndex((m) => m.id === id);
+    raid.activeSlots = w.activeSlots.map((id) => raid.player.modules[idx(id)]?.id ?? 0);
+    raid.ultModule = raid.player.modules[idx(w.ultModule)]?.id ?? 0;
+    raid.ultCharge = w.ultCharge;
+    raid.tankControls = w.tankControls;
     raid.extracts = arena.extracts;
     raid.applyCrew();
     raid.player.hp = raid.player.stats.maxHp;

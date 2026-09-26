@@ -8,6 +8,7 @@ import { computeCrewBonus, giveXp, makeCrew, pickPerk, CHAMPIONS } from '../src/
 import { Game } from '../src/game/game';
 import { deserialize, serialize } from '../src/game/save';
 import { castAbility } from '../src/game/systems/crewsys';
+import { updateArsenal } from '../src/game/systems/arsenal';
 import { installHandlers, stepWorld } from '../src/game/systems/step';
 import { orderHarvest } from '../src/game/systems/orders';
 import { launchOutrider, outriderDestroyed } from '../src/game/systems/outrider';
@@ -106,13 +107,17 @@ describe('fortress', () => {
     for (const n of TECH) for (const r of n.requires) expect(TECH_BY_ID.has(r)).toBe(true);
   });
 
-  it('research spends salvaged tech and unlocks equipment', () => {
+  it('research takes time, spends salvaged tech and unlocks equipment', () => {
     const g = game();
     g.give('tech_parts', 10, true);
     g.give('iron_plate', 30, true);
     g.give('circuit', 10, true);
     g.give('explosive', 4, true);
     expect(research(g, 'drill_mk2').ok).toBe(true);
+    expect(g.tech.has('drill_mk2')).toBe(false);
+    // One military project at a time.
+    expect(research(g, 'reinforced').ok).toBe(false);
+    for (let i = 0; i < 70 * 10; i++) updateArsenal(g, 0.1);
     expect(g.tech.has('drill_mk2')).toBe(true);
     const spot = g.player.findSpot('drill_mk2')!;
     expect(buildModule(g, 'drill_mk2', spot[0], spot[1]).ok).toBe(true);

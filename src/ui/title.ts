@@ -18,10 +18,10 @@ export class Title {
       <div class="logo">IRONCRAWL</div>
       <div class="tag">A rolling fortress in a tech-punk wasteland</div>
       <ul class="pitch">
-        <li>Command a <b>giant tank-base</b> from above: right-click to drive, your guns aim themselves.</li>
-        <li>Every <b>officer</b> has an ability on <b>Q W E R D F</b>.</li>
-        <li>Loot areas, <b>runes</b> and chests with <b>rarities</b>, champions and exclusive weapons.</li>
-        <li>Upgrade your <b>BASE</b> and your <b>CREW</b>. Reach 15 crew to unlock the <b>Outrider</b>.</li>
+        <li>Command a <b>giant tank-base</b> from above: drive with <b>WASD</b> (or right-click), your guns aim themselves.</li>
+        <li>Officer abilities on <b>Q E F G</b>, arsenal actives on <b>1-4</b> (fighter jets, drones, salvos) and an <b>ultimate on R</b>: a nuke, a mech, a dragon...</li>
+        <li>35 weapons from 1★ to <b>6★ Mythic</b>, each with its own upgrade tree: ray-rail cannons, acid, plasma, storm spires, void lances.</li>
+        <li>Build barracks, living quarters, <b>science labs</b> and a <b>forge</b>. Research runs on a clock: the longer it takes, the stronger it is.</li>
       </ul>
       <div class="title-btns"></div>
       <div class="foot">Best with mouse + keyboard. Progress saves in your browser.</div>

@@ -118,45 +118,64 @@ export const EXCLUSIVES: ExclusiveDef[] = [
 
 export type PerkStat =
   | 'dmg' | 'rate' | 'range' | 'hp' | 'shield' | 'speed' | 'armor' | 'regen' | 'cdr' | 'power'
-  | 'loot' | 'harvest' | 'cargo' | 'crit' | 'lifesteal' | 'ability' | 'vision' | 'research' | 'xp';
+  | 'loot' | 'harvest' | 'cargo' | 'crit' | 'lifesteal' | 'ability' | 'vision' | 'research' | 'xp' | 'ult' | 'actcd';
+
+type Six = [number, number, number, number, number, number];
 
 export interface PerkDef {
   id: string;
   name: string;
   stat: PerkStat;
-  /** Value per rarity: common..legendary. Percent stats are fractions. */
-  values: [number, number, number, number, number];
+  /** Extra stats that get the same value (multi-stat perks). */
+  also?: PerkStat[];
+  /** Value per rarity: common..mythic. Percent stats are fractions. */
+  values: Six;
   desc: string;
   minRarity?: Rarity;
+  /** Only offered once the crew member reaches this level. Late perks are much stronger. */
+  minLevel?: number;
 }
 
-const PCT: [number, number, number, number, number] = [0.03, 0.05, 0.08, 0.12, 0.18];
+const PCT: Six = [0.03, 0.05, 0.08, 0.12, 0.18, 0.26];
 
 export const PERKS: PerkDef[] = [
   { id: 'sharpshooter', name: 'Sharpshooter', stat: 'dmg', values: PCT, desc: '+{v} weapon damage' },
   { id: 'trigger', name: 'Trigger Discipline', stat: 'rate', values: PCT, desc: '+{v} fire rate' },
-  { id: 'longbarrel', name: 'Long Barrels', stat: 'range', values: [0.03, 0.05, 0.07, 0.1, 0.14], desc: '+{v} weapon range' },
-  { id: 'plating', name: 'Extra Plating', stat: 'hp', values: [0.03, 0.05, 0.08, 0.12, 0.18], desc: '+{v} max hull' },
-  { id: 'capacitor', name: 'Shield Tuning', stat: 'shield', values: [0.05, 0.08, 0.12, 0.18, 0.26], desc: '+{v} shields' },
-  { id: 'leadfoot', name: 'Lead Foot', stat: 'speed', values: [0.02, 0.035, 0.05, 0.075, 0.11], desc: '+{v} speed' },
-  { id: 'bulwark', name: 'Bulwark', stat: 'armor', values: [0.01, 0.015, 0.025, 0.04, 0.06], desc: '+{v} armor' },
-  { id: 'patchwork', name: 'Patchwork', stat: 'regen', values: [0.4, 0.7, 1.1, 1.7, 2.6], desc: '+{v} hull repair per second' },
-  { id: 'quickhands', name: 'Quick Hands', stat: 'cdr', values: [0.02, 0.035, 0.05, 0.07, 0.1], desc: 'Officer abilities recharge {v} faster' },
-  { id: 'overvolt', name: 'Overvolt', stat: 'power', values: [0.04, 0.06, 0.1, 0.15, 0.22], desc: '+{v} power' },
-  { id: 'scrounger', name: 'Scrounger', stat: 'loot', values: [0.04, 0.07, 0.11, 0.16, 0.24], desc: '+{v} loot' },
-  { id: 'prospector', name: 'Prospector', stat: 'harvest', values: [0.05, 0.08, 0.12, 0.18, 0.26], desc: '+{v} harvest speed' },
-  { id: 'packrat', name: 'Pack Rat', stat: 'cargo', values: [2, 3, 5, 8, 12], desc: '+{v} cargo slots' },
-  { id: 'eagle', name: 'Eagle Eye', stat: 'crit', values: [0.02, 0.03, 0.05, 0.08, 0.12], desc: '+{v} critical hit chance' },
-  { id: 'vampiric', name: 'Vampiric Rounds', stat: 'lifesteal', values: [0.005, 0.01, 0.015, 0.025, 0.04], desc: 'Heal {v} of weapon damage dealt', minRarity: 2 },
-  { id: 'signature', name: 'Signature Move', stat: 'ability', values: [0.06, 0.09, 0.14, 0.2, 0.3], desc: 'Their own ability is {v} stronger' },
-  { id: 'lookout', name: 'Lookout', stat: 'vision', values: [1, 1.5, 2.5, 3.5, 5], desc: '+{v} vision range' },
-  { id: 'egghead', name: 'Egghead', stat: 'research', values: [0.02, 0.03, 0.05, 0.07, 0.1], desc: '-{v} research cost' },
-  { id: 'student', name: 'Fast Learner', stat: 'xp', values: [0.08, 0.12, 0.18, 0.26, 0.4], desc: '+{v} crew experience' },
+  { id: 'longbarrel', name: 'Long Barrels', stat: 'range', values: [0.03, 0.05, 0.07, 0.1, 0.14, 0.203], desc: '+{v} weapon range' },
+  { id: 'plating', name: 'Extra Plating', stat: 'hp', values: [0.03, 0.05, 0.08, 0.12, 0.18, 0.261], desc: '+{v} max hull' },
+  { id: 'capacitor', name: 'Shield Tuning', stat: 'shield', values: [0.05, 0.08, 0.12, 0.18, 0.26, 0.377], desc: '+{v} shields' },
+  { id: 'leadfoot', name: 'Lead Foot', stat: 'speed', values: [0.02, 0.035, 0.05, 0.075, 0.11, 0.16], desc: '+{v} speed' },
+  { id: 'bulwark', name: 'Bulwark', stat: 'armor', values: [0.01, 0.015, 0.025, 0.04, 0.06, 0.087], desc: '+{v} armor' },
+  { id: 'patchwork', name: 'Patchwork', stat: 'regen', values: [0.4, 0.7, 1.1, 1.7, 2.6, 3.77], desc: '+{v} hull repair per second' },
+  { id: 'quickhands', name: 'Quick Hands', stat: 'cdr', values: [0.02, 0.035, 0.05, 0.07, 0.1, 0.145], desc: 'Officer abilities recharge {v} faster' },
+  { id: 'overvolt', name: 'Overvolt', stat: 'power', values: [0.04, 0.06, 0.1, 0.15, 0.22, 0.319], desc: '+{v} power' },
+  { id: 'scrounger', name: 'Scrounger', stat: 'loot', values: [0.04, 0.07, 0.11, 0.16, 0.24, 0.348], desc: '+{v} loot' },
+  { id: 'prospector', name: 'Prospector', stat: 'harvest', values: [0.05, 0.08, 0.12, 0.18, 0.26, 0.377], desc: '+{v} harvest speed' },
+  { id: 'packrat', name: 'Pack Rat', stat: 'cargo', values: [2, 3, 5, 8, 12, 17], desc: '+{v} cargo slots' },
+  { id: 'eagle', name: 'Eagle Eye', stat: 'crit', values: [0.02, 0.03, 0.05, 0.08, 0.12, 0.174], desc: '+{v} critical hit chance' },
+  { id: 'vampiric', name: 'Vampiric Rounds', stat: 'lifesteal', values: [0.005, 0.01, 0.015, 0.025, 0.04, 0.058], desc: 'Heal {v} of weapon damage dealt', minRarity: 2 },
+  { id: 'signature', name: 'Signature Move', stat: 'ability', values: [0.06, 0.09, 0.14, 0.2, 0.3, 0.435], desc: 'Their own ability is {v} stronger' },
+  { id: 'lookout', name: 'Lookout', stat: 'vision', values: [1, 1.5, 2.5, 3.5, 5, 7.25], desc: '+{v} vision range' },
+  { id: 'egghead', name: 'Egghead', stat: 'research', values: [0.02, 0.03, 0.05, 0.07, 0.1, 0.145], desc: '-{v} research cost' },
+  { id: 'nukecodes', name: 'Launch Codes', stat: 'ult', values: [0.04, 0.06, 0.09, 0.13, 0.19, 0.28], desc: 'Ultimate charges {v} faster' },
+  { id: 'flightdeck', name: 'Flight Deck Chief', stat: 'actcd', values: [0.03, 0.05, 0.07, 0.1, 0.14, 0.2], desc: 'Arsenal actives (1-4) recharge {v} faster' },
+  /* Veteran perks (level 5+) */
+  { id: 'veteran', name: 'Veteran Gunnery', stat: 'dmg', also: ['rate'], values: [0.05, 0.07, 0.1, 0.14, 0.2, 0.28], desc: '+{v} weapon damage and fire rate', minLevel: 5 },
+  { id: 'ironwill', name: 'Iron Will', stat: 'hp', also: ['shield'], values: [0.06, 0.09, 0.13, 0.19, 0.27, 0.38], desc: '+{v} max hull and shields', minLevel: 5 },
+  { id: 'ace', name: 'Ace', stat: 'crit', also: ['range'], values: [0.04, 0.06, 0.08, 0.11, 0.15, 0.21], desc: '+{v} critical chance and weapon range', minLevel: 5 },
+  /* Master perks (level 8+) */
+  { id: 'warlord', name: 'Warlord', stat: 'dmg', also: ['rate', 'ability'], values: [0.08, 0.11, 0.15, 0.21, 0.3, 0.42], desc: '+{v} weapon damage, fire rate and ability power', minLevel: 8 },
+  { id: 'mastermind', name: 'Mastermind', stat: 'cdr', also: ['ult', 'actcd'], values: [0.05, 0.07, 0.09, 0.12, 0.16, 0.22], desc: 'Officer abilities, actives and your ultimate all recharge {v} faster', minLevel: 8 },
+  { id: 'student', name: 'Fast Learner', stat: 'xp', values: [0.08, 0.12, 0.18, 0.26, 0.4, 0.58], desc: '+{v} crew experience' },
 ];
 
 export const PERK_BY_ID = new Map(PERKS.map((p) => [p.id, p]));
 
 const FLAT_STATS: PerkStat[] = ['regen', 'cargo', 'vision'];
+
+function statsOf(p: PerkDef): PerkStat[] {
+  return p.also ? [p.stat, ...p.also] : [p.stat];
+}
 
 export function perkValueText(p: PerkDef, r: Rarity): string {
   const v = p.values[r];
@@ -201,7 +220,7 @@ export interface CrewMember {
   /** Seconds until an injured crew member is back on duty (0 = fit). */
   injured: number;
   loc: CrewLoc;
-  /** Officer slot 0-5 (Q W E R D F), or -1 for side crew. */
+  /** Officer slot 0-5 (Q E F G Z X), or -1 for side crew. */
   officer: number;
   /** Ability cooldown remaining (s). */
   cd: number;
@@ -249,8 +268,8 @@ export function randomRole(rng: () => number = Math.random): CrewRole {
 }
 
 /** A recruit for the hiring board. Rarity rarely goes past Rare. */
-export function makeRecruit(rng: () => number, threat: number): CrewMember {
-  const r = rollRarity(rng, Math.max(0, threat - 1) * 0.15, 0, 3);
+export function makeRecruit(rng: () => number, threat: number, luck = 0): CrewMember {
+  const r = rollRarity(rng, Math.max(0, threat - 1) * 0.15 + luck, 0, luck > 0 ? 4 : 3);
   const level = 1 + Math.floor(rng() * Math.min(3, threat));
   return makeCrew(randomRole(rng), r, level, rng);
 }
@@ -282,19 +301,19 @@ function perkSum(c: CrewMember, stat: PerkStat): number {
   let s = 0;
   for (const p of c.perks) {
     const d = PERK_BY_ID.get(p.id);
-    if (d && d.stat === stat) s += d.values[p.rarity];
+    if (d && statsOf(d).includes(stat)) s += d.values[p.rarity];
   }
   return s;
 }
 
 /** Multiplier on this crew member's own ability effect. */
-export function abilityPower(c: CrewMember): number {
-  return (1 + 0.15 * c.rarity) * (1 + 0.07 * (c.level - 1)) * (1 + perkSum(c, 'ability'));
+export function abilityPower(c: CrewMember, bonus = 0): number {
+  return (1 + 0.15 * c.rarity) * (1 + 0.07 * (c.level - 1)) * (1 + perkSum(c, 'ability') + bonus);
 }
 
 export function abilityCooldown(c: CrewMember, globalCdr: number): number {
   const base = abilityOf(c).cd;
-  return base * (1 - 0.03 * (c.level - 1)) * (1 - Math.min(0.45, globalCdr));
+  return base * (1 - 0.03 * (c.level - 1)) * (1 - Math.min(0.5, globalCdr));
 }
 
 export function hireCost(c: CrewMember): Cost {
@@ -303,20 +322,27 @@ export function hireCost(c: CrewMember): Cost {
 }
 
 /** Rolls a pick-one-of-three perk draft. Rarer crew draft rarer perks. */
-export function rollDraft(c: CrewMember, rng: () => number, extraLuck = 0): PerkInst[] {
+export function rollDraft(c: CrewMember, rng: () => number, extraLuck = 0, choices = 3): PerkInst[] {
   const out: PerkInst[] = [];
-  const pool = PERKS.slice();
-  while (out.length < 3 && pool.length) {
+  const pool = PERKS.filter((p) => (p.minLevel ?? 0) <= c.level);
+  // Late perks show up often once unlocked: they are the payoff for levelling.
+  const late = pool.filter((p) => (p.minLevel ?? 0) > 0);
+  if (late.length && rng() < 0.6) {
+    const d = late[Math.floor(rng() * late.length)];
+    out.push({ id: d.id, rarity: rollRarity(rng, 0.2 * c.rarity + extraLuck, d.minRarity ?? 0, 5) });
+    pool.splice(pool.indexOf(d), 1);
+  }
+  while (out.length < choices && pool.length) {
     const i = Math.floor(rng() * pool.length);
     const d = pool.splice(i, 1)[0];
-    const r = rollRarity(rng, 0.2 * c.rarity + extraLuck, d.minRarity ?? 0);
+    const r = rollRarity(rng, 0.2 * c.rarity + extraLuck, d.minRarity ?? 0, 5);
     out.push({ id: d.id, rarity: r });
   }
   return out;
 }
 
 /** Adds XP; rolls a perk draft on each level-up. Returns levels gained. */
-export function giveXp(c: CrewMember, amount: number, rng: () => number = Math.random): number {
+export function giveXp(c: CrewMember, amount: number, rng: () => number = Math.random, choices = 3): number {
   if (c.level >= MAX_LEVEL) return 0;
   c.xp += amount * (1 + perkSum(c, 'xp'));
   let ups = 0;
@@ -324,16 +350,16 @@ export function giveXp(c: CrewMember, amount: number, rng: () => number = Math.r
     c.level++;
     ups++;
   }
-  if (ups && !c.draft) c.draft = rollDraft(c, rng);
+  if (ups && !c.draft) c.draft = rollDraft(c, rng, 0, choices);
   return ups;
 }
 
-export function pickPerk(c: CrewMember, index: number, rng: () => number = Math.random): boolean {
+export function pickPerk(c: CrewMember, index: number, rng: () => number = Math.random, choices = 3): boolean {
   if (!c.draft || !c.draft[index]) return false;
   c.perks.push(c.draft[index]);
   // Unspent levels queue another draft.
   const owed = c.level - 1 - c.perks.length;
-  c.draft = owed > 0 ? rollDraft(c, rng) : null;
+  c.draft = owed > 0 ? rollDraft(c, rng, 0, choices) : null;
   return true;
 }
 
@@ -385,12 +411,20 @@ export interface CrewBonus {
   extraMarines: number;
   terrainImmune: boolean;
   chestLuck: number;
+  /** Ultimate charge speed bonus. */
+  ult: number;
+  /** Arsenal active cooldown reduction. */
+  actcd: number;
+  /** Officer ability power bonus (research). */
+  abilityPower: number;
+  xp: number;
 }
 
 export function emptyBonus(): CrewBonus {
   return {
     dmg: 0, rate: 0, range: 0, crit: 0, lifesteal: 0, hp: 0, shield: 0, armor: 0, regen: 0, speed: 0, power: 0, cdr: 0,
     loot: 0, harvest: 0, cargo: 0, research: 0, vision: 0, recovery: 0, healMult: 1, extraMarines: 0, terrainImmune: false, chestLuck: 0,
+    ult: 0, actcd: 0, abilityPower: 0, xp: 0,
   };
 }
 
@@ -415,7 +449,7 @@ export function computeCrewBonus(crew: CrewMember[]): CrewBonus {
       const d = PERK_BY_ID.get(p.id);
       if (!d) continue;
       const v = d.values[p.rarity];
-      switch (d.stat) {
+      for (const stat of statsOf(d)) switch (stat) {
         case 'dmg': b.dmg += v; break;
         case 'rate': b.rate += v; break;
         case 'range': b.range += v; break;
@@ -433,6 +467,8 @@ export function computeCrewBonus(crew: CrewMember[]): CrewBonus {
         case 'lifesteal': b.lifesteal += v; break;
         case 'vision': b.vision += v; break;
         case 'research': b.research += v; break;
+        case 'ult': b.ult += v; break;
+        case 'actcd': b.actcd += v; break;
         default: break;
       }
     }
@@ -458,6 +494,8 @@ export function computeCrewBonus(crew: CrewMember[]): CrewBonus {
   b.research = Math.min(0.5, b.research);
   b.cdr = Math.min(0.45, b.cdr);
   b.crit = Math.min(0.5, b.crit);
+  b.actcd = Math.min(0.45, b.actcd);
+  b.ult = Math.min(1, b.ult);
   return b;
 }
 

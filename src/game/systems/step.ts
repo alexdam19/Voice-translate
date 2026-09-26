@@ -1,9 +1,11 @@
 import { CENTER } from '../../shared/constants';
 import type { Game } from '../game';
-import { updateAllies, updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
+import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
+import { updateAllies } from './allies';
+import { updateArsenal } from './arsenal';
 import { healPlayer, injureRandomCrew } from './damage';
 import { updateBuffs, updateCrew, updateZones } from './crewsys';
-import { driveTank, separateTanks } from './movement';
+import { driveTank, manualDrive, separateTanks } from './movement';
 import { updateFocus, updateInteract } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
 import { updateProjectiles } from './projectiles';
@@ -60,11 +62,20 @@ export function stepWorld(g: Game, dt: number): void {
     g.respawnIn -= dt;
     if (g.respawnIn <= 0 && g.mode === 'world') respawn(g);
   } else {
-    updateFocus(g, dt);
-    updateInteract(g);
+    const di = g.driveInput;
+    if (di.active) {
+      // WASD overrides right-click paths.
+      p.path = [];
+      p.goal = null;
+      g.interact = null;
+    } else {
+      updateFocus(g, dt);
+      updateInteract(g);
+    }
     const nitro = p.buff('nitro');
     const chill = p.buff('chill');
-    driveTank(g, p, dt, (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)));
+    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0));
+    driveTank(g, p, dt, mult, di.active ? manualDrive(p, di.x, di.y, g.tankControls) : undefined);
     if (nitro && Math.random() < dt * 20) {
       const b = p.toWorld(-p.stats.length / 2, (Math.random() - 0.5) * p.stats.width);
       g.fx.push({ t: 'dust', x: b.x, y: b.y, color: '#18ffff' });
@@ -89,6 +100,7 @@ export function stepWorld(g: Game, dt: number): void {
   for (const t of g.tanks) if (!t.dead && t.kind !== 'remote') updateTankWeapons(g, t, dt);
   updateProjectiles(g, dt);
   updateZones(g, dt);
+  updateArsenal(g, dt);
   if (g.mode === 'world') {
     if (!p.dead) {
       updateHarvest(g, dt);
