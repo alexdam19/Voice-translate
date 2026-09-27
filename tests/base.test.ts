@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { OBS } from '../src/shared/map';
 import { cancelBuild, finishNow, placeBuilding, removeModule, upgradeBuilding } from '../src/game/actions';
-import { buildTime, CC_COMMANDER_LEVEL, MODULES } from '../src/game/defs';
+import { buildTime, CC_COMMANDER_LEVEL, MODULES, TITAN_LIFTS, TITAN_SPINE, titanReserved } from '../src/game/defs';
 import { updateBuilds } from '../src/game/systems/builds';
 import { onTankDestroyed } from '../src/game/systems/world';
 import { stepWorld } from '../src/game/systems/step';
@@ -164,3 +164,33 @@ describe('the fortress is a full facility', () => {
     void ccTo;
   });
 });
+
+describe('the Titan Crawler decks', () => {
+  it('keeps the Spine and the lifts clear and opens decks with refits', () => {
+    const g = game();
+    rich(g);
+    const p = g.player;
+    expect(p.titan).toBe(true);
+    // The Spine runs down the middle of every deck; nothing goes on it.
+    expect(p.canPlace('cargo', TITAN_SPINE.c0, 10, -1, 4)).toBe(false);
+    expect(placeBuilding(g, 'cargo', TITAN_SPINE.c0, 10, 4).msg).toMatch(/Spine/);
+    for (const l of TITAN_LIFTS) expect(p.canPlace('cargo', l.cx, l.cy, -1, 6)).toBe(false);
+    expect(p.canPlace('cargo', 2, 16, -1, 4)).toBe(true);
+    for (const m of p.modules) {
+      for (let y = m.cy; y < m.cy + MODULES[m.key].h; y++) for (let x = m.cx; x < m.cx + MODULES[m.key].w; x++) expect(titanReserved(x, y, m.deck)).toBe(false);
+    }
+    // Mk I: the Hangar (-1) and Recreation (+2) are still closed.
+    expect(p.deckOpen(5)).toBe(false);
+    expect(p.deckOpen(2)).toBe(false);
+    expect(placeBuilding(g, 'cargo', 2, 16, 5).msg).toMatch(/opens with the Titan Mk II/);
+    // A building whose home deck is closed finds room on an open one.
+    const spot = p.findSpot('garage');
+    expect(spot && p.deckOpen(spot[2])).toBe(true);
+    ccTo(g, 2);
+    expect(p.deckOpen(5)).toBe(true);
+    expect(p.deckOpen(2)).toBe(false);
+    ccTo(g, 3);
+    expect(p.deckOpen(2)).toBe(true);
+  });
+});
+

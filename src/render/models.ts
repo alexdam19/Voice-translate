@@ -183,8 +183,10 @@ export function buildTankModel(t: Tank, fow: boolean, viewDeck = 0): TankModel {
       }
     }
     // Keel between the crawler banks, and the sponsons that carry the hull out over them.
-    gb.box(-L / 2 + 0.5, 0.32, -zIn, L / 2 - 0.5, SPONSON + 0.02, zIn, dark, dark);
-    for (let k = -3; k <= 3; k++) gb.box(k * 2.4 - 0.1, 0.5, -zIn - 0.02, k * 2.4 + 0.1, SPONSON, zIn + 0.02, metal, dark);
+    // (In a cutaway of the lowest decks the keel stops at the floor being shown.)
+    const keelTop = cut ? Math.min(SPONSON + 0.02, top - 0.02) : SPONSON + 0.02;
+    if (keelTop > 0.34) gb.box(-L / 2 + 0.5, 0.32, -zIn, L / 2 - 0.5, keelTop, zIn, dark, dark);
+    if (!cut || top >= SPONSON) for (let k = -3; k <= 3; k++) gb.box(k * 2.4 - 0.1, 0.5, -zIn - 0.02, k * 2.4 + 0.1, SPONSON, zIn + 0.02, metal, dark);
     if (cut && top < SPONSON) {
       // A cutaway of the lowest decks: the floor plan sits down between the crawler banks.
       gb.box(-L / 2 + 0.3, 0.3, -zIn, L / 2 - 0.3, top, zIn, atlas.get('floor'), hull);

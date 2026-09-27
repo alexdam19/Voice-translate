@@ -1,5 +1,6 @@
 import { NODE_INFO, RUNE_INFO, TIER_NAMES, threatTier } from '../shared/mapgen';
-import { MODULES } from '../game/defs';
+import { DEPTS, MODULES, STAFF, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
+import { shift } from '../game/systems/crewlife';
 import type { Game } from '../game/game';
 import { SQUADS, type SquadType } from '../game/squads';
 import { jobFor } from '../game/systems/builds';
@@ -117,6 +118,70 @@ export class Overlay {
     }
   }
 
+  /**
+   * Life on a Titan deck: the crew at their stations (coloured by department), the off-shift crew asleep in their
+   * bunks, and people walking the Spine between the lifts. The Spine and lifts are labelled.
+   */
+  private drawCrew(g: Game, deck: number): void {
+    const c = this.ctx;
+    const t = g.player;
+    const now = performance.now() / 1000;
+    const a = this.deckPt(t, 0, 0), b = this.deckPt(t, 1, 0);
+    const cellPx = Math.hypot(b.x - a.x, b.y - a.y);
+    const r = Math.max(1.6, Math.min(4.5, cellPx * 0.12));
+    const dot = (cx: number, cy: number, col: string, alpha = 1): void => {
+      const q = this.deckPt(t, cx, cy);
+      if (!q.ok) return;
+      c.globalAlpha = alpha;
+      c.fillStyle = '#0b0c10';
+      c.beginPath();
+      c.arc(q.x, q.y, r + 1, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = col;
+      c.beginPath();
+      c.arc(q.x, q.y, r, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha = 1;
+    };
+    const deptCol = new Map(DEPTS.map((d) => [d.key, d.color]));
+    // On duty: people move about inside the rooms they run.
+    for (const m of t.modules) {
+      if (m.deck !== deck || !m.built || m.crew <= 0) continue;
+      const d = MODULES[m.key];
+      const col = deptCol.get(STAFF[m.key]?.[0] ?? 'works') ?? '#e6edf2';
+      for (let i = 0; i < Math.min(m.crew, 12); i++) {
+        const u = 0.5 + 0.34 * Math.sin(now * 0.5 + i * 2.1 + m.id), v = 0.5 + 0.34 * Math.cos(now * 0.37 + i * 1.3 + m.id * 0.7);
+        dot(m.cx + u * d.w, m.cy + v * d.h, col);
+      }
+    }
+    // Off shift: asleep in the bunks.
+    const beds = t.modules.filter((m) => m.built && (m.key === 'quarters' || m.key === 'barracks'));
+    const resting = Math.max(0, shift(g).resting);
+    beds.forEach((m, k) => {
+      if (m.deck !== deck) return;
+      const d = MODULES[m.key];
+      const here = Math.floor(resting / beds.length) + (k < resting % beds.length ? 1 : 0);
+      for (let i = 0; i < Math.min(here, 10); i++) dot(m.cx + 0.3 + ((i % 3) + 0.5) * ((d.w - 0.6) / 3), m.cy + 0.3 + (Math.floor(i / 3) + 0.5) * ((d.h - 0.6) / 4), '#8fa6ba', 0.55);
+    });
+    // Walking the Spine, up and down between the lifts.
+    const sp = TITAN_SPINE;
+    const len = sp.r1 - sp.r0;
+    const walkers = Math.min(10, 2 + Math.floor(t.troops / 10));
+    for (let j = 0; j < walkers; j++) {
+      const run = (now * (0.22 + (j % 3) * 0.05) + j * 7.3 + deck * 3.1) % (2 * len);
+      const y = sp.r0 + (run < len ? run : 2 * len - run);
+      const lane = j % 2 ? 0.55 : 1.45;
+      dot(sp.c0 + lane, y + 0.5, '#e6edf2', 0.85);
+    }
+    // Labels.
+    const spine = this.deckPt(t, sp.c0 + 1, sp.r0 + 0.6);
+    if (spine.ok) this.text('THE SPINE', spine.x, spine.y, '#8fa6ba', 9);
+    for (const l of TITAN_LIFTS) {
+      const q = this.deckPt(t, l.cx + 1, l.cy + 1);
+      if (q.ok) this.text(l.name.toUpperCase(), q.x, q.y - 10, '#ffab00', 9);
+    }
+  }
+
   /** The base view: deck grid, building levels, builders at work and the placement ghost. */
   drawVillage(g: Game, vs: VillageState): void {
     const c = this.ctx;
@@ -163,6 +228,7 @@ export class Overlay {
       }
       if (sel || hov) this.text(d.name, mid.x, mid.y + 10, sel ? '#ffea00' : '#ffffff', 10);
     }
+    if (t.titan && vs.deck >= 1) this.drawCrew(g, vs.deck);
     // Hovered empty cell
     if (vs.hover && !vs.ghost && t.cellAt(vs.hover[0], vs.hover[1], vs.deck) === -1) this.deckRect(t, vs.hover[0], vs.hover[1], 1, 1, 'rgba(255,255,255,0.6)', null, 1);
     // Placement ghost
