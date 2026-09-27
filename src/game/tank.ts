@@ -3,7 +3,7 @@ import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
 import { emptyBonus, type CrewBonus } from './crew';
 import { classMods, type HullClass } from './classes';
-import { chassisDef, crewNeed, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, type Dept, type ModuleDef } from './defs';
+import { chassisDef, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
 
 export type Team = 'player' | 'enemy';
@@ -273,12 +273,14 @@ export class Tank {
 
   canPlace(key: string, cx: number, cy: number, ignoreId = -1, deck = defaultDeck(MODULES[key] ?? MODULES.armor)): boolean {
     const d = MODULES[key];
-    if (!d || !deckAllows(d, deck, this.stories)) return false;
+    if (!d || !deckAllows(d, deck, this.stories) || !this.deckOpen(deck)) return false;
     if (cx < 0 || cy < 0 || cx + d.w > this.cols || cy + d.h > this.rows) return false;
+    const titan = this.titan;
     for (let y = cy; y < cy + d.h; y++) {
       for (let x = cx; x < cx + d.w; x++) {
         const c = this.grid[this.gi(x, y, deck)];
         if (c !== -1 && c !== ignoreId) return false;
+        if (titan && titanReserved(x, y, deck)) return false;
       }
     }
     if (d.unique && this.modules.some((m) => m.key === key && m.id !== ignoreId)) return false;
@@ -659,6 +661,22 @@ export class Tank {
     return this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
   }
 
+  /** A full Titan Crawler deck plan (with the Spine and lifts). */
+  get titan(): boolean {
+    return this.fortress && this.cols === 18 && this.rows === 38 && this.stories === TITAN_DECKS;
+  }
+
+  /** Command Center level (the Titan's mark). */
+  get ccLevel(): number {
+    return this.modules.find((m) => MODULES[m.key].required)?.lvl ?? 1;
+  }
+
+  /** Whether a deck is open for building yet (a Titan opens its decks as it's refitted). */
+  deckOpen(deck: number): boolean {
+    if (!this.titan || deck === ROOF) return true;
+    return this.ccLevel >= (DECK_OPEN_CC[deck] ?? 1);
+  }
+
   /** World height of a deck's floor (deck 0 = the roof top). */
   deckY(deck = 0): number {
     const k = this.cell / 0.5;
@@ -760,7 +778,9 @@ export class Tank {
     const legacy = LEGACY_DIMS[s.chassis];
     const oldCols = s.cols ?? (legacy && kind === 'main' ? legacy[0] : t.cols), oldRows = s.rows ?? (legacy && kind === 'main' ? legacy[1] : t.rows);
     const ox = Math.max(0, Math.floor((t.cols - oldCols) / 2)), oy = Math.max(0, Math.floor((t.rows - oldRows) / 2));
-    for (const m of s.modules) {
+    // The Command Center first: its level decides which decks are open for everything else.
+    const saved = [...s.modules].sort((a, b) => (MODULES[b.key]?.required ? 1 : 0) - (MODULES[a.key]?.required ? 1 : 0));
+    for (const m of saved) {
       if (!MODULES[m.key]) continue;
       // Saves from before the fortress had stories: guns and the tower go on the roof, the rest on the upper deck.
       const deck = m.d === undefined || (oldHull && m.d > 0) ? defaultDeck(MODULES[m.key]) : m.d;

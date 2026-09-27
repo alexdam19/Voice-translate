@@ -6,7 +6,7 @@ import { canTakeNode, treeNode, WEAPONS, type WeaponItem } from '../shared/weapo
 import { nextRarity, scrapValue, STAR_TIME, starBlock, starCost } from './arsenal';
 import { CARDS, MAX_CARD_LEVEL, rollPack, shardsNeeded, upgradeCost, type PackKind } from './cards';
 import { hireCost, pickPerk } from './crew';
-import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, deckAllows, deckKind, defaultDeck, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
+import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, DECK_OPEN_CC, deckAllows, deckKind, deckName, defaultDeck, titanReserved, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
 import type { Reward } from './entities';
 import type { Game } from './game';
 import { techLevel } from './progress';
@@ -47,13 +47,20 @@ export function buildBlock(g: Game, key: string): string | null {
   return null;
 }
 
+function footprintReserved(key: string, cx: number, cy: number, deck: number): boolean {
+  const d = MODULES[key];
+  for (let y = cy; y < cy + d.h; y++) for (let x = cx; x < cx + d.w; x++) if (titanReserved(x, y, deck)) return true;
+  return false;
+}
+
 /** Buys a building and places it; a builder puts it together over time. */
 export function placeBuilding(g: Game, key: string, cx: number, cy: number, deck = defaultDeck(MODULES[key] ?? MODULES.armor)): Result {
   const block = buildBlock(g, key);
   if (block) return NO(block);
   const d = MODULES[key];
   if (!deckAllows(d, deck, g.player.stories)) return NO(deckKind(d) === 'roof' ? 'That goes on the roof.' : 'That goes inside, on one of the decks below the roof.');
-  if (!g.player.canPlace(key, cx, cy, -1, deck)) return NO("Doesn't fit there.");
+  if (!g.player.deckOpen(deck)) return NO(`${deckName(deck, g.player.stories)} opens with the Titan Mk ${['I', 'II', 'III', 'IV', 'V', 'VI'][(DECK_OPEN_CC[deck] ?? 1) - 1]} refit (Command Center level ${DECK_OPEN_CC[deck]}).`);
+  if (!g.player.canPlace(key, cx, cy, -1, deck)) return NO(g.player.titan && footprintReserved(key, cx, cy, deck) ? 'The Spine and the lifts have to stay clear.' : "Doesn't fit there.");
   if (!g.pay(d.cost)) return NO('Not enough materials. Tap TRACK to see where to find them.');
   const m = g.player.addModule(key, cx, cy, null, deck);
   if (!m) return NO("Doesn't fit there.");

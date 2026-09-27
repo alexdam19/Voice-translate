@@ -95,10 +95,8 @@ function migrateTank(d: SaveData): { tank: Tank; cc: number } {
   t.x = d.tank.x;
   t.y = d.tank.y;
   t.rot = d.tank.rot;
-  const cols = t.cols;
-  const bridge = MODULES.bridge;
-  const bx = Math.floor((cols - bridge.w) / 2), by = Math.floor((t.rows - bridge.h) / 2);
-  const b = t.addModule('bridge', bx, by);
+  // Forward on +3 Command, clear of the Spine.
+  const b = t.addModule('bridge', 2, 2, null, 1) ?? t.autoAdd('bridge');
   if (b) b.lvl = cc;
   // Turrets first so they get the outer spots, then everything else.
   const mods = [...d.tank.modules].filter((m) => MODULES[m.key] && m.key !== 'bridge');

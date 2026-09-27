@@ -1,6 +1,6 @@
 import type { App } from '../app';
 import { buildBlock, cancelBuild, countOf, placeBuilding, removeModule, trackBuild, trackUpgrade, upgradeBlock, upgradeBuilding, upgradeCostOf } from '../game/actions';
-import { buildLimit, buildTime, CATEGORIES, isShopBuilding, CC_COMMANDER_LEVEL, chassisForCC, deckName, levelMult, levelTime, maxModuleLevel, MODULE_LIST, MODULES, type ModuleCat, type ModuleDef } from '../game/defs';
+import { buildLimit, buildTime, CATEGORIES, isShopBuilding, CC_COMMANDER_LEVEL, chassisForCC, DECK_OPEN_CC, deckName, TITAN_DECK_INFO, levelMult, levelTime, maxModuleLevel, MODULE_LIST, MODULES, type ModuleCat, type ModuleDef } from '../game/defs';
 import type { Game } from '../game/game';
 import { SQUADS, squadSize, type SquadType } from '../game/squads';
 import { jobFor } from '../game/systems/builds';
@@ -297,17 +297,28 @@ export class VillageUI {
     this.renderCard();
   }
 
-  /** ROOF / UPPER DECK / LOWER HOLD: the stories of the fortress, top to bottom. */
+  /** The elevator panel: the roof, then every deck top to bottom (+3 Command down to -3 Engineering). */
   private renderDecks(): void {
     const p = this.game.player;
-    const key = `${p.stories}:${this.deck}:${p.version}`;
+    const key = `${p.stories}:${this.deck}:${p.version}:${p.ccLevel}`;
     if (key === this.deckKey) return;
     this.deckKey = key;
     this.deckBar.innerHTML = '';
+    const titan = p.titan;
     for (let k = 0; k <= p.stories; k++) {
       const n = p.modules.filter((m) => m.deck === k).length;
-      const b = button(`${deckName(k, p.stories).toUpperCase()} <small>${n}</small>`, () => this.setDeck(k), `v-deck ${k === this.deck ? 'on' : ''}`);
-      tooltip(b, () => (k === 0 ? 'The roof: guns, soldier nests, the Command Tower and defenses.' : `A story inside the hull: bunks, workshops, engines, storage. (${deckName(k, p.stories)})`));
+      const crew = p.modules.filter((m) => m.deck === k).reduce((c, m) => c + m.crew, 0);
+      const info = titan ? TITAN_DECK_INFO[k] : null;
+      const open = p.deckOpen(k);
+      const label = info && k > 0 ? `<i>${esc(info.level)}</i> ${esc(info.name.toUpperCase())}` : esc(deckName(k, p.stories).toUpperCase());
+      const b = button(`${label} <small>${open ? `${n}${crew ? ` · ${crew}👤` : ''}` : '🔒'}</small>`, () => this.setDeck(k), `v-deck ${k === this.deck ? 'on' : ''} ${open ? '' : 'locked'}`);
+      if (info) b.style.borderLeftColor = info.color;
+      tooltip(b, () => {
+        if (!info) return k === 0 ? 'The roof: guns, soldier nests, the Command Tower and defenses.' : `A story inside the hull. (${deckName(k, p.stories)})`;
+        const lock = open ? '' : `<div class="bad">Opens with the Titan Mk ${['I', 'II', 'III', 'IV', 'V', 'VI'][(DECK_OPEN_CC[k] ?? 1) - 1]} refit (Command Center level ${DECK_OPEN_CC[k]}).</div>`;
+        const fixed = k === 0 ? 'The Spine\'s skylight and the command tower run down the middle.' : 'The Spine, a 10 m corridor, runs down the middle; Lifts A, B and C connect every deck.';
+        return `<h4>${esc(info.level)} ${esc(info.name)}</h4><div>${esc(info.desc)}</div><div class="d">${fixed}</div>${lock}`;
+      });
       this.deckBar.appendChild(b);
     }
   }

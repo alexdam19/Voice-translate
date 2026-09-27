@@ -2,7 +2,7 @@ import { BoxGeometry, CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshLamb
 import { NODE_INFO, type NodeType, type RuneKind, RUNE_INFO } from '../shared/mapgen';
 import { hash2 } from '../shared/rng';
 import { WEAPONS } from '../shared/weapons';
-import { MODULES } from '../game/defs';
+import { MODULES, TITAN_LIFTS, TITAN_SKYLIGHT, TITAN_SPINE, TITAN_TOWER } from '../game/defs';
 import { classDef } from '../game/classes';
 import { HULL_BASE, STORY_H } from '../game/tank';
 import type { Tank } from '../game/tank';
@@ -266,14 +266,36 @@ export function buildTankModel(t: Tank, fow: boolean, viewDeck = 0): TankModel {
       gb.box(-L / 2, bodyTop - 0.07, s < 0 ? -W / 2 - 0.06 : W / 2 - 0.1, L / 2, bodyTop + rimH, s < 0 ? -W / 2 + 0.1 : W / 2 + 0.06, hull, trim);
       gb.box(s < 0 ? -L / 2 : L / 2 - 0.12, bodyTop - 0.07, -W / 2 + 0.1, s < 0 ? -L / 2 + 0.12 : L / 2, bodyTop + rimH, W / 2 - 0.1, hull, trim);
     }
+    // Deck cells (inclusive) to model-space x (length) and z (width) ranges.
+    const cells = (r: { c0: number; c1: number; r0: number; r1: number }): { x0: number; x1: number; z0: number; z1: number } => ({
+      x0: (t.rows / 2 - (r.r1 + 1)) * CELL, x1: (t.rows / 2 - r.r0) * CELL, z0: (r.c0 - t.cols / 2) * CELL, z1: (r.c1 + 1 - t.cols / 2) * CELL,
+    });
+    const lifts = TITAN_LIFTS.map((l) => cells({ c0: l.cx, c1: l.cx + 1, r0: l.cy, r1: l.cy + 1 }));
+    if (cut && t.titan) {
+      // Inside: the Spine, a lit 10 m corridor down the middle of the deck, and the three lift shafts beside it.
+      const sp = cells(TITAN_SPINE);
+      gb.box(sp.x0, top, sp.z0, sp.x1, top + 0.015, sp.z1, atlas.get('spine'), dark);
+      for (const z of [sp.z0 + 0.03, sp.z1 - 0.05]) gl.box(sp.x0 + 0.1, top + 0.015, z, sp.x1 - 0.1, top + 0.025, z + 0.02, white, white);
+      for (let x = sp.x0 + 0.4; x < sp.x1 - 0.3; x += 1.5) gl.box(x, top + 0.015, -0.06, x + 0.12, top + 0.03, 0.06, blue, blue);
+      for (const l of lifts) {
+        gb.box(l.x0 + 0.04, top, l.z0 + 0.04, l.x1 - 0.04, top + 0.42, l.z1 - 0.04, dark, atlas.get('lift'));
+        gb.box(l.x0 + 0.02, top + 0.42, l.z0 + 0.02, l.x1 - 0.02, top + 0.46, l.z1 - 0.02, atlas.get('hazard'), atlas.get('hazard'));
+        gl.box(l.x0 + 0.35, top + 0.46, l.z0 + 0.35, l.x1 - 0.35, top + 0.5, l.z1 - 0.35, amber, amber);
+      }
+    }
     if (!cut) {
-      // The Spine runs under a long skylight down the middle of the roof; elevator heads rise either side of it.
-      gb.box(-L / 2 + 2, roof, -0.45, L / 2 - 3, roof + 0.05, 0.45, atlas.get('glass'), dark);
-      for (let x = -L / 2 + 2.6; x < L / 2 - 3; x += 1.9) gl.box(x, roof + 0.05, -0.02, x + 0.3, roof + 0.06, 0.02, white, white);
-      for (const x of [-L / 4, L / 4 - 1]) for (const s of [-1, 1]) gb.box(x - 0.3, roof, s * 0.8 - 0.25, x + 0.3, roof + 0.35, s * 0.8 + 0.25, hull, trim);
+      // The Spine runs under a long skylight down the middle of the roof; the lift heads come up beside it.
+      const sky = cells(TITAN_SKYLIGHT);
+      gb.box(sky.x0, roof, sky.z0 + 0.05, sky.x1, roof + 0.05, sky.z1 - 0.05, atlas.get('glass'), dark);
+      for (let x = sky.x0 + 0.5; x < sky.x1 - 0.3; x += 1.9) gl.box(x, roof + 0.05, -0.02, x + 0.3, roof + 0.06, 0.02, white, white);
+      for (const l of lifts) {
+        gb.box(l.x0 + 0.05, roof, l.z0 + 0.05, l.x1 - 0.05, roof + 0.4, l.z1 - 0.05, hull, trim);
+        gl.box(l.x1 - 0.06, roof + 0.25, l.z0 + 0.3, l.x1 - 0.04, roof + 0.33, l.z1 - 0.3, amber, amber);
+      }
       // Command tower aft of midships: a bridge band of windows 42 m up, masts and a red beacon on top.
-      const tx0 = -3.4, tx1 = -1.0;
-      gb.box(tx0, roof, -1.1, tx1, roof + 0.55, 1.1, deck, hull);
+      const tw = cells(TITAN_TOWER);
+      const tx0 = tw.x0, tx1 = tw.x1;
+      gb.box(tx0, roof, tw.z0 + 0.1, tx1, roof + 0.55, tw.z1 - 0.1, deck, hull);
       gb.box(tx0 + 0.1, roof + 0.55, -0.9, tx1 - 0.1, roof + 0.75, 0.9, hull, hull);
       gl.box(tx1 + 0.005, roof + 0.3, -0.9, tx1 + 0.02, roof + 0.45, 0.9, atlas.get('windows'), atlas.get('windows'));
       for (const s of [-1, 1]) gl.box(tx0 + 0.1, roof + 0.3, s < 0 ? -1.12 : 1.1, tx1 - 0.1, roof + 0.45, s < 0 ? -1.1 : 1.12, atlas.get('windows'), atlas.get('windows'));

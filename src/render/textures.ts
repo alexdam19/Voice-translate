@@ -807,6 +807,21 @@ export function getAtlas(): Atlas {
     for (let i = 0; i < 16; i += 4) p.rect(i, 0, 1, 16, '#2a2e34');
     p.rect(0, 0, 16, 1, '#50565e');
   });
+  // The Spine's deck plating: a worn walkway with a painted centre line.
+  a.add('spine', (p) => {
+    p.ground(['#4a5058', '#50565e', '#464c54'], 4, 0.12);
+    p.rect(7, 0, 2, 16, '#6a747e');
+    for (let y = 0; y < 16; y += 4) p.rect(7, y, 2, 2, '#c8a44a');
+    p.rect(0, 0, 1, 16, '#2e3238');
+    p.rect(15, 0, 1, 16, '#2e3238');
+  });
+  // Lift shaft walls: ribbed steel with a door slot.
+  a.add('lift', (p) => {
+    p.fill('#2a2e34');
+    for (let x = 0; x < 16; x += 3) p.rect(x, 0, 1, 16, '#3c4248');
+    p.rect(5, 3, 6, 13, '#1a1d22');
+    p.rect(7, 3, 2, 13, '#262a30');
+  });
   a.add('mod_side', (p) => {
     p.ground(['#3e464e', '#465058', '#4e5862'], 4, 0.2);
     p.rect(0, 0, 16, 1, '#6a7680');

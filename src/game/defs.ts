@@ -205,6 +205,28 @@ export const TITAN_DECK_INFO: { name: string; level: string; color: string; desc
   { name: 'Engineering', level: '-3', color: '#ef5350', desc: 'Power, propulsion, hydraulics, cooling: the loudest place aboard.' },
 ];
 
+/** The Command Center level (Titan mark) at which each deck opens. Roof and five decks from the start. */
+export const DECK_OPEN_CC = [1, 1, 3, 1, 1, 2, 1, 1];
+
+/**
+ * The Titan's fixed interior, in deck cells (5 m): the Spine, a 10 m corridor down the middle of every deck, three
+ * elevator shafts beside it that run from Engineering to the roof, and on the roof the Spine's skylight and the
+ * command tower. Nothing can be built on them.
+ */
+export const TITAN_SPINE = { c0: 8, c1: 9, r0: 1, r1: 36 } as const;
+export const TITAN_LIFTS: { name: string; cx: number; cy: number }[] = [
+  { name: 'Lift A', cx: 6, cy: 6 }, { name: 'Lift B', cx: 10, cy: 18 }, { name: 'Lift C', cx: 6, cy: 28 },
+];
+export const TITAN_SKYLIGHT = { c0: 8, c1: 9, r0: 7, r1: 29 } as const;
+export const TITAN_TOWER = { c0: 7, c1: 10, r0: 21, r1: 25 } as const;
+
+/** Is this cell part of the Titan's fixed structure on that deck (0 = roof)? */
+export function titanReserved(cx: number, cy: number, deck: number): boolean {
+  const inR = (r: { c0: number; c1: number; r0: number; r1: number }): boolean => cx >= r.c0 && cx <= r.c1 && cy >= r.r0 && cy <= r.r1;
+  if (TITAN_LIFTS.some((l) => cx >= l.cx && cx < l.cx + 2 && cy >= l.cy && cy < l.cy + 2)) return true;
+  return deck === ROOF ? inR(TITAN_SKYLIGHT) || inR(TITAN_TOWER) : inR(TITAN_SPINE);
+}
+
 /** Which deck each kind of building belongs on (by theme). */
 const DECK_OF: Record<string, number> = {
   bridge: 1, science_lab: 1, radar: 0,
@@ -365,11 +387,11 @@ export interface ChassisDef {
  * every Command Center level is a refit of the same machine: more armor, more decks opened up, more gun mounts.
  */
 export const CHASSIS: ChassisDef[] = [
-  { key: 'crawler', name: 'Titan Crawler Mk I', cols: 18, rows: 38, hp: 1600, mass: 44, armor: 0.05, desc: 'A 200-metre armored city on eight crawlers. Three decks open.' },
-  { key: 'assault', name: 'Titan Crawler Mk II', cols: 18, rows: 38, hp: 2300, mass: 55, armor: 0.07, desc: 'Residential deck opened, more mounts.' },
-  { key: 'siege', name: 'Titan Crawler Mk III', cols: 18, rows: 38, hp: 3200, mass: 68, armor: 0.09, desc: 'The hangar deck opens.' },
-  { key: 'dread', name: 'Titan Crawler Mk IV', cols: 18, rows: 38, hp: 4300, mass: 82, armor: 0.11, desc: 'Logistics deck and a rear battery.' },
-  { key: 'colossus', name: 'Titan Crawler Mk V', cols: 18, rows: 38, hp: 5600, mass: 98, armor: 0.13, desc: 'The recreation deck opens.' },
+  { key: 'crawler', name: 'Titan Crawler Mk I', cols: 18, rows: 38, hp: 1600, mass: 44, armor: 0.05, desc: 'A 200-metre armoured city on eight crawlers. The roof and five of its seven decks are open.' },
+  { key: 'assault', name: 'Titan Crawler Mk II', cols: 18, rows: 38, hp: 2300, mass: 55, armor: 0.07, desc: 'The Hangar deck (-1) opens for vehicle bays, drones and mini tanks; more mounts.' },
+  { key: 'siege', name: 'Titan Crawler Mk III', cols: 18, rows: 38, hp: 3200, mass: 68, armor: 0.09, desc: 'The Recreation deck (+2) opens; more mounts.' },
+  { key: 'dread', name: 'Titan Crawler Mk IV', cols: 18, rows: 38, hp: 4300, mass: 82, armor: 0.11, desc: 'A rear main battery and heavier armour.' },
+  { key: 'colossus', name: 'Titan Crawler Mk V', cols: 18, rows: 38, hp: 5600, mass: 98, armor: 0.13, desc: 'More mounts down the flanks.' },
   { key: 'citadel', name: 'Titan Crawler Mk VI', cols: 18, rows: 38, hp: 7200, mass: 116, armor: 0.15, desc: 'Every deck, every mount: a city that rolls.' },
   { key: 'scout', name: 'Raider Buggy-Tank', cols: 5, rows: 7, hp: 260, mass: 16, armor: 0.02, desc: '', hidden: true },
   { key: 'outrider', name: 'Outrider', cols: 4, rows: 6, hp: 420, mass: 12, armor: 0.05, desc: 'Mini tank crewed by side crew.', hidden: true },

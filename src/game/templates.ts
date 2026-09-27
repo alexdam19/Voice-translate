@@ -28,19 +28,22 @@ export function newWeapon(key: string, rarity: WeaponItem['rarity'] = 0, rng: ()
  * Entries are [building, x, y, deck].
  */
 export const STARTER_LAYOUT: [string, number, number, number][] = [
-  ['bridge', 7, 16, 1],
+  // +3 Command: the bridge, forward of Lift A.
+  ['bridge', 2, 2, 1],
+  // Roof: four rifle nests along the flanks.
   ['nest_rifle', 2, 12, 0],
   ['nest_rifle', 14, 12, 0],
   ['nest_rifle', 2, 26, 0],
   ['nest_rifle', 14, 26, 0],
-  ['quarters', 2, 16, 3],
-  ['quarters', 12, 16, 3],
-  ['quarters', 7, 20, 3],
-  ['hydroponics', 7, 16, 4],
-  ['cargo', 7, 16, 6],
-  ['reactor', 6, 16, 7],
-  ['engine', 4, 24, 7],
-  ['engine', 12, 24, 7],
+  // +1 Residential, 0 Main Deck, -2 Logistics, -3 Engineering either side of the Spine.
+  ['quarters', 2, 8, 3],
+  ['quarters', 12, 8, 3],
+  ['quarters', 2, 12, 3],
+  ['hydroponics', 12, 10, 4],
+  ['cargo', 2, 10, 6],
+  ['reactor', 2, 20, 7],
+  ['engine', 2, 30, 7],
+  ['engine', 12, 30, 7],
 ];
 
 /** What the built-in weapons start with: the main battery, and an autocannon on every corner pad. */
@@ -151,7 +154,7 @@ export function buildRival(level: number, cc: number, seed: number, name: string
   // Enemy guns fire at base stats times this; yours get the Level Road, crew and forge on top.
   t.dmgScale = 0.34 + 0.016 * level;
   t.drive = 'tracks';
-  t.addModule('bridge', Math.floor(t.cols / 2) - 2, Math.floor(t.rows / 2) - 2);
+  t.addModule('bridge', 2, 2, null, 1) ?? t.autoAdd('bridge');
   t.modules[0].lvl = cc;
   t.ensureFixed();
   // Weapons about as good as yours: the same kinds you've unlocked, at about your stars.
