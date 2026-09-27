@@ -1,6 +1,6 @@
 import { ARENA_SIZE } from './constants';
 import { GameMap, OBS, TER, ZONE } from './map';
-import type { Prop, WorldGen } from './mapgen';
+import { staticWorld, type Prop, type WorldGen } from './mapgen';
 import { Perlin } from './noise';
 import { hash2, RNG } from './rng';
 
@@ -20,28 +20,23 @@ export function generateArena(seed: number): ArenaGen {
   const C = n / 2;
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
-      const i = y * n + x;
       const r = Math.hypot(x - C, y - C) + p.fbm2(x / 20, y / 20, 3) * 8;
-      map.zone[i] = r > 74 ? ZONE.EDGE : ZONE.RUSTBELT;
+      map.set(x, y, { zone: r > 74 ? ZONE.EDGE : ZONE.RUSTBELT });
       const nv = p.fbm2(x / 16 + 40, y / 16, 3);
-      map.ter[i] = nv > 0.18 ? TER.CONCRETE : nv < -0.2 ? TER.ASH : TER.RUST;
+      map.set(x, y, { ter: nv > 0.18 ? TER.CONCRETE : nv < -0.2 ? TER.ASH : TER.RUST });
       if (r > 74) {
-        map.obs[i] = OBS.CLIFF;
-        map.oh[i] = 7 + Math.floor(hash2(x, y, seed) * 6);
+        map.set(x, y, { obs: OBS.CLIFF, oh: 7 + Math.floor(hash2(x, y, seed) * 6) });
         continue;
       }
       // City blocks: broken walls on a 12-tile grid.
       const bx = Math.floor(x / 12), by = Math.floor(y / 12);
       const onX = x % 12 === 0, onY = y % 12 === 0;
       if (nv > 0.05 && ((onX && hash2(bx, by * 3 + 1, seed) > 0.45) || (onY && hash2(bx * 3 + 2, by, seed) > 0.45))) {
-        map.obs[i] = OBS.RUIN;
-        map.oh[i] = 3 + Math.floor(hash2(bx, by, seed + 9) * 4);
+        map.set(x, y, { obs: OBS.RUIN, oh: 3 + Math.floor(hash2(bx, by, seed + 9) * 4) });
       } else if (p.fbm2(x / 9, y / 9, 2) > 0.4) {
-        map.obs[i] = OBS.ROCK;
-        map.oh[i] = 2 + Math.floor(hash2(x, y, seed + 2) * 3);
+        map.set(x, y, { obs: OBS.ROCK, oh: 2 + Math.floor(hash2(x, y, seed + 2) * 3) });
       } else if (hash2(x, y, seed + 5) < 0.006) {
-        map.obs[i] = OBS.WRECK;
-        map.oh[i] = 2;
+        map.set(x, y, { obs: OBS.WRECK, oh: 2 });
       }
     }
   }
@@ -49,11 +44,8 @@ export function generateArena(seed: number): ArenaGen {
     for (let y = Math.floor(cy - r); y <= cy + r; y++) {
       for (let x = Math.floor(cx - r); x <= cx + r; x++) {
         if (x < 0 || y < 0 || x >= n || y >= n || Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > r) continue;
-        const i = y * n + x;
-        if (map.zone[i] === ZONE.EDGE) continue;
-        map.obs[i] = 0;
-        map.oh[i] = 0;
-        if (ter !== undefined) map.ter[i] = ter;
+        if (map.getZone(x, y) === ZONE.EDGE) continue;
+        map.set(x, y, { obs: 0, oh: 0, ter });
       }
     }
   };
@@ -95,13 +87,13 @@ export function generateArena(seed: number): ArenaGen {
   const props: Prop[] = [];
   for (let y = 2; y < n - 2; y++) {
     for (let x = 2; x < n - 2; x++) {
-      const i = y * n + x;
-      if (map.obs[i] || map.zone[i] === ZONE.EDGE || map.ter[i] === TER.ROAD) continue;
+      if (map.getObs(x, y) || map.getZone(x, y) === ZONE.EDGE || map.getTer(x, y) === TER.ROAD) continue;
       if (hash2(x, y, seed + 77) > 1 / 60) continue;
       const kinds = ['barrel', 'wreckcar', 'bones', 'sign', 'pipe', 'crate'] as const;
       props.push({ x: x + 0.5, y: y + 0.5, kind: kinds[Math.floor(hash2(x, y, seed + 78) * kinds.length)], s: 0.8 + hash2(x, y, seed + 79) * 0.5, rot: hash2(x, y, seed + 80) * 6.28, v: 0 });
     }
   }
-  const gen: WorldGen = { seed, map, spawn: spawns[0], nodes: [], sites: [], runes: [], outposts: [], gate: { x: -999, y: -999 }, props };
+  for (const pr of props) map.chunkAtTile(Math.floor(pr.x), Math.floor(pr.y)).props.push(pr);
+  const gen: WorldGen = staticWorld(seed, map, spawns[0]);
   return { gen, spawns, crates, extracts };
 }

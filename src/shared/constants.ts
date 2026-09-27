@@ -1,5 +1,8 @@
-/** Open world is a square of MAP_SIZE x MAP_SIZE tiles; one tile is one world unit. */
-export const MAP_SIZE = 640;
+/**
+ * The open world is a square of MAP_SIZE x MAP_SIZE tiles (one tile is one world unit). It's streamed in chunks,
+ * so it can be huge: crossing it takes the best part of half an hour at a fortress's pace.
+ */
+export const MAP_SIZE = 10240;
 export const CENTER = MAP_SIZE / 2;
 
 /** Terrain chunk size in tiles (renderer). */

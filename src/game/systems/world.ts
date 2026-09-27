@@ -1,4 +1,3 @@
-import { MAP_SIZE } from '../../shared/constants';
 import { getItem } from '../../shared/items';
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
 import { TER, ZONE } from '../../shared/map';
@@ -454,34 +453,15 @@ export function updateHazards(g: Game, dt: number): void {
 }
 
 export function updateVision(g: Game): void {
-  const n = MAP_SIZE;
-  g.visible.fill(0);
   const eyes: { x: number; y: number; r: number }[] = [];
   if (!g.player.dead) eyes.push({ x: g.player.x, y: g.player.y, r: g.player.stats.vision });
   if (g.outrider && !g.outrider.dead) eyes.push({ x: g.outrider.x, y: g.outrider.y, r: 12 });
-  for (const e of eyes) {
-    const r = e.r;
-    const x0 = Math.max(0, Math.floor(e.x - r)), x1 = Math.min(n - 1, Math.ceil(e.x + r));
-    const y0 = Math.max(0, Math.floor(e.y - r)), y1 = Math.min(n - 1, Math.ceil(e.y + r));
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        if ((x + 0.5 - e.x) ** 2 + (y + 0.5 - e.y) ** 2 <= r * r) {
-          g.visible[y * n + x] = 1;
-          g.explored[y * n + x] = 1;
-        }
-      }
-    }
-  }
-  g.fogVersion++;
+  g.fog.update(g.player.x, g.player.y, eyes);
 }
 
-/** Marks every loot area and rune on the map as explored (Treasure Sense). */
+/** Marks every loot area and rune nearby as explored (Treasure Sense). */
 export function revealFeatures(g: Game): void {
-  const n = MAP_SIZE;
-  for (const f of [...g.gen.sites, ...g.gen.runes]) {
-    for (let y = Math.floor(f.y - 8); y <= f.y + 8; y++) for (let x = Math.floor(f.x - 8); x <= f.x + 8; x++) if (x >= 0 && y >= 0 && x < n && y < n) g.explored[y * n + x] = 1;
-  }
-  g.fogVersion++;
+  for (const f of [...g.gen.sites, ...g.gen.runes]) g.fog.explore(f.x, f.y, 8);
 }
 
 export function zoneName(g: Game): string {

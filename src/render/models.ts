@@ -3,6 +3,8 @@ import { NODE_INFO, type NodeType, type RuneKind, RUNE_INFO } from '../shared/ma
 import { hash2 } from '../shared/rng';
 import { WEAPONS } from '../shared/weapons';
 import { MODULES } from '../game/defs';
+import { classDef } from '../game/classes';
+import { HULL_BASE, STORY_H } from '../game/tank';
 import type { Tank } from '../game/tank';
 
 /** The model is built at half-unit cells, then scaled to the tank's real cell size. */
@@ -45,7 +47,7 @@ export const NOSE = 0.8;
 export const TAIL = 0.6;
 
 /** Builds a voxel model of a tank from its deck layout. Local +X is forward, +Z is right. */
-export function buildTankModel(t: Tank, fow: boolean): TankModel {
+export function buildTankModel(t: Tank, fow: boolean, viewDeck = 0): TankModel {
   const atlas = getAtlas();
   const pal = palKey(t);
   const lit = new MeshLambertMaterial({ map: atlas.texture, vertexColors: true });
@@ -69,52 +71,116 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
   const dread = isDreadHull(t);
   const exhaust: { lx: number; y: number; lz: number }[] = [];
   const accent = atlas.get(pal === 'rival' || pal === 'enemy' ? 'glow_red' : pal === 'remote' ? 'glow_purple' : 'glow_cyan');
+  // A fortress is several stories tall; `top` is the roof (or, in a cutaway, the floor of the deck being viewed).
+  const roof = dread ? HULL_BASE + t.stories * STORY_H : DECK;
+  const cut = dread && viewDeck > 0;
+  const top = cut ? HULL_BASE + (t.stories - viewDeck) * STORY_H + 0.03 : roof;
   if (dread) {
-    // Land-cruiser running gear: three tracks a side under armored, stepped skirts.
+    const cls = classDef(t.klass);
+    const clsGlow = atlas.get(t.team === 'player' ? cls.glow : pal === 'remote' ? 'glow_purple' : 'glow_red');
+    // Running gear: three tracks a side under armored, stepped skirts. Big hulls get big tracks.
     const TL = L + 0.3;
+    const TH = 0.75;
     for (const s of [-1, 1]) {
       for (let b = 0; b < 3; b++) {
-        const a0 = W / 2 + b * 0.175, a1 = a0 + 0.15;
+        const a0 = W / 2 + b * 0.19, a1 = a0 + 0.17;
         const z0 = s < 0 ? -a1 : a0, z1 = s < 0 ? -a0 : a1;
-        tr.box(-TL / 2, 0.04, z0, TL / 2, 0.6, z1, { u0: 0, v0: 0, u1: TL * 2, v1: 1 }, { u0: 0, v0: 0, u1: TL * 2, v1: 1 });
-        // Drive sprockets up front.
-        gb.box(TL / 2 - 0.05, 0.12, z0 + 0.01, TL / 2 + 0.12, 0.5, z1 - 0.01, dark, dark);
+        tr.box(-TL / 2, 0.04, z0, TL / 2, TH, z1, { u0: 0, v0: 0, u1: TL * 2, v1: 1 }, { u0: 0, v0: 0, u1: TL * 2, v1: 1 });
+        gb.box(TL / 2 - 0.05, 0.14, z0 + 0.01, TL / 2 + 0.14, TH - 0.1, z1 - 0.01, dark, dark);
+        gb.box(-TL / 2 - 0.12, 0.14, z0 + 0.01, -TL / 2 + 0.05, TH - 0.1, z1 - 0.01, dark, dark);
       }
-      const zi = s < 0 ? -W / 2 - 0.52 : W / 2, zo = s < 0 ? -W / 2 : W / 2 + 0.52;
-      // Skirt: a long armored slab with a lower lip, stepping down front and back.
-      gb.box(-TL / 2 + 0.35, 0.6, zi, TL / 2 - 0.45, 0.8, zo, hull, hull);
-      gb.box(TL / 2 - 0.45, 0.6, zi + (s < 0 ? 0.08 : 0), TL / 2 - 0.1, 0.72, zo - (s > 0 ? 0.08 : 0), hull, hull);
-      gb.box(-TL / 2 + 0.05, 0.6, zi + (s < 0 ? 0.08 : 0), -TL / 2 + 0.35, 0.72, zo - (s > 0 ? 0.08 : 0), hull, hull);
-      const zl = s < 0 ? -W / 2 - 0.56 : W / 2 + 0.52;
-      gb.box(-TL / 2 + 0.5, 0.36, zl, TL / 2 - 0.6, 0.64, zl + 0.04, trim, dark);
-      // Running lights along the skirt.
-      gl.box(-TL / 2 + 0.7, 0.66, s < 0 ? zo - 0.53 : zo - 0.01, TL / 2 - 0.8, 0.7, s < 0 ? zo - 0.51 : zo + 0.01, accent, accent);
+      const zi = s < 0 ? -W / 2 - 0.6 : W / 2, zo = s < 0 ? -W / 2 : W / 2 + 0.6;
+      gb.box(-TL / 2 + 0.35, TH, zi, TL / 2 - 0.45, TH + 0.22, zo, hull, hull);
+      gb.box(TL / 2 - 0.45, TH, zi + (s < 0 ? 0.08 : 0), TL / 2 - 0.1, TH + 0.12, zo - (s > 0 ? 0.08 : 0), hull, hull);
+      gb.box(-TL / 2 + 0.05, TH, zi + (s < 0 ? 0.08 : 0), -TL / 2 + 0.35, TH + 0.12, zo - (s > 0 ? 0.08 : 0), hull, hull);
+      const zl = s < 0 ? -W / 2 - 0.64 : W / 2 + 0.6;
+      gb.box(-TL / 2 + 0.5, 0.4, zl, TL / 2 - 0.6, TH - 0.05, zl + 0.04, trim, dark);
+      gl.box(-TL / 2 + 0.7, TH + 0.06, s < 0 ? zo - 0.61 : zo - 0.01, TL / 2 - 0.8, TH + 0.1, s < 0 ? zo - 0.59 : zo + 0.01, clsGlow, clsGlow);
     }
-    // Hull body.
-    gb.box(-L / 2, 0.25, -W / 2, L / 2, DECK, W / 2, deck, hull);
-    // Wedge nose: a sloped glacis, a chin plow and a visor of light.
-    gb.wedgeX(L / 2, L / 2 + NOSE, 0.18, DECK, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
+    // The body: a hull base, then one story per deck, each marked by a trim band and a row of lit windows.
+    gb.box(-L / 2, 0.25, -W / 2, L / 2, cut ? top : roof, W / 2, cut ? atlas.get('floor') : deck, hull);
+    // Car sections along the length (the Snowpiercer look): seams every few cells with a coupling band.
+    const segLen = Math.max(2.4, Math.min(3.6, L / Math.max(3, Math.round(L / 3))));
+    const nSeg = Math.max(2, Math.round(L / segLen));
+    const bodyTop = cut ? top : roof;
+    for (let k = 1; k < nSeg; k++) {
+      const x = -L / 2 + (k * L) / nSeg;
+      for (const s of [-1, 1]) gb.box(x - 0.05, HULL_BASE - 0.1, s < 0 ? -W / 2 - 0.05 : W / 2 - 0.02, x + 0.05, bodyTop - 0.02, s < 0 ? -W / 2 + 0.02 : W / 2 + 0.05, dark, dark);
+    }
+    for (let st = 0; st < t.stories; st++) {
+      const y0 = HULL_BASE + st * STORY_H;
+      if (y0 >= bodyTop - 0.05) break;
+      // Trim band at each floor.
+      for (const s of [-1, 1]) gb.box(-L / 2, y0 - 0.03, s < 0 ? -W / 2 - 0.04 : W / 2 - 0.02, L / 2, y0 + 0.03, s < 0 ? -W / 2 + 0.02 : W / 2 + 0.04, trim, trim);
+      // Windows: pairs of panes along both sides, some dark.
+      const wy0 = y0 + STORY_H * 0.3, wy1 = Math.min(bodyTop - 0.05, y0 + STORY_H * 0.72);
+      if (wy1 <= wy0) continue;
+      for (let x = -L / 2 + 0.35; x < L / 2 - 0.3; x += 0.62) {
+        for (const s of [-1, 1]) {
+          const lit = hash2(Math.round(x * 10), st * 7 + (s > 0 ? 1 : 0), t.id) > 0.22;
+          const tex = atlas.get(lit ? 'windows' : 'windows_dark');
+          const z = s < 0 ? -W / 2 - 0.035 : W / 2 + 0.015;
+          (lit ? gl : gb).box(x, wy0, z, x + 0.42, wy1, z + 0.02, tex, tex);
+        }
+      }
+      // Rear windows.
+      for (let z = -W / 2 + 0.4; z < W / 2 - 0.4; z += 0.7) {
+        const lit = hash2(Math.round(z * 10), st * 3, t.id + 5) > 0.3;
+        const tex = atlas.get(lit ? 'windows' : 'windows_dark');
+        (lit ? gl : gb).box(-L / 2 - 0.02, wy0, z, -L / 2, wy1, z + 0.45, tex, tex);
+      }
+    }
+    // The nose: every class has its own face.
+    const nH = Math.min(bodyTop, roof);
+    switch (cls.nose) {
+      case 'ram':
+        gb.wedgeX(L / 2, L / 2 + NOSE, 0.18, nH, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
+        gb.wedgeX(L / 2 + NOSE - 0.1, L / 2 + NOSE + 0.55, 0.06, 0.7, -W / 2 + 0.3, W / 2 - 0.3, -1, dark, dark);
+        break;
+      case 'prow':
+        for (let k = 0; k < 4; k++) {
+          const w = (W / 2 - 0.12) * (1 - k * 0.22);
+          gb.wedgeX(L / 2, L / 2 + NOSE + k * 0.25, 0.18, nH * (1 - k * 0.15), -w, w, -1, trim, hull);
+        }
+        break;
+      case 'box':
+        gb.box(L / 2, 0.2, -W / 2 + 0.1, L / 2 + NOSE * 0.6, nH, W / 2 - 0.1, trim, hull);
+        gb.box(L / 2 + NOSE * 0.6, 0.3, -W / 4, L / 2 + NOSE * 0.62, nH * 0.6, W / 4, atlas.get('hazard'), atlas.get('hazard'));
+        break;
+      case 'bat':
+        gb.wedgeX(L / 2, L / 2 + NOSE * 1.6, 0.18, nH * 0.75, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
+        for (const s of [-1, 1]) gb.box(L / 2 - 0.3, nH, s * (W / 2 - 0.3) - 0.06, L / 2 + 0.2, nH + 0.7, s * (W / 2 - 0.3) + 0.06, hull, hull);
+        break;
+      case 'scoop':
+        gb.wedgeX(L / 2, L / 2 + NOSE, 0.18, nH, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
+        for (let z = -W / 2 + 0.3; z < W / 2 - 0.2; z += 0.35) gb.box(L / 2 + NOSE - 0.1, 0.04, z, L / 2 + NOSE + 0.45, 0.25, z + 0.14, metal, dark);
+        break;
+    }
     gb.box(L / 2 + NOSE - 0.25, 0.06, -W / 2 + 0.4, L / 2 + NOSE + 0.08, 0.3, W / 2 - 0.4, dark, dark);
-    gl.box(L / 2 + 0.06, DECK - 0.12, -W / 2 + 0.35, L / 2 + 0.14, DECK - 0.05, W / 2 - 0.35, accent, accent);
+    gl.box(L / 2 + 0.06, nH - 0.16, -W / 2 + 0.35, L / 2 + 0.14, nH - 0.07, W / 2 - 0.35, clsGlow, clsGlow);
     for (const s of [-1, 1]) gl.box(L / 2 + NOSE - 0.3, 0.3, s * (W / 2 - 0.35) - 0.08, L / 2 + NOSE - 0.22, 0.4, s * (W / 2 - 0.35) + 0.08, atlas.get('glow_yellow'), atlas.get('glow_yellow'));
-    // A raised armored rim around the deck, with a light strip down each side.
+    // A raised rim around the top, with a light strip down each side.
+    const rimH = cut ? 0.35 : 0.08;
     for (const s of [-1, 1]) {
-      gb.box(-L / 2, DECK - 0.07, s < 0 ? -W / 2 - 0.06 : W / 2 - 0.1, L / 2, DECK + 0.08, s < 0 ? -W / 2 + 0.1 : W / 2 + 0.06, hull, trim);
-      gb.box(s < 0 ? -L / 2 : L / 2 - 0.12, DECK - 0.07, -W / 2 + 0.1, s < 0 ? -L / 2 + 0.12 : L / 2, DECK + 0.08, W / 2 - 0.1, hull, trim);
-      gl.box(-L / 2 + 0.3, DECK - 0.04, s < 0 ? -W / 2 - 0.08 : W / 2 + 0.06, L / 2 - 0.3, DECK + 0.02, s < 0 ? -W / 2 - 0.06 : W / 2 + 0.08, accent, accent);
+      gb.box(-L / 2, bodyTop - 0.07, s < 0 ? -W / 2 - 0.06 : W / 2 - 0.1, L / 2, bodyTop + rimH, s < 0 ? -W / 2 + 0.1 : W / 2 + 0.06, hull, trim);
+      gb.box(s < 0 ? -L / 2 : L / 2 - 0.12, bodyTop - 0.07, -W / 2 + 0.1, s < 0 ? -L / 2 + 0.12 : L / 2, bodyTop + rimH, W / 2 - 0.1, hull, trim);
+      if (!cut) gl.box(-L / 2 + 0.3, bodyTop - 0.04, s < 0 ? -W / 2 - 0.08 : W / 2 + 0.06, L / 2 - 0.3, bodyTop + 0.02, s < 0 ? -W / 2 - 0.06 : W / 2 + 0.08, clsGlow, clsGlow);
     }
     // Tail: an afterburner block with three nozzles, and two swept fins with tail lights.
-    gb.box(-L / 2 - TAIL, 0.28, -W * 0.24, -L / 2, 0.74, W * 0.24, dark, dark);
-    for (const [z, w] of [[0, 0.16], [-W * 0.15, 0.09], [W * 0.15, 0.09]] as const) {
-      gl.box(-L / 2 - TAIL - 0.03, 0.51 - w, z - w, -L / 2 - TAIL + 0.02, 0.51 + w, z + w, atlas.get('glow_orange'), atlas.get('glow_orange'));
-      exhaust.push({ lx: (-L / 2 - TAIL - 0.1) * (t.cell / CELL), y: 0.51 * (t.cell / CELL), lz: z * (t.cell / CELL) });
+    gb.box(-L / 2 - TAIL, 0.28, -W * 0.24, -L / 2, 0.9, W * 0.24, dark, dark);
+    for (const [z, w] of [[0, 0.18], [-W * 0.15, 0.1], [W * 0.15, 0.1]] as const) {
+      gl.box(-L / 2 - TAIL - 0.03, 0.6 - w, z - w, -L / 2 - TAIL + 0.02, 0.6 + w, z + w, atlas.get('glow_orange'), atlas.get('glow_orange'));
+      exhaust.push({ lx: (-L / 2 - TAIL - 0.1) * (t.cell / CELL), y: 0.6 * (t.cell / CELL), lz: z * (t.cell / CELL) });
     }
-    for (const s of [-1, 1]) {
-      const z0 = s * (W / 2 - 0.34) - 0.07, z1 = z0 + 0.14;
-      gb.box(-L / 2 - 0.25, DECK, z0, -L / 2 + 0.7, DECK + 0.35, z1, hull, hull);
-      gb.box(-L / 2 - 0.25, DECK + 0.35, z0, -L / 2 + 0.3, DECK + 0.75, z1, hull, hull);
-      gb.box(-L / 2 - 0.25, DECK + 0.75, z0, -L / 2 - 0.02, DECK + 0.95, z1, trim, hull);
-      gl.box(-L / 2 - 0.28, DECK + 0.2, z0 + 0.02, -L / 2 - 0.24, DECK + 0.6, z1 - 0.02, atlas.get('glow_red'), atlas.get('glow_red'));
+    if (!cut) {
+      const finH = cls.nose === 'bat' ? 1.6 : 0.95;
+      for (const s of [-1, 1]) {
+        const z0 = s * (W / 2 - 0.34) - 0.07, z1 = z0 + 0.14;
+        gb.box(-L / 2 - 0.25, roof, z0, -L / 2 + 0.7, roof + 0.35, z1, hull, hull);
+        gb.box(-L / 2 - 0.25, roof + 0.35, z0, -L / 2 + 0.3, roof + finH * 0.8, z1, hull, hull);
+        gb.box(-L / 2 - 0.25, roof + finH * 0.8, z0, -L / 2 - 0.02, roof + finH, z1, trim, hull);
+        gl.box(-L / 2 - 0.28, roof + 0.2, z0 + 0.02, -L / 2 - 0.24, roof + finH * 0.6, z1 - 0.02, atlas.get('glow_red'), atlas.get('glow_red'));
+      }
     }
   } else if (!anchored) {
     // Treads with a repeating pattern along their length.
@@ -149,21 +215,37 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
   }
   const turrets = new Map<number, { obj: Object3D; barrel: Object3D | null }>();
   const radars: Object3D[] = [];
+  const soldiers: { x: number; y: number; z: number; color: string; weapon: string }[] = [];
   for (const m of t.modules) {
     const d = MODULES[m.key];
+    // A fortress shows the roof from outside; the base view can cut away to any deck below.
+    if (dread && m.deck !== viewDeck) continue;
     const lx = (t.rows / 2 - (m.cy + d.h / 2)) * CELL;
     const lz = (m.cx + d.w / 2 - t.cols / 2) * CELL;
     const fx = d.h * CELL - 0.06, fz = d.w * CELL - 0.06; // footprint along x (length) and z (width)
     if (!m.built) {
       // Under construction: a scaffold slab with hazard stripes.
-      gb.box(lx - fx / 2, DECK, lz - fz / 2, lx + fx / 2, DECK + 0.12, lz + fz / 2, atlas.get('hazard'), atlas.get('darkmetal'));
-      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.box(lx + sx * (fx / 2 - 0.05) - 0.03, DECK, lz + sz * (fz / 2 - 0.05) - 0.03, lx + sx * (fx / 2 - 0.05) + 0.03, DECK + 0.5, lz + sz * (fz / 2 - 0.05) + 0.03, metal, metal);
+      gb.box(lx - fx / 2, top, lz - fz / 2, lx + fx / 2, top + 0.12, lz + fz / 2, atlas.get('hazard'), atlas.get('darkmetal'));
+      for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.box(lx + sx * (fx / 2 - 0.05) - 0.03, top, lz + sz * (fz / 2 - 0.05) - 0.03, lx + sx * (fx / 2 - 0.05) + 0.03, top + 0.5, lz + sz * (fz / 2 - 0.05) + 0.03, metal, metal);
       continue;
     }
     const h = m.key === 'main_gun' ? 0.3 : m.key === 'pad' ? 0.24 : d.hardpoint ? 0.18 : d.height * 0.75;
-    const top = atlas.get(`mod_${m.key}`);
-    gb.box(lx - fx / 2, DECK, lz - fz / 2, lx + fx / 2, DECK + h, lz + fz / 2, top, side);
-    const y1 = DECK + h;
+    const topTex = atlas.get(`mod_${m.key}`);
+    gb.box(lx - fx / 2, top, lz - fz / 2, lx + fx / 2, top + h, lz + fz / 2, topTex, side);
+    const y1 = top + h;
+    if (d.nest) {
+      // Sandbags round the edge and the soldiers manning it (yours only while they're on duty).
+      for (const [sx, sz] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const bx = sx ? fx / 2 - 0.05 : fx / 2, bz = sz ? fz / 2 - 0.05 : fz / 2;
+        gb.box(lx + (sx ? sx * bx - 0.05 : -bx), y1, lz + (sz ? sz * bz - 0.05 : -bz), lx + (sx ? sx * bx + 0.05 : bx), y1 + 0.14, lz + (sz ? sz * bz + 0.05 : bz), atlas.get('mod_nest_rifle'), side);
+      }
+      const n = t.kind === 'main' ? m.crew : d.soldiers ?? 2;
+      const uni = t.team === 'player' ? '#5d6b3a' : '#6d2b2b';
+      for (let k = 0; k < n; k++) {
+        const ox = k % 2 ? -0.17 : 0.17, oz = k < 2 ? (k ? 0.2 : -0.2) : 0;
+        soldiers.push({ x: lx + ox, y: y1, z: lz + oz, color: uni, weapon: d.nest });
+      }
+    }
     switch (m.key) {
       case 'pad':
         // An armored sponson: chamfered corners and a light at each one.
@@ -223,7 +305,7 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
         break;
       case 'drill_mk2':
       case 'drill_mk3':
-        gb.box(lx + fx / 2, DECK, lz - 0.12, lx + fx / 2 + 0.3, DECK + 0.24, lz + 0.12, metal, metal);
+        gb.box(lx + fx / 2, top, lz - 0.12, lx + fx / 2 + 0.3, top + 0.24, lz + 0.12, metal, metal);
         break;
       case 'science_lab':
         gl.box(lx - 0.25, y1, lz - 0.25, lx + 0.25, y1 + 0.35, lz + 0.25, atlas.get('glow_cyan'), atlas.get('glow_cyan'));
@@ -309,6 +391,18 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
       else if (m.weapon) barrel = buildTurret(obj, m.weapon.key, WEAPONS[m.weapon.key]?.size ?? d.hardpoint, lit, glow);
       turrets.set(m.id, { obj, barrel });
     }
+  }
+  // Little people on the roof: helmet, body, legs and a weapon.
+  if (soldiers.length) {
+    const sg = new Group();
+    for (const so of soldiers) {
+      vox(sg, '#2b2b2b', so.x, so.y + 0.05, so.z, 0.07, 0.1, 0.08);
+      vox(sg, so.color, so.x, so.y + 0.165, so.z, 0.09, 0.13, 0.1);
+      vox(sg, '#e0ac69', so.x, so.y + 0.26, so.z, 0.06, 0.06, 0.06);
+      vox(sg, so.color, so.x, so.y + 0.3, so.z, 0.08, 0.035, 0.08);
+      vox(sg, so.weapon === 'rocket' ? '#546e7a' : so.weapon === 'flame' ? '#ff6d00' : '#212121', so.x + 0.08, so.y + 0.19, so.z, 0.14, 0.03, 0.03);
+    }
+    root.add(sg);
   }
   if (!tr.empty) {
     const tm = new Mesh(tr.build(), treadMat);

@@ -178,7 +178,7 @@ describe('simulation', () => {
     g.give('tech_parts', 3, true);
     levelTo(g, 7);
     g.commander.xp = 55;
-    g.explored[1234] = 1;
+    g.fog.explore(g.player.x + 40, g.player.y, 3);
     g.armory.push(makeWeapon(4321, 'laser', 3));
     g.ownCard('fireball');
     g.ownCard('fireball');
@@ -194,7 +194,7 @@ describe('simulation', () => {
     const d = deserialize(JSON.parse(JSON.stringify(serialize(g))));
     expect(d.player.cargo.count('tech_parts')).toBe(3);
     expect(d.commander).toEqual({ level: 7, xp: 55 });
-    expect(d.explored[1234]).toBe(1);
+    expect(d.fog.isExplored(g.player.x + 40, g.player.y)).toBe(true);
     expect(d.armory[0].key).toBe('laser');
     expect(d.crew.length).toBe(g.crew.length);
     expect(d.cards.fireball.shards).toBe(1);

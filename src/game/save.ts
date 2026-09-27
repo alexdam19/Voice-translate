@@ -1,7 +1,6 @@
-import { MAP_SIZE } from '../shared/constants';
 import { TRACTION } from '../shared/map';
 import type { DriveKey } from '../shared/types';
-import type { RuneKind } from '../shared/mapgen';
+import type { OpenWorld, RuneKind } from '../shared/mapgen';
 import { sanitizeTree, WEAPONS, type WeaponItem } from '../shared/weapons';
 import { CARDS, DECK_SIZE, MAX_CARD_LEVEL, PACK_INFO, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
 import { normalizeCrew, type CrewMember } from './crew';
@@ -55,23 +54,8 @@ export interface SaveData {
   drives?: DriveKey[];
   autoDrive?: boolean;
   wave?: number;
-}
-
-function packBits(a: Uint8Array): string {
-  const bytes = new Uint8Array(Math.ceil(a.length / 8));
-  for (let i = 0; i < a.length; i++) if (a[i]) bytes[i >> 3] |= 1 << (i & 7);
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
-
-function unpackBits(s: string, out: Uint8Array): void {
-  try {
-    const bin = atob(s);
-    for (let i = 0; i < out.length; i++) out[i] = (bin.charCodeAt(i >> 3) >> (i & 7)) & 1;
-  } catch {
-    /* ignore corrupt fog */
-  }
+  /* v7: the streamed world keeps exploration per chunk */
+  fog?: [number, string][];
 }
 
 export function serialize(g: Game): SaveData {
@@ -81,10 +65,8 @@ export function serialize(g: Game): SaveData {
   const tr = g.tracked;
   return {
     v: 7, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
-    armory: g.armory, tech: [...g.tech], stats: g.stats, explored: packBits(g.explored),
-    nodes: g.gen.nodes.filter((n) => n.respawnAt > 0 || n.amount < n.max).map((n) => [n.id, n.amount, n.respawnAt]),
-    sites: g.gen.sites.filter((s) => s.readyAt > g.time).map((s) => [s.id, s.readyAt]),
-    runes: g.gen.runes.filter((r) => r.readyAt > g.time).map((r) => [r.id, r.readyAt]),
+    armory: g.armory, tech: [...g.tech], stats: g.stats, explored: '', fog: g.fog.serialize(),
+    ...featureState(g),
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
     objective: g.objective, counters: g.objectiveCounters, runeBuff: g.runeBuff, nextUid: peekUid(), savedAt: Date.now(),
     commander: { ...g.commander }, cards: g.cards, deck: g.deck, relics: g.relics, packs: g.packs, energy: g.energy,
@@ -178,24 +160,23 @@ export function deserialize(d: SaveData): Game {
   g.forgeJob = d.forgeJob ?? null;
   bumpUid(Math.max(d.nextUid ?? 1, ...g.armory.map((w) => w.uid), ...g.player.modules.map((m) => m.weapon?.uid ?? 0)));
   g.stats = { ...g.stats, ...d.stats };
-  unpackBits(d.explored, g.explored);
-  const nodes = new Map(g.gen.nodes.map((n) => [n.id, n]));
-  for (const [id, amt, re] of d.nodes ?? []) {
-    const n = nodes.get(id);
-    if (n) {
-      n.amount = amt;
-      n.respawnAt = re;
+  if (d.v >= 7) {
+    g.fog.load(d.fog ?? []);
+    const w = g.gen as OpenWorld;
+    if (w.saved) {
+      for (const [id, amt, re] of d.nodes ?? []) w.saved.nodes.set(id, [amt, re]);
+      for (const [id, t] of d.sites ?? []) w.saved.sites.set(id, t);
+      for (const [id, t] of d.runes ?? []) w.saved.runes.set(id, t);
+      w.applySaved();
     }
+    g.outpostsDown = new Set(d.outpostsDown ?? []);
+  } else {
+    // The world is a different (much bigger) place now: the fortress drives out of the new camp.
+    g.player.x = g.gen.spawn.x;
+    g.player.y = g.gen.spawn.y;
+    g.player.rot = -Math.PI / 2;
+    g.outpostsDown = new Set();
   }
-  for (const [id, t] of d.sites ?? []) {
-    const s = g.gen.sites.find((k) => k.id === id);
-    if (s) s.readyAt = t;
-  }
-  for (const [id, t] of d.runes ?? []) {
-    const r = g.gen.runes.find((k) => k.id === id);
-    if (r) r.readyAt = t;
-  }
-  g.outpostsDown = new Set(d.outpostsDown ?? []);
   g.outriderLevel = d.outriderLevel ?? 0;
   // The v5 tutorial is new: old saves start it at the part about the base.
   g.objective = d.v >= 5 ? d.objective ?? 0 : 3;
@@ -227,8 +208,21 @@ export function deserialize(d: SaveData): Game {
       applyOutriderCrew(g);
     }
   }
-  if (g.explored.length !== MAP_SIZE * MAP_SIZE) g.explored = new Uint8Array(MAP_SIZE * MAP_SIZE);
+  g.gen.focus(g.player.x, g.player.y);
   return g;
+}
+
+/** Feature state worth saving, from every sector generated so far. */
+function featureState(g: Game): Pick<SaveData, 'nodes' | 'sites' | 'runes'> {
+  const out: Pick<SaveData, 'nodes' | 'sites' | 'runes'> = { nodes: [], sites: [], runes: [] };
+  const w = g.gen as OpenWorld;
+  const secs = typeof w.touchedFeatures === 'function' ? [...w.touchedFeatures()] : [{ nodes: g.gen.nodes, sites: g.gen.sites, runes: g.gen.runes }];
+  for (const s of secs) {
+    for (const n of s.nodes) if (n.respawnAt > 0 || n.amount < n.max) out.nodes.push([n.id, n.amount, n.respawnAt]);
+    for (const x of s.sites) if (x.readyAt > g.time) out.sites.push([x.id, x.readyAt]);
+    for (const r of s.runes) if (r.readyAt > g.time) out.runes.push([r.id, r.readyAt]);
+  }
+  return out;
 }
 
 export function saveGame(g: Game): boolean {

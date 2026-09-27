@@ -1,6 +1,6 @@
 import type { App } from '../app';
 import { buildBlock, cancelBuild, countOf, placeBuilding, removeModule, trackBuild, trackUpgrade, upgradeBlock, upgradeBuilding, upgradeCostOf } from '../game/actions';
-import { buildLimit, buildTime, CATEGORIES, isShopBuilding, CC_COMMANDER_LEVEL, chassisForCC, levelMult, levelTime, maxModuleLevel, MODULE_LIST, MODULES, type ModuleCat, type ModuleDef } from '../game/defs';
+import { buildLimit, buildTime, CATEGORIES, isShopBuilding, CC_COMMANDER_LEVEL, chassisForCC, deckName, levelMult, levelTime, maxModuleLevel, MODULE_LIST, MODULES, type ModuleCat, type ModuleDef } from '../game/defs';
 import type { Game } from '../game/game';
 import { SQUADS, squadSize, type SquadType } from '../game/squads';
 import { jobFor } from '../game/systems/builds';
@@ -80,19 +80,23 @@ export class VillageUI {
   /** Touch placement is two taps: the first previews the spot here, the second (or PLACE) builds. */
   pending: [number, number] | null = null;
   private cat: ModuleCat = 'weapon';
+  /** The deck on show: 0 is the roof, then the stories below it. */
+  deck = 0;
+  private deckBar = h('div', 'v-decks');
+  private deckKey = '';
   private cardKey = '';
   private topKey = '';
 
   constructor(parent: HTMLElement, private app: App) {
     this.root = h('div', 'village');
-    this.root.append(this.top, this.card, this.shopBtn, this.shop, this.placeHint);
+    this.root.append(this.top, this.deckBar, this.card, this.shopBtn, this.shop, this.placeHint);
     // Under the HUD, so toasts and the level-up banner stay on top of the shop.
     parent.insertBefore(this.root, parent.firstChild);
     this.shopBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.toggleShop();
     });
-    for (const el of [this.top, this.card, this.shop, this.shopBtn, this.placeHint]) el.addEventListener('mousedown', (e) => e.stopPropagation());
+    for (const el of [this.top, this.deckBar, this.card, this.shop, this.shopBtn, this.placeHint]) el.addEventListener('mousedown', (e) => e.stopPropagation());
   }
 
   private get touch(): boolean {
@@ -134,6 +138,11 @@ export class VillageUI {
   }
 
   select(id: number): void {
+    const m = id ? this.game.player.moduleById(id) : undefined;
+    if (m && m.deck !== this.deck) {
+      this.deck = m.deck;
+      this.deckKey = '';
+    }
     this.selected = id;
     this.cardKey = '';
     this.shop.style.display = 'none';
@@ -150,7 +159,19 @@ export class VillageUI {
     this.app.sound('ui');
   }
 
+  /** Shows another deck (switching to where a building can go when placing it). */
+  setDeck(deck: number): void {
+    const p = this.game.player;
+    this.deck = Math.max(0, Math.min(p.stories, deck));
+    this.pending = null;
+    if (this.selected && p.moduleById(this.selected)?.deck !== this.deck) this.selected = 0;
+    this.deckKey = '';
+    this.app.sound('ui');
+  }
+
   startPlace(key: string): void {
+    const decks = this.game.player.decksFor(key);
+    if (!decks.includes(this.deck)) this.setDeck(decks[0]);
     this.placing = key;
     this.moving = 0;
     this.pending = null;
@@ -203,7 +224,7 @@ export class VillageUI {
     if (this.placing) {
       const d = MODULES[this.placing];
       const ox = cx - Math.floor((d.w - 1) / 2), oy = cy - Math.floor((d.h - 1) / 2);
-      const r = placeBuilding(g, this.placing, ox, oy);
+      const r = placeBuilding(g, this.placing, ox, oy, this.deck);
       if (r.ok) {
         const m = p.modules[p.modules.length - 1];
         this.app.hud.toast(r.msg ?? '', '#76ff03');
@@ -226,7 +247,7 @@ export class VillageUI {
       if (m) {
         const d = MODULES[m.key];
         const ox = cx - Math.floor((d.w - 1) / 2), oy = cy - Math.floor((d.h - 1) / 2);
-        if (p.moveModule(m.id, ox, oy)) {
+        if (p.moveModule(m.id, ox, oy, p.decksFor(m.key).includes(this.deck) ? this.deck : m.deck)) {
           this.app.sound('build');
           this.cancelPlace();
           this.select(m.id);
@@ -238,7 +259,7 @@ export class VillageUI {
       }
       return;
     }
-    const m = p.moduleAtCell(cx, cy);
+    const m = p.moduleAtCell(cx, cy, this.deck);
     this.select(m ? m.id : 0);
     if (m) this.app.sound('ui');
   }
@@ -252,7 +273,7 @@ export class VillageUI {
     if (!key) return null;
     const d = MODULES[key];
     const cx = cell[0] - Math.floor((d.w - 1) / 2), cy = cell[1] - Math.floor((d.h - 1) / 2);
-    return { key, cx, cy, ok: p.canPlace(key, cx, cy, this.moving || -1) };
+    return { key, cx, cy, ok: p.canPlace(key, cx, cy, this.moving || -1, this.deck) };
   }
 
   update(): void {
@@ -272,7 +293,23 @@ export class VillageUI {
       const exit = button('EXIT BASE (B)', () => this.app.setVillage(false), 'primary');
       this.top.appendChild(exit);
     }
+    this.renderDecks();
     this.renderCard();
+  }
+
+  /** ROOF / UPPER DECK / LOWER HOLD: the stories of the fortress, top to bottom. */
+  private renderDecks(): void {
+    const p = this.game.player;
+    const key = `${p.stories}:${this.deck}:${p.version}`;
+    if (key === this.deckKey) return;
+    this.deckKey = key;
+    this.deckBar.innerHTML = '';
+    for (let k = 0; k <= p.stories; k++) {
+      const n = p.modules.filter((m) => m.deck === k).length;
+      const b = button(`${deckName(k, p.stories).toUpperCase()} <small>${n}</small>`, () => this.setDeck(k), `v-deck ${k === this.deck ? 'on' : ''}`);
+      tooltip(b, () => (k === 0 ? 'The roof: guns, soldier nests, the Command Tower and defenses.' : `A story inside the hull: bunks, workshops, engines, storage. (${deckName(k, p.stories)})`));
+      this.deckBar.appendChild(b);
+    }
   }
 
   /* ---------------- building card ---------------- */

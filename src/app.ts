@@ -61,7 +61,7 @@ export class App {
   /** Camera look-ahead in the driving direction. */
   private camLead = { x: 0, y: 0 };
   private villageZoomMul = 1;
-  private vstate: VillageState = { hover: null, selected: 0, ghost: null };
+  private vstate: VillageState = { hover: null, selected: 0, ghost: null, deck: 0 };
   private trackT = 0;
   private acc = 0;
   private last = 0;
@@ -384,7 +384,7 @@ export class App {
   minimapClick(fx: number, fy: number, _right: boolean): void {
     const g = this.game;
     if (!g || g.player.dead) return;
-    const x = fx * g.map.size, y = fy * g.map.size;
+    const { x, y } = this.minimap.radarPoint(fx, fy);
     this.setVillage(false);
     if (orderMove(g, x, y)) this.view.moveMarker(x, y);
   }
@@ -449,10 +449,12 @@ export class App {
       const tgt = this.hud.trackInfo?.target;
       this.view.beacon = tgt && tgt.kind !== 'base' ? { x: tgt.x, y: tgt.y, color: '#ffd740' } : null;
     }
+    this.view.deckView = this.village ? this.villageUI.deck : 0;
     this.view.render(g, paused ? 0 : dt);
     this.overlay.draw(g, this.hover?.kind === 'enemy' ? this.hover.id : 0);
     if (this.village) {
       this.vstate.selected = this.villageUI.selected;
+      this.vstate.deck = this.villageUI.deck;
       this.vstate.ghost = this.villageUI.ghost(this.vstate.hover);
       this.overlay.drawVillage(g, this.vstate);
     } else if (g.mode === 'world') this.overlay.drawMarkers(g, this.hud.trackInfo?.target ?? null, this.hud.trackInfo?.target?.label ?? '');
@@ -648,7 +650,7 @@ export class App {
       this.canvas.style.cursor = CURSORS.default;
       return;
     }
-    const w = this.view.screenToPlane(m.x, m.y, deckHeight(p));
+    const w = this.view.screenToPlane(m.x, m.y, deckHeight(p, this.villageUI.deck));
     const l = p.toLocal(w.x, w.y);
     const cx = Math.floor(l.lz / p.cell + p.cols / 2), cy = Math.floor(p.rows / 2 - l.lx / p.cell);
     const inside = cx >= 0 && cy >= 0 && cx < p.cols && cy < p.rows;
@@ -818,6 +820,6 @@ export class App {
   cellScreen(cx: number, cy: number): { x: number; y: number } {
     const p = this.game.player;
     const w = p.toWorld((p.rows / 2 - (cy + 0.5)) * p.cell, (cx + 0.5 - p.cols / 2) * p.cell);
-    return this.view.worldToScreen(w.x, w.y, deckHeight(p));
+    return this.view.worldToScreen(w.x, w.y, deckHeight(p, this.village ? this.villageUI.deck : 0));
   }
 }

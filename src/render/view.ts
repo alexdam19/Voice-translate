@@ -90,7 +90,9 @@ export class View {
   private addP = new Particles(4000, true);
   private normP = new Particles(3000, false);
   private trans = new Transients();
-  private tankModels = new Map<Tank, TankModel>();
+  private tankModels = new Map<Tank, TankModel & { deck?: number }>();
+  /** Which deck of your fortress the base view shows (0 = roof; lower decks are a cutaway). */
+  deckView = 0;
   private creatures = new CreatureLayer();
   private titanVis = new Map<number, TitanModel>();
   private allyVis = new Map<number, EnemyVis>();
@@ -206,9 +208,9 @@ export class View {
       this.tankModels.delete(t);
     }
     if (!this.terrain) {
-      this.terrain = new TerrainView(g.map, g.gen.props);
+      this.terrain = new TerrainView(g.map);
       this.world.add(this.terrain.group);
-    } else this.terrain.setMap(g.map, g.gen.props);
+    } else this.terrain.setMap(g.map);
     for (const e of this.extractVis) this.world.remove(e);
     this.extractVis = [];
     for (const e of g.extracts) {
@@ -365,7 +367,7 @@ export class View {
     this.terrain?.update(this.cam.x, this.cam.y, this.cam.zoom * 1.6 + 10, this.time);
     if (g.mode === 'world' && g.fogVersion !== this.lastFog) {
       this.lastFog = g.fogVersion;
-      updateFow(g.explored, g.visible);
+      updateFow(g.fog, this.cam.x, this.cam.y);
     }
     for (const e of g.fx) this.handleFx(e);
     g.fx.length = 0;
@@ -492,16 +494,45 @@ export class View {
       if (v) {
         const ready = r.readyAt <= g.time;
         v.crystal.visible = ready;
-        v.beam.visible = ready && g.explored[Math.floor(r.y) * g.map.size + Math.floor(r.x)] === 1;
+        v.beam.visible = ready && g.isExplored(r.x, r.y);
         v.crystal.rotation.y = this.time * 1.5;
         v.crystal.position.y = 1.9 + Math.sin(this.time * 2) * 0.15;
         (v.beam.material as MeshBasicMaterial).opacity = 0.18 + 0.08 * Math.sin(this.time * 3);
         void RUNE_INFO;
       }
     }
+    // The world streams: let go of features we've driven away from.
+    this.pruneFeatures(g, R + 60);
     if (this.gateVis) {
       this.gateVis.disc.rotation.y = this.time * 0.8;
       (this.gateVis.disc.material as MeshBasicMaterial).opacity = 0.4 + 0.2 * Math.sin(this.time * 3);
+    }
+  }
+
+  private pruneT = 0;
+  private pruneFeatures(g: Game, far: number): void {
+    if (++this.pruneT % 30) return;
+    const nodes = new Map(g.gen.nodes.map((n) => [n.id, n]));
+    for (const [id, m] of this.nodeVis) {
+      const n = nodes.get(id);
+      if (n && this.near(n.x, n.y, far)) continue;
+      this.world.remove(m);
+      disposeModel({ root: m });
+      this.nodeVis.delete(id);
+    }
+    const sites = new Map(g.gen.sites.map((s) => [s.id, s]));
+    for (const [id, v] of this.siteVis) {
+      const st = sites.get(id);
+      if (st && this.near(st.x, st.y, far)) continue;
+      this.world.remove(v.root, v.ring.root);
+      this.siteVis.delete(id);
+    }
+    const runes = new Map(g.gen.runes.map((r) => [r.id, r]));
+    for (const [id, v] of this.runeVis) {
+      const r = runes.get(id);
+      if (r && this.near(r.x, r.y, far)) continue;
+      this.world.remove(v.root);
+      this.runeVis.delete(id);
     }
   }
 
@@ -509,7 +540,7 @@ export class View {
     const list: Tank[] = [g.player, ...(g.outrider ? [g.outrider] : []), ...g.tanks];
     const alive = new Set(list);
     for (const [t, m] of this.tankModels) {
-      if (!alive.has(t) || m.version !== t.version) {
+      if (!alive.has(t) || m.version !== t.version || (t === g.player && (m.deck ?? 0) !== this.deckView)) {
         this.units.remove(m.root);
         disposeModel(m);
         this.tankModels.delete(t);
@@ -518,7 +549,8 @@ export class View {
     for (const t of list) {
       let m = this.tankModels.get(t);
       if (!m) {
-        m = buildTankModel(t, t.team !== 'player' && g.mode === 'world');
+        const deck = t === g.player ? this.deckView : 0;
+        m = { ...buildTankModel(t, t.team !== 'player' && g.mode === 'world', deck), deck };
         this.tankModels.set(t, m);
         this.units.add(m.root);
       }

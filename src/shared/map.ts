@@ -93,131 +93,275 @@ export const isCrushMode = (m: NavMode): boolean => m === 'crush' || m === 'crus
 /** Obstacles a fortress can roll over and flatten. */
 export const crushable = (o: number): boolean => o !== OBS.NONE && o !== OBS.CLIFF && o !== OBS.PILLAR;
 
+/** Map chunks are CHUNK x CHUNK tiles. */
+export const CH = 32;
+const CH_SHIFT = 5;
+const CH_MASK = CH - 1;
+
+export interface Prop {
+  x: number;
+  y: number;
+  kind: string;
+  s: number;
+  rot: number;
+  /** Tint variant 0..3. */
+  v: number;
+  /** Flattened by a passing fortress. */
+  gone?: boolean;
+}
+
+/** One CH x CH block of the world. */
+export interface MapChunk {
+  cx: number;
+  cy: number;
+  ter: Uint8Array;
+  obs: Uint8Array;
+  /** Obstacle height in half-units. */
+  oh: Uint8Array;
+  zone: Uint8Array;
+  props: Prop[];
+  /** Changed since it was generated (kept in memory; everything else can be regenerated). */
+  touched: boolean;
+  /** Clearance per nav mode (3 x distance in tiles to the nearest blocked tile, capped). */
+  clear: Map<NavMode, Uint8Array>;
+  /** Last time it was used (eviction). */
+  used: number;
+}
+
+/** Fills a freshly allocated chunk (terrain, obstacles, zones, props). */
+export type ChunkFiller = (c: MapChunk, map: GameMap) => void;
+
+/** How far clearance looks for obstacles (tiles). Paths for bigger hulls treat anything wider as open. */
+export const CLEAR_REACH = 9;
+
+/**
+ * The world, streamed: tiles live in chunks that are generated from the seed when first touched and dropped again
+ * when far away (unless something changed them). This is what lets the world be enormous.
+ */
 export class GameMap {
   readonly size: number;
-  readonly ter: Uint8Array;
-  readonly obs: Uint8Array;
-  /** Obstacle height in half-units. */
-  readonly oh: Uint8Array;
-  readonly zone: Uint8Array;
-  private clearCache = new Map<NavMode, Uint8Array>();
+  readonly cps: number;
+  private chunks: (MapChunk | undefined)[];
+  private live = 0;
+  private tick = 0;
+  filler: ChunkFiller | null;
+  /** Called when a chunk is generated (feature streaming hooks in here). */
+  onChunk: ((c: MapChunk) => void) | null = null;
 
-  constructor(size: number) {
+  constructor(size: number, filler: ChunkFiller | null = null) {
     this.size = size;
-    const n = size * size;
-    this.ter = new Uint8Array(n);
-    this.obs = new Uint8Array(n);
-    this.oh = new Uint8Array(n);
-    this.zone = new Uint8Array(n);
+    this.cps = Math.ceil(size / CH);
+    this.chunks = new Array(this.cps * this.cps);
+    this.filler = filler;
   }
 
   inside(tx: number, ty: number): boolean {
     return tx >= 0 && ty >= 0 && tx < this.size && ty < this.size;
   }
 
-  idx(tx: number, ty: number): number {
-    return ty * this.size + tx;
+  /** The chunk holding tile (tx, ty), generating it if needed. */
+  chunkAtTile(tx: number, ty: number): MapChunk {
+    return this.chunk(tx >> CH_SHIFT, ty >> CH_SHIFT);
+  }
+
+  chunk(cx: number, cy: number): MapChunk {
+    const k = cy * this.cps + cx;
+    let c = this.chunks[k];
+    if (c) {
+      c.used = this.tick;
+      return c;
+    }
+    const n = CH * CH;
+    c = { cx, cy, ter: new Uint8Array(n), obs: new Uint8Array(n), oh: new Uint8Array(n), zone: new Uint8Array(n), props: [], touched: false, clear: new Map(), used: this.tick };
+    this.chunks[k] = c;
+    this.live++;
+    if (this.filler) this.filler(c, this);
+    this.onChunk?.(c);
+    return c;
+  }
+
+  /** The chunk if it's in memory. */
+  peek(cx: number, cy: number): MapChunk | undefined {
+    if (cx < 0 || cy < 0 || cx >= this.cps || cy >= this.cps) return undefined;
+    return this.chunks[cy * this.cps + cx];
+  }
+
+  get loaded(): number {
+    return this.live;
+  }
+
+  getTer(tx: number, ty: number): number {
+    if (!this.inside(tx, ty)) return TER.DIRT;
+    return this.chunkAtTile(tx, ty).ter[((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK)];
+  }
+
+  getObs(tx: number, ty: number): number {
+    if (!this.inside(tx, ty)) return OBS.CLIFF;
+    return this.chunkAtTile(tx, ty).obs[((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK)];
+  }
+
+  getOh(tx: number, ty: number): number {
+    if (!this.inside(tx, ty)) return 0;
+    return this.chunkAtTile(tx, ty).oh[((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK)];
+  }
+
+  getZone(tx: number, ty: number): number {
+    if (!this.inside(tx, ty)) return ZONE.EDGE;
+    return this.chunkAtTile(tx, ty).zone[((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK)];
+  }
+
+  /** Writes a tile (world generation, the Dead Zone arena, crushing). */
+  set(tx: number, ty: number, v: { ter?: number; obs?: number; oh?: number; zone?: number }): void {
+    if (!this.inside(tx, ty)) return;
+    const c = this.chunkAtTile(tx, ty);
+    const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
+    if (v.ter !== undefined) c.ter[i] = v.ter;
+    if (v.obs !== undefined) c.obs[i] = v.obs;
+    if (v.oh !== undefined) c.oh[i] = v.oh;
+    if (v.zone !== undefined) c.zone[i] = v.zone;
   }
 
   terAt(x: number, y: number): number {
-    const tx = Math.floor(x), ty = Math.floor(y);
-    return this.inside(tx, ty) ? this.ter[ty * this.size + tx] : TER.DIRT;
+    return this.getTer(Math.floor(x), Math.floor(y));
   }
 
   zoneAt(x: number, y: number): number {
-    const tx = Math.floor(x), ty = Math.floor(y);
-    return this.inside(tx, ty) ? this.zone[ty * this.size + tx] : ZONE.EDGE;
+    return this.getZone(Math.floor(x), Math.floor(y));
   }
 
   solid(tx: number, ty: number): boolean {
-    return !this.inside(tx, ty) || this.obs[ty * this.size + tx] !== 0;
+    return !this.inside(tx, ty) || this.getObs(tx, ty) !== 0;
   }
 
   /** True if a mover with this nav mode can't enter the tile. */
   blocked(tx: number, ty: number, mode: NavMode): boolean {
     if (!this.inside(tx, ty)) return true;
-    const i = ty * this.size + tx;
     if (mode === 'air' || isCrushMode(mode)) return false;
-    const o = this.obs[i];
-    if (o !== 0 && !(isCrushMode(mode) && crushable(o))) return true;
-    const t = this.ter[i];
-    if (t === TER.LAVA) return mode === 'ground' || mode === 'crush';
-    if (t === TER.ACID) return mode !== 'hover' && mode !== 'crushHover';
+    const c = this.chunkAtTile(tx, ty);
+    const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
+    if (c.obs[i] !== 0) return true;
+    const t = c.ter[i];
+    if (t === TER.LAVA) return mode === 'ground';
+    if (t === TER.ACID) return mode !== 'hover';
     return false;
   }
 
-  /** Distance (in tiles) from each tile to the nearest blocked tile, for sizing paths to big tanks. */
-  clearance(mode: NavMode): Uint8Array {
-    let c = this.clearCache.get(mode);
-    if (!c) {
-      c = computeClearance(this, mode);
-      this.clearCache.set(mode, c);
+  /** Clearance at a tile, 3 x tiles to the nearest blocked tile (capped at CLEAR_REACH tiles). */
+  clearRaw(tx: number, ty: number, mode: NavMode): number {
+    if (!this.inside(tx, ty)) return 0;
+    const c = this.chunkAtTile(tx, ty);
+    let cl = c.clear.get(mode);
+    if (!cl) {
+      cl = this.computeClearance(c, mode);
+      c.clear.set(mode, cl);
     }
-    return c;
+    return cl[((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK)];
   }
 
   /** Clearance at a tile in tiles (approximate Euclidean distance to the nearest blocked tile centre). */
   clearAt(tx: number, ty: number, mode: NavMode): number {
-    if (!this.inside(tx, ty)) return 0;
-    return this.clearance(mode)[ty * this.size + tx] / 3;
+    return this.clearRaw(tx, ty, mode) / 3;
   }
 
   /** Drops cached clearance. Crushing obstacles only changes the non-crush modes. */
   invalidateNav(onlyObstacleModes = false): void {
-    if (!onlyObstacleModes) {
-      this.clearCache.clear();
-      return;
+    for (const c of this.chunks) {
+      if (!c) continue;
+      if (!onlyObstacleModes) c.clear.clear();
+      else for (const m of [...c.clear.keys()]) if (!isCrushMode(m)) c.clear.delete(m);
     }
-    for (const m of [...this.clearCache.keys()]) if (!isCrushMode(m)) this.clearCache.delete(m);
   }
 
   /** Flattens a crushable obstacle. Returns true if something was there. */
   crush(tx: number, ty: number): boolean {
     if (!this.inside(tx, ty)) return false;
-    const i = ty * this.size + tx;
-    if (!crushable(this.obs[i])) return false;
-    this.obs[i] = OBS.NONE;
-    this.oh[i] = 0;
+    const c = this.chunkAtTile(tx, ty);
+    const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
+    if (!crushable(c.obs[i])) return false;
+    c.obs[i] = OBS.NONE;
+    c.oh[i] = 0;
+    c.touched = true;
+    // Neighbouring chunks' clearance can reach across the border.
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) this.peek(c.cx + dx, c.cy + dy)?.clear.forEach((_, m) => !isCrushMode(m) && this.peek(c.cx + dx, c.cy + dy)!.clear.delete(m));
     return true;
   }
-}
 
-/** Two-pass 3-4 chamfer distance transform (values are 3 x distance in tiles, capped at 255). */
-function computeClearance(map: GameMap, mode: NavMode): Uint8Array {
-  const n = map.size;
-  const d = new Uint16Array(n * n);
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) d[y * n + x] = map.blocked(x, y, mode) ? 0 : 1000;
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      const i = y * n + x;
-      let v = d[i];
-      if (v === 0) continue;
-      if (x === 0 || y === 0) v = Math.min(v, 3);
-      if (x > 0) v = Math.min(v, d[i - 1] + 3);
-      if (y > 0) {
-        v = Math.min(v, d[i - n] + 3);
-        if (x > 0) v = Math.min(v, d[i - n - 1] + 4);
-        if (x < n - 1) v = Math.min(v, d[i - n + 1] + 4);
-      }
-      d[i] = v;
+  /** Frees chunks far from (x, y) that nothing changed. */
+  evict(x: number, y: number, keep: number): void {
+    this.tick++;
+    const kx = Math.floor(x / CH), ky = Math.floor(y / CH);
+    const r = Math.ceil(keep / CH);
+    for (let k = 0; k < this.chunks.length; k++) {
+      const c = this.chunks[k];
+      if (!c || c.touched) continue;
+      if (Math.abs(c.cx - kx) <= r && Math.abs(c.cy - ky) <= r) continue;
+      this.chunks[k] = undefined;
+      this.live--;
     }
   }
-  for (let y = n - 1; y >= 0; y--) {
-    for (let x = n - 1; x >= 0; x--) {
-      const i = y * n + x;
-      let v = d[i];
-      if (v === 0) continue;
-      if (x === n - 1 || y === n - 1) v = Math.min(v, 3);
-      if (x < n - 1) v = Math.min(v, d[i + 1] + 3);
-      if (y < n - 1) {
-        v = Math.min(v, d[i + n] + 3);
-        if (x < n - 1) v = Math.min(v, d[i + n + 1] + 4);
-        if (x > 0) v = Math.min(v, d[i + n - 1] + 4);
-      }
-      d[i] = v;
-    }
+
+  /** Every chunk in memory. */
+  *loadedChunks(): IterableIterator<MapChunk> {
+    for (const c of this.chunks) if (c) yield c;
   }
-  const out = new Uint8Array(n * n);
-  for (let i = 0; i < d.length; i++) out[i] = Math.min(255, d[i]);
-  return out;
+
+  /** Two-pass 3-4 chamfer distance transform over the chunk plus a margin. */
+  private computeClearance(c: MapChunk, mode: NavMode): Uint8Array {
+    const M = CLEAR_REACH;
+    const W = CH + M * 2;
+    const d = new Uint16Array(W * W);
+    const x0 = c.cx * CH - M, y0 = c.cy * CH - M;
+    for (let y = 0; y < W; y++) {
+      for (let x = 0; x < W; x++) {
+        const tx = x0 + x, ty = y0 + y;
+        // Margins outside loaded chunks count as open (they'll be checked when they load).
+        let blocked: boolean;
+        if (!this.inside(tx, ty)) blocked = true;
+        else if (x >= M && x < M + CH && y >= M && y < M + CH) {
+          const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
+          blocked = mode === 'air' || isCrushMode(mode) ? false : c.obs[i] !== 0 || (c.ter[i] === TER.LAVA && mode === 'ground') || (c.ter[i] === TER.ACID && mode !== 'hover');
+        } else {
+          const nc = this.peek(tx >> CH_SHIFT, ty >> CH_SHIFT);
+          if (!nc) blocked = false;
+          else {
+            const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
+            blocked = mode === 'air' || isCrushMode(mode) ? false : nc.obs[i] !== 0 || (nc.ter[i] === TER.LAVA && mode === 'ground') || (nc.ter[i] === TER.ACID && mode !== 'hover');
+          }
+        }
+        d[y * W + x] = blocked ? 0 : 1000;
+      }
+    }
+    for (let y = 0; y < W; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        let v = d[i];
+        if (v === 0) continue;
+        if (x > 0) v = Math.min(v, d[i - 1] + 3);
+        if (y > 0) {
+          v = Math.min(v, d[i - W] + 3);
+          if (x > 0) v = Math.min(v, d[i - W - 1] + 4);
+          if (x < W - 1) v = Math.min(v, d[i - W + 1] + 4);
+        }
+        d[i] = v;
+      }
+    }
+    for (let y = W - 1; y >= 0; y--) {
+      for (let x = W - 1; x >= 0; x--) {
+        const i = y * W + x;
+        let v = d[i];
+        if (v === 0) continue;
+        if (x < W - 1) v = Math.min(v, d[i + 1] + 3);
+        if (y < W - 1) {
+          v = Math.min(v, d[i + W] + 3);
+          if (x < W - 1) v = Math.min(v, d[i + W + 1] + 4);
+          if (x > 0) v = Math.min(v, d[i + W - 1] + 4);
+        }
+        d[i] = v;
+      }
+    }
+    const out = new Uint8Array(CH * CH);
+    const cap = M * 3;
+    for (let y = 0; y < CH; y++) for (let x = 0; x < CH; x++) out[y * CH + x] = Math.min(cap, d[(y + M) * W + x + M]);
+    return out;
+  }
 }

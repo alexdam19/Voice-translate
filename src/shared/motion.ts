@@ -1,4 +1,4 @@
-import { crushable, type GameMap, type NavMode } from './map';
+import { CLEAR_REACH, crushable, type GameMap, type NavMode } from './map';
 
 /* ---------------------------------------------------------------------- */
 /* Circle vs tile collision                                                */
@@ -113,7 +113,9 @@ export interface PathOpts {
   climb?: boolean;
 }
 
-let bufSize = 0;
+/** The search window (tiles per side). Longer trips are planned in legs as you go. */
+export const PATH_WINDOW = 512;
+const WN = PATH_WINDOW * PATH_WINDOW;
 let gScore: Float32Array;
 let parent: Int32Array;
 let stamp: Uint32Array;
@@ -122,21 +124,19 @@ let gen = 1;
 let heap: Int32Array;
 let heapF: Float32Array;
 
-function ensureBuffers(n: number): void {
-  if (bufSize === n) return;
-  bufSize = n;
-  gScore = new Float32Array(n);
-  parent = new Int32Array(n);
-  stamp = new Uint32Array(n);
-  closed = new Uint32Array(n);
-  heap = new Int32Array(n);
-  heapF = new Float32Array(n);
+function ensureBuffers(): void {
+  if (gScore) return;
+  gScore = new Float32Array(WN);
+  parent = new Int32Array(WN);
+  stamp = new Uint32Array(WN);
+  closed = new Uint32Array(WN);
+  heap = new Int32Array(WN);
+  heapF = new Float32Array(WN);
   gen = 1;
 }
 
 /** Nearest tile to (tx, ty) with enough clearance, searching outward. */
 export function nearestClear(map: GameMap, tx: number, ty: number, need: number, mode: NavMode, maxR = 14): [number, number] | null {
-  const cl = map.clearance(mode);
   const req = need * 3;
   for (let r = 0; r <= maxR; r++) {
     let best: [number, number] | null = null;
@@ -145,7 +145,7 @@ export function nearestClear(map: GameMap, tx: number, ty: number, need: number,
       for (let dx = -r; dx <= r; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
         const x = tx + dx, y = ty + dy;
-        if (!map.inside(x, y) || cl[y * map.size + x] < req) continue;
+        if (!map.inside(x, y) || map.clearRaw(x, y, mode) < req) continue;
         const d = dx * dx + dy * dy;
         if (d < bd) {
           bd = d;
@@ -158,55 +158,73 @@ export function nearestClear(map: GameMap, tx: number, ty: number, need: number,
   return null;
 }
 
-function segmentClear(map: GameMap, ax: number, ay: number, bx: number, by: number, req: number, cl: Uint8Array): boolean {
+function segmentClear(map: GameMap, ax: number, ay: number, bx: number, by: number, req: number, mode: NavMode): boolean {
   const len = Math.hypot(bx - ax, by - ay);
   const n = Math.max(1, Math.ceil(len / 0.5));
   for (let i = 0; i <= n; i++) {
     const x = Math.floor(ax + ((bx - ax) * i) / n);
     const y = Math.floor(ay + ((by - ay) * i) / n);
-    if (!map.inside(x, y) || cl[y * map.size + x] < req) return false;
+    if (!map.inside(x, y) || map.clearRaw(x, y, mode) < req) return false;
   }
   return true;
 }
 
 /**
- * Finds a path for a circle of `radius`. Returns world-space waypoints (excluding the start),
- * or null if nothing is reachable. If the search budget runs out it returns the best partial path.
+ * Finds a path for a circle of `radius`. Returns world-space waypoints (excluding the start), or null if nothing is
+ * reachable. The search stays inside a window around the start: a goal further away is planned toward in legs (the
+ * path ends at the window edge and the mover replans from there). If the budget runs out it returns the best
+ * partial path.
  */
 export function findPath(map: GameMap, sx: number, sy: number, gx: number, gy: number, opts: PathOpts): { x: number; y: number }[] | null {
-  const n = map.size;
-  ensureBuffers(n * n);
+  ensureBuffers();
   gen++;
   if (gen > 0xfffffff0) {
     stamp.fill(0);
     closed.fill(0);
     gen = 1;
   }
-  const cl = map.clearance(opts.mode);
-  const need = opts.radius + 0.35;
+  const mode = opts.mode;
+  const need = Math.min(opts.radius + 0.35, CLEAR_REACH - 0.5);
   const req = Math.ceil(need * 3);
-  const loose = Math.max(1, Math.ceil((opts.radius * 0.4 + 0.35) * 3));
+  const loose = Math.max(1, Math.ceil((Math.min(opts.radius, CLEAR_REACH) * 0.4 + 0.35) * 3));
   let s0x = Math.floor(sx), s0y = Math.floor(sy);
   if (!map.inside(s0x, s0y)) return null;
+  // The window: centred between start and goal, clamped to PATH_WINDOW around the start.
+  const half = PATH_WINDOW / 2 - 2;
+  let wgx = gx, wgy = gy;
+  const far = Math.max(Math.abs(gx - sx), Math.abs(gy - sy));
+  let exactGoal = true;
+  if (far > half) {
+    // Too far for one search: head for the point on the way that fits in the window.
+    const k = half / far;
+    wgx = sx + (gx - sx) * k;
+    wgy = sy + (gy - sy) * k;
+    exactGoal = false;
+  }
+  const ox = Math.floor(Math.min(s0x, wgx) + (Math.abs(wgx - s0x) - PATH_WINDOW) / 2);
+  const oy = Math.floor(Math.min(s0y, wgy) + (Math.abs(wgy - s0y) - PATH_WINDOW) / 2);
+  const W = PATH_WINDOW;
+  const inWin = (x: number, y: number): boolean => x >= ox && y >= oy && x < ox + W && y < oy + W && map.inside(x, y);
   // Wedged into something? Start from the nearest open tile instead.
-  if (cl[s0y * n + s0x] < loose) {
-    const alt = nearestClear(map, s0x, s0y, Math.max(0.5, loose / 3), opts.mode, 10);
+  if (map.clearRaw(s0x, s0y, mode) < loose) {
+    const alt = nearestClear(map, s0x, s0y, Math.max(0.5, loose / 3), mode, 10);
     if (!alt) return null;
     [s0x, s0y] = alt;
   }
-  let goalTx = Math.floor(gx), goalTy = Math.floor(gy);
-  let exactGoal = true;
-  if (!map.inside(goalTx, goalTy) || cl[goalTy * n + goalTx] < req) {
-    const alt = nearestClear(map, goalTx, goalTy, need, opts.mode, 18);
-    if (!alt) return null;
+  let goalTx = Math.floor(wgx), goalTy = Math.floor(wgy);
+  if (!inWin(goalTx, goalTy) || map.clearRaw(goalTx, goalTy, mode) < req) {
+    const alt = nearestClear(map, goalTx, goalTy, need, mode, 18);
+    if (!alt || !inWin(alt[0], alt[1])) return null;
     [goalTx, goalTy] = alt;
     exactGoal = false;
   }
-  const start = s0y * n + s0x;
-  const goal = goalTy * n + goalTx;
+  if (!inWin(s0x, s0y)) return null;
+  const L = (x: number, y: number): number => (y - oy) * W + (x - ox);
+  const start = L(s0x, s0y);
+  const goal = L(goalTx, goalTy);
   const trac = opts.traction;
-  const passable = (i: number, x: number, y: number): boolean => {
-    const c = cl[i];
+  const passable = (x: number, y: number): boolean => {
+    const c = map.clearRaw(x, y, mode);
     if (c >= req) return true;
     // Near the start we tolerate tight spots so a tank pushed against a wall can get out.
     return c >= loose && Math.abs(x - s0x) + Math.abs(y - s0y) <= Math.ceil(opts.radius) + 2;
@@ -270,7 +288,7 @@ export function findPath(map: GameMap, sx: number, sy: number, gx: number, gy: n
       best = cur;
       break;
     }
-    const cx = cur % n, cy = (cur / n) | 0;
+    const cx = (cur % W) + ox, cy = ((cur / W) | 0) + oy;
     const ch = h(cx, cy);
     if (ch < bestH) {
       bestH = ch;
@@ -279,18 +297,18 @@ export function findPath(map: GameMap, sx: number, sy: number, gx: number, gy: n
     if (++expanded > maxNodes) break;
     for (let k = 0; k < 8; k++) {
       const nx = cx + DX[k], ny = cy + DY[k];
-      if (nx < 0 || ny < 0 || nx >= n || ny >= n) continue;
-      const ni = ny * n + nx;
-      if (closed[ni] === gen || !passable(ni, nx, ny)) continue;
-      if (k >= 4 && (!passable(cy * n + nx, nx, cy) || !passable(ny * n + cx, cx, ny))) continue;
+      if (!inWin(nx, ny)) continue;
+      const ni = L(nx, ny);
+      if (closed[ni] === gen || !passable(nx, ny)) continue;
+      if (k >= 4 && (!passable(nx, cy) || !passable(cx, ny))) continue;
       let step = k >= 4 ? 1.4142 : 1;
       if (trac) {
-        const t = trac[map.ter[ni]] || 0.2;
+        const t = trac[map.getTer(nx, ny)] || 0.2;
         step /= Math.max(0.25, Math.min(1.2, t));
       }
       // Go-anywhere hulls prefer to go around cliffs and pillars (climbing is slow) and barely mind rubble.
       if (opts.climb) {
-        const o = map.obs[ni];
+        const o = map.getObs(nx, ny);
         if (o) step *= crushable(o) ? 1.15 : 3;
       }
       const g = gScore[cur] + step;
@@ -307,14 +325,14 @@ export function findPath(map: GameMap, sx: number, sy: number, gx: number, gy: n
   for (let i = best; i !== -1 && i !== start; i = parent[i]) tiles.push(i);
   tiles.reverse();
   // String-pull the tile path into a few straight segments.
-  const pts = tiles.map((i) => ({ x: (i % n) + 0.5, y: ((i / n) | 0) + 0.5 }));
+  const pts = tiles.map((i) => ({ x: (i % W) + ox + 0.5, y: ((i / W) | 0) + oy + 0.5 }));
   if (found && exactGoal) pts[pts.length - 1] = { x: gx, y: gy };
   const out: { x: number; y: number }[] = [];
   let ax = sx, ay = sy;
   let i = 0;
   while (i < pts.length) {
     let j = pts.length - 1;
-    while (j > i && !segmentClear(map, ax, ay, pts[j].x, pts[j].y, req, cl)) j--;
+    while (j > i && !segmentClear(map, ax, ay, pts[j].x, pts[j].y, req, mode)) j--;
     out.push(pts[j]);
     ax = pts[j].x;
     ay = pts[j].y;

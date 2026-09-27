@@ -373,7 +373,7 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
   e.vy *= decay;
   // Clambering over rocks and ruins.
   const tx = Math.floor(e.x), ty = Math.floor(e.y);
-  const oh = g.map.inside(tx, ty) && g.map.obs[ty * g.map.size + tx] ? g.map.oh[ty * g.map.size + tx] * 0.3 : 0;
+  const oh = g.map.inside(tx, ty) && g.map.getObs(tx, ty) ? g.map.getOh(tx, ty) * 0.3 : 0;
   e.z += (oh - e.z) * Math.min(1, dt * 8);
   crushAndPush(g, e, dt);
 }

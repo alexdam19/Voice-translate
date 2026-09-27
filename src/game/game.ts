@@ -1,4 +1,5 @@
-import { CENTER, CHUNK, MAP_SIZE, MAX_BASE_CREW } from '../shared/constants';
+import { CENTER, CHUNK, MAX_BASE_CREW } from '../shared/constants';
+import { Fog } from '../shared/fog';
 import { canAfford, payCost, type Cost, type Stack } from '../shared/inventory';
 import { getItem } from '../shared/items';
 import { rollLoot } from '../shared/loot';
@@ -122,9 +123,8 @@ export class Game {
   armory: WeaponItem[] = [];
   /** Unlocks earned on the Level Road (weapon families, crew upgrades, drives...). */
   tech: Set<string>;
-  explored: Uint8Array;
-  visible: Uint8Array;
-  fogVersion = 0;
+  /** What's in sight and what's been explored (streamed with the world). */
+  fog: Fog;
   runeBuff: { rune: RuneKind; t: number } | null = null;
   /** Next chest rolls this many rarity tiers higher (Treasure Sense). */
   chestBonus = 0;
@@ -144,7 +144,7 @@ export class Game {
   aim = { x: 0, y: 0 };
   respawnIn = 0;
   deadZoneMode = false;
-  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0, drive: 0, rival: 150, troop: 0 };
+  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0, drive: 0, rival: 150, troop: 0, evict: 6 };
   hazardWarn: string | null = null;
   hooks: GameHooks = { toast: () => {}, sound: () => {}, chest: () => {}, levelUp: () => {}, died: () => {}, enterDeadZone: () => {} };
   revealAll = false;
@@ -216,18 +216,17 @@ export class Game {
   /** Terrain chunks the fortress flattened something in (renderer rebuilds them). */
   dirtyChunks = new Set<number>();
   navDirty = false;
-  private propIndex: Map<number, Prop[]> | null = null;
 
   constructor(seed: number, gen?: WorldGen, klass: HullClass = 'juggernaut') {
     this.gen = gen ?? generateWorld(seed);
     this.map = this.gen.map;
     this.rng = new RNG(seed ^ 0x9e3779b9);
     this.player = buildStarterTank(this.gen.spawn.x, this.gen.spawn.y, klass);
+    this.gen.focus(this.player.x, this.player.y);
     this.crew = starterCrew();
     this.tech = new Set(techsForLevel(1));
     for (const id of STARTER_DECK) this.cards[id] = { level: 1, shards: 0 };
-    this.explored = new Uint8Array(MAP_SIZE * MAP_SIZE);
-    this.visible = new Uint8Array(MAP_SIZE * MAP_SIZE);
+    this.fog = new Fog(this.map.size);
     this.applyCrew();
     this.player.hp = this.player.stats.maxHp;
     this.rollRecruits();
@@ -518,18 +517,9 @@ export class Game {
     if (ty % CHUNK === CHUNK - 1) this.dirtyChunks.add((cy + 1) * 1000 + cx);
   }
 
-  /** Props in a chunk (lazy spatial index). */
+  /** Props in a chunk (they're generated with the chunk). */
   propsInChunk(cx: number, cy: number): Prop[] {
-    if (!this.propIndex) {
-      this.propIndex = new Map();
-      for (const p of this.gen.props) {
-        const k = Math.floor(p.y / CHUNK) * 1000 + Math.floor(p.x / CHUNK);
-        let a = this.propIndex.get(k);
-        if (!a) this.propIndex.set(k, (a = []));
-        a.push(p);
-      }
-    }
-    return this.propIndex.get(cy * 1000 + cx) ?? [];
+    return this.map.peek(cx, cy)?.props ?? [];
   }
 
   /* ---------------------------------------------------------------- */
@@ -637,9 +627,15 @@ export class Game {
 
   isVisible(x: number, y: number): boolean {
     if (this.revealAll) return true;
-    const tx = Math.floor(x), ty = Math.floor(y);
-    if (tx < 0 || ty < 0 || tx >= MAP_SIZE || ty >= MAP_SIZE) return false;
-    return this.visible[ty * MAP_SIZE + tx] === 1;
+    return this.fog.isVisible(x, y);
+  }
+
+  isExplored(x: number, y: number): boolean {
+    return this.revealAll || this.mode !== 'world' || this.fog.isExplored(x, y);
+  }
+
+  get fogVersion(): number {
+    return this.fog.version;
   }
 
   threatHere(): number {
@@ -683,10 +679,19 @@ export class Game {
   /* Enemies                                                           */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * The longer you survive, the stronger everything gets: +1.5% per minute played and +6% per horde repelled.
+   * Enemy health takes it all; damage takes 60% of it.
+   */
+  escalation(): number {
+    return 1 + (0.015 * this.stats.time) / 60 + 0.06 * (this.stats.hordes ?? 0);
+  }
+
   spawnEnemy(kind: string, x: number, y: number, threat: number, elite = false): Enemy {
     const d = ENEMIES[kind];
-    const hpScale = (0.6 + 0.4 * threat) * (elite ? 2.2 : 1);
-    const dmgScale = (0.8 + 0.2 * threat) * (elite ? 1.35 : 1);
+    const esc = this.mode === 'world' ? this.escalation() : 1;
+    const hpScale = (0.6 + 0.4 * threat) * (elite ? 2.2 : 1) * esc;
+    const dmgScale = (0.8 + 0.2 * threat) * (elite ? 1.35 : 1) * (1 + (esc - 1) * 0.6);
     const e: Enemy = {
       id: eid(), kind: d.kind, x, y, vx: 0, vy: 0, face: 1, hp: d.hp * hpScale, maxHp: d.hp * hpScale, r: d.r * (elite ? 1.2 : 1),
       speed: d.speed * (elite ? 1.1 : 1), dmg: d.dmg * dmgScale, range: d.range, atkCd: 1 + Math.random(), atkRate: d.rate, threat, elite,

@@ -18,21 +18,18 @@ export class TerrainView {
   private acidMat: MeshLambertMaterial;
   lavaTex: Texture;
   acidTex: Texture;
-  private propsByChunk = new Map<number, Prop[]>();
-
-  constructor(private map: GameMap, props: Prop[]) {
+  constructor(private map: GameMap) {
     const atlas = getAtlas();
     this.mat = withFow(new MeshLambertMaterial({ map: atlas.texture, vertexColors: true }));
     this.lavaTex = liquidTexture('lava');
     this.acidTex = liquidTexture('acid');
     this.lavaMat = withFow(new MeshBasicMaterial({ map: this.lavaTex }));
     this.acidMat = withFow(new MeshLambertMaterial({ map: this.acidTex, emissive: '#2e5a10', emissiveIntensity: 0.9 }));
-    for (const p of props) {
-      const k = this.key(Math.floor(p.x / CHUNK), Math.floor(p.y / CHUNK));
-      let arr = this.propsByChunk.get(k);
-      if (!arr) this.propsByChunk.set(k, (arr = []));
-      arr.push(p);
-    }
+  }
+
+  /** Props of a chunk (generated with it). */
+  private props(cx: number, cy: number): Prop[] {
+    return this.map.chunk(cx, cy).props;
   }
 
   private key(cx: number, cy: number): number {
@@ -74,8 +71,6 @@ export class TerrainView {
   /** Rebuilds one chunk (a fortress flattened something in it). */
   invalidate(cx: number, cy: number): void {
     const k = this.key(cx, cy);
-    const props = this.propsByChunk.get(k);
-    if (props) this.propsByChunk.set(k, props.filter((p) => !p.gone));
     const g = this.chunks.get(k);
     if (!g) return;
     // Swap in the rebuilt chunk in the same frame so the ground never flickers.
@@ -99,16 +94,9 @@ export class TerrainView {
     this.chunks.clear();
   }
 
-  setMap(map: GameMap, props: Prop[]): void {
+  setMap(map: GameMap): void {
     this.clear();
     this.map = map;
-    this.propsByChunk.clear();
-    for (const p of props) {
-      const k = this.key(Math.floor(p.x / CHUNK), Math.floor(p.y / CHUNK));
-      let arr = this.propsByChunk.get(k);
-      if (!arr) this.propsByChunk.set(k, (arr = []));
-      arr.push(p);
-    }
   }
 
   private build(cx: number, cy: number): Group {
@@ -121,15 +109,17 @@ export class TerrainView {
     const x0 = cx * CHUNK, y0 = cy * CHUNK;
     const hAt = (x: number, y: number): number => {
       if (x < 0 || y < 0 || x >= size || y >= size) return 6;
-      const i = y * size + x;
-      if (!map.obs[i]) return map.ter[i] === TER.LAVA || map.ter[i] === TER.ACID ? LIQ_Y : 0;
-      return map.oh[i] * 0.5 + hash2(x, y, 77) * 0.2;
+      const o = map.getObs(x, y);
+      if (!o) {
+        const t = map.getTer(x, y);
+        return t === TER.LAVA || t === TER.ACID ? LIQ_Y : 0;
+      }
+      return map.getOh(x, y) * 0.5 + hash2(x, y, 77) * 0.2;
     };
     for (let y = y0; y < Math.min(size, y0 + CHUNK); y++) {
       for (let x = x0; x < Math.min(size, x0 + CHUNK); x++) {
-        const i = y * size + x;
-        const t = map.ter[i];
-        const o = map.obs[i];
+        const t = map.getTer(x, y);
+        const o = map.getObs(x, y);
         const liquid = t === TER.LAVA || t === TER.ACID;
         if (liquid && !o) {
           const b = t === TER.LAVA ? lava : acid;
@@ -159,8 +149,8 @@ export class TerrainView {
         for (const [dx, dy, face] of [[0, 1, F.S], [0, -1, F.N], [1, 0, F.E], [-1, 0, F.W]] as [number, number, number][]) {
           const nx = x + dx, ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
-          const nt = map.ter[ny * size + nx];
-          if ((nt !== TER.LAVA && nt !== TER.ACID) || map.obs[ny * size + nx]) continue;
+          const nt = map.getTer(nx, ny);
+          if ((nt !== TER.LAVA && nt !== TER.ACID) || map.getObs(nx, ny)) continue;
           this.sideFace(gb, x, y, face, LIQ_Y, 0, atlas.get(nt === TER.LAVA ? 'bank_lava' : 'bank_acid'), 1);
         }
       }
@@ -189,8 +179,7 @@ export class TerrainView {
   }
 
   private buildProps(gb: GeoBuilder, cx: number, cy: number): void {
-    const props = this.propsByChunk.get(this.key(cx, cy));
-    if (!props) return;
+    const props = this.props(cx, cy);
     const a = getAtlas();
     for (const p of props) {
       if (p.gone) continue;
@@ -275,6 +264,6 @@ export class TerrainView {
 
   /** Obstacle-free check used by the camera (not needed yet). */
   static isObstacle(map: GameMap, x: number, y: number): boolean {
-    return map.obs[Math.floor(y) * map.size + Math.floor(x)] !== OBS.NONE;
+    return map.getObs(Math.floor(x), Math.floor(y)) !== OBS.NONE;
   }
 }

@@ -13,6 +13,8 @@ import type { View } from './view';
 export interface VillageState {
   hover: [number, number] | null;
   selected: number;
+  /** Deck being viewed (0 = roof). */
+  deck: number;
   /** Building being placed or moved. */
   ghost: { key: string; cx: number; cy: number; ok: boolean } | null;
 }
@@ -86,10 +88,13 @@ export class Overlay {
     c.stroke();
   }
 
+  private deckTank: Tank | null = null;
+  private deckView = 0;
+
   /** Screen position of a point on the deck, in deck cells. */
   private deckPt(t: Tank, cx: number, cy: number): { x: number; y: number; ok: boolean } {
     const w = t.toWorld((t.rows / 2 - cy) * t.cell, (cx - t.cols / 2) * t.cell);
-    return this.view.worldToScreen(w.x, w.y, deckHeight(t) + 0.02);
+    return this.view.worldToScreen(w.x, w.y, deckHeight(t, t === this.deckTank ? this.deckView : 0) + 0.02);
   }
 
   private deckRect(t: Tank, cx: number, cy: number, w: number, h: number, stroke: string | null, fill: string | null, lw = 1): void {
@@ -137,8 +142,11 @@ export class Overlay {
     const front = this.deckPt(t, t.cols / 2, -0.8);
     this.text('▲ FRONT', front.x, front.y, '#80deea', 9);
     // Buildings
+    this.deckTank = t;
+    this.deckView = vs.deck;
     for (const m of t.modules) {
       const d = MODULES[m.key];
+      if (m.deck !== vs.deck) continue;
       const sel = m.id === vs.selected;
       const hov = vs.hover && vs.hover[0] >= m.cx && vs.hover[0] < m.cx + d.w && vs.hover[1] >= m.cy && vs.hover[1] < m.cy + d.h;
       if (sel || hov) this.deckRect(t, m.cx, m.cy, d.w, d.h, sel ? '#ffea00' : '#ffffff', sel ? 'rgba(255,234,0,0.12)' : 'rgba(255,255,255,0.06)', sel ? 3 : 1.5);
@@ -156,7 +164,7 @@ export class Overlay {
       if (sel || hov) this.text(d.name, mid.x, mid.y + 10, sel ? '#ffea00' : '#ffffff', 10);
     }
     // Hovered empty cell
-    if (vs.hover && !vs.ghost && t.cellAt(vs.hover[0], vs.hover[1]) === -1) this.deckRect(t, vs.hover[0], vs.hover[1], 1, 1, 'rgba(255,255,255,0.6)', null, 1);
+    if (vs.hover && !vs.ghost && t.cellAt(vs.hover[0], vs.hover[1], vs.deck) === -1) this.deckRect(t, vs.hover[0], vs.hover[1], 1, 1, 'rgba(255,255,255,0.6)', null, 1);
     // Placement ghost
     if (vs.ghost) {
       const d = MODULES[vs.ghost.key];
@@ -296,7 +304,7 @@ export class Overlay {
       // Sites
       for (const s of g.gen.sites) {
         if (Math.abs(s.x - v.cam.x) > v.cam.zoom * 1.6 || Math.abs(s.y - v.cam.y) > v.cam.zoom * 1.3) continue;
-        if (!g.explored[Math.floor(s.y) * g.map.size + Math.floor(s.x)]) continue;
+        if (!g.isExplored(s.x, s.y)) continue;
         const p = v.worldToScreen(s.x, s.y, 3.2);
         if (!onScreen(p)) continue;
         const ready = s.readyAt <= g.time;
@@ -312,7 +320,7 @@ export class Overlay {
       // Runes
       for (const r of g.gen.runes) {
         if (Math.abs(r.x - v.cam.x) > v.cam.zoom * 1.6 || Math.abs(r.y - v.cam.y) > v.cam.zoom * 1.3) continue;
-        if (!g.explored[Math.floor(r.y) * g.map.size + Math.floor(r.x)]) continue;
+        if (!g.isExplored(r.x, r.y)) continue;
         const p = v.worldToScreen(r.x, r.y, 3.4);
         if (!onScreen(p)) continue;
         const info = RUNE_INFO[r.rune];

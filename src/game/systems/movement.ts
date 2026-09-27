@@ -19,7 +19,7 @@ export function crushUnder(g: Game, t: Tank): void {
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       if (!map.inside(tx, ty)) continue;
-      const o = map.obs[ty * map.size + tx];
+      const o = map.getObs(tx, ty);
       if (!crushable(o) || !t.hits(tx + 0.5, ty + 0.5, 0.2)) continue;
       map.crush(tx, ty);
       g.markDirty(tx, ty);
@@ -62,7 +62,7 @@ export function traction(g: Game, t: Tank): number {
       // Go-anywhere hulls wade through liquids the drive can't handle and climb cliffs, slowly.
       if (v <= 0) v = 0.35;
       const tx = Math.floor(p.x), ty = Math.floor(p.y);
-      const o = g.map.inside(tx, ty) ? g.map.obs[ty * g.map.size + tx] : 0;
+      const o = g.map.inside(tx, ty) ? g.map.getObs(tx, ty) : 0;
       if (o && !crushable(o)) v *= 0.5;
     }
     if (v <= 0) v = 0.15; // stuck in something it shouldn't be in; let it crawl out
@@ -173,7 +173,12 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
     const last = t.path.length === 1;
     if (d < (last ? 0.6 : Math.max(1.4, t.stats.radius * 0.6))) {
       t.path.shift();
-      if (!t.path.length) t.goal = null;
+      if (!t.path.length) {
+        // Long trips are planned in legs: plan the next one until we're there.
+        const goal = t.goal;
+        t.goal = null;
+        if (goal && Math.hypot(goal.x - t.x, goal.y - t.y) > 6) planPath(g, t, goal.x, goal.y);
+      }
       continue;
     }
     wantRot = Math.atan2(wp.y - t.y, wp.x - t.x);

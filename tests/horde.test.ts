@@ -105,13 +105,13 @@ describe('going anywhere', () => {
     const mode = tankNav(p);
     const m = g.map;
     const tx = Math.floor(p.x) + 20, ty = Math.floor(p.y);
-    m.obs[ty * m.size + tx] = OBS.CLIFF;
-    m.ter[ty * m.size + tx + 1] = TER.LAVA;
+    m.set(tx, ty, { obs: OBS.CLIFF });
+    m.set(tx + 1, ty, { ter: TER.LAVA });
     expect(m.blocked(tx, ty, mode)).toBe(false);
     expect(m.blocked(tx + 1, ty, mode)).toBe(false);
     expect(m.blocked(tx, ty, 'ground')).toBe(true);
     // A wall of cliff all the way across still has a path through it.
-    for (let y = ty - 60; y <= ty + 60; y++) m.obs[y * m.size + tx] = OBS.CLIFF;
+    for (let y = ty - 60; y <= ty + 60; y++) m.set(tx, y, { obs: OBS.CLIFF });
     m.invalidateNav();
     const path = findPath(m, p.x, p.y, tx + 15, ty, { radius: p.stats.radius * 0.85, mode, traction: TRACTION[p.drive], climb: true });
     expect(path).not.toBeNull();
@@ -121,7 +121,7 @@ describe('going anywhere', () => {
     const g = game(9);
     const p = g.player;
     const m = g.map;
-    for (let y = -15; y <= 15; y++) for (let x = -15; x <= 15; x++) m.ter[(Math.floor(p.y) + y) * m.size + Math.floor(p.x) + x] = TER.LAVA;
+    for (let y = -15; y <= 15; y++) for (let x = -15; x <= 15; x++) m.set(Math.floor(p.x) + x, Math.floor(p.y) + y, { ter: TER.LAVA });
     const hp = p.hp;
     run(g, 2);
     expect(p.hp).toBeLessThan(hp);
@@ -136,7 +136,7 @@ describe('going anywhere', () => {
     expect(ownsDrive(g, 'tracks')).toBe(true);
     expect(ownsDrive(g, 'hover')).toBe(false);
     const m = g.map;
-    for (let y = -30; y <= 30; y++) for (let x = -30; x <= 30; x++) m.ter[(Math.floor(p.y) + y) * m.size + Math.floor(p.x) + x] = TER.DUNE;
+    for (let y = -30; y <= 30; y++) for (let x = -30; x <= 30; x++) m.set(Math.floor(p.x) + x, Math.floor(p.y) + y, { ter: TER.DUNE });
     expect(driveScore(g, 'tracks')).toBeGreaterThan(driveScore(g, 'wheels'));
     g.driveSwapT = 0;
     g.timers.drive = 0;

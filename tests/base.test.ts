@@ -149,16 +149,13 @@ describe('the fortress is a full facility', () => {
     const g = game();
     const p = g.player;
     const x0 = Math.floor(p.x) - 3, y0 = Math.floor(p.y - p.stats.length / 2) - 12;
-    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) {
-      g.map.obs[y * g.map.size + x] = OBS.ROCK;
-      g.map.oh[y * g.map.size + x] = 3;
-    }
+    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) g.map.set(x, y, { obs: OBS.ROCK, oh: 3 });
     const startY = p.y;
     g.driveInput = { x: 0, y: -1, active: true };
     for (let i = 0; i < 60 * 6; i++) stepWorld(g, 1 / 60);
     expect(p.y).toBeLessThan(startY - 14);
     let left = 0;
-    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) if (g.map.obs[y * g.map.size + x]) left++;
+    for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) if (g.map.getObs(x, y)) left++;
     expect(left).toBeLessThan(6);
     expect(g.dirtyChunks.size + (g.navDirty ? 1 : 0)).toBeGreaterThanOrEqual(0);
     void ccTo;

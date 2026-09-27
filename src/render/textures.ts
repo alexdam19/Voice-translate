@@ -724,6 +724,26 @@ const MODULE_ART: Record<string, (p: Pix) => void> = {
   },
 };
 
+/** Soldier nests: a sandbag ring around a firing step, with a colored ammo crate. */
+function nestArt(crate: string): (p: Pix) => void {
+  return (p) => {
+    p.fill('#4a4636');
+    p.rect(3, 3, 10, 10, '#5c5644');
+    for (let i = 0; i < 16; i += 3) {
+      p.rect(i, 0, 3, 2, i % 2 ? '#a89a70' : '#968a62');
+      p.rect(i, 14, 3, 2, i % 2 ? '#968a62' : '#a89a70');
+      p.rect(0, i, 2, 3, i % 2 ? '#968a62' : '#a89a70');
+      p.rect(14, i, 2, 3, i % 2 ? '#a89a70' : '#968a62');
+    }
+    p.rect(6, 6, 4, 4, crate);
+    p.rect(6, 6, 4, 1, '#ffffff');
+  };
+}
+MODULE_ART.nest_rifle = nestArt('#ffe082');
+MODULE_ART.nest_grenade = nestArt('#ffab40');
+MODULE_ART.nest_rocket = nestArt('#ff5252');
+MODULE_ART.nest_flame = nestArt('#ff6d00');
+
 export const MODULE_COLOR: Record<string, string> = {
   bridge: '#4dd0e1', reactor: '#ffb300', fission: '#76ff03', engine: '#8d6e63', ion_engine: '#40c4ff', quarters: '#bcaaa4',
   barracks: '#9e9d24', medbay: '#ef5350', hydroponics: '#66bb6a', cargo: '#a1887f', vault: '#ffd740', refinery: '#ff7043',
@@ -734,7 +754,7 @@ export const MODULE_COLOR: Record<string, string> = {
   ammo_depot: '#c8a44a', command_uplink: '#ffd740', salvo_rack: '#ff5722', smoke_launcher: '#9e9e9e', drone_bay: '#40c4ff',
   mine_layer: '#ffd740', jet_hangar: '#90caf9', teleporter: '#18ffff', dome_projector: '#69f0ae', airstrike: '#ff6e40',
   nuke_silo: '#ffd600', mech_bay: '#ff8f00', orbital: '#ff1744', obelisk: '#ff9100', chrono_engine: '#18ffff', dragon_roost: '#ff3d00',
-  storm_engine: '#82b1ff',
+  storm_engine: '#82b1ff', nest_rifle: '#ffe082', nest_grenade: '#ffab40', nest_rocket: '#ff5252', nest_flame: '#ff6d00',
 };
 
 let atlas: Atlas | null = null;
@@ -768,6 +788,24 @@ export function getAtlas(): Atlas {
     });
   }
   for (const [k, fn] of Object.entries(MODULE_ART)) a.add(`mod_${k}`, fn, k.length * 41);
+  // Stories: lit windows, and the floor you see in a cutaway of a deck below the roof.
+  a.add('windows', (p) => {
+    p.fill('#1a1c20');
+    for (const x of [1, 9]) {
+      p.rect(x, 4, 6, 8, '#ffcc66');
+      p.rect(x, 4, 6, 2, '#fff1c4');
+      p.rect(x + 3, 4, 1, 8, '#6a5530');
+    }
+  });
+  a.add('windows_dark', (p) => {
+    p.fill('#1a1c20');
+    for (const x of [1, 9]) p.rect(x, 4, 6, 8, '#2c3440');
+  });
+  a.add('floor', (p) => {
+    p.ground(['#3a3f46', '#40464e', '#363b42'], 4, 0.15);
+    for (let i = 0; i < 16; i += 4) p.rect(i, 0, 1, 16, '#2a2e34');
+    p.rect(0, 0, 16, 1, '#50565e');
+  });
   a.add('mod_side', (p) => {
     p.ground(['#3e464e', '#465058', '#4e5862'], 4, 0.2);
     p.rect(0, 0, 16, 1, '#6a7680');

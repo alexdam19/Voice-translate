@@ -145,8 +145,15 @@ export function stepWorld(g: Game, dt: number): void {
     g.timers.vision -= dt;
     if (g.timers.vision <= 0) {
       g.timers.vision = 0.2;
+      // The world streams in around the fortress (features by sector, terrain by chunk).
+      g.gen.focus(p.x, p.y);
       updateVision(g);
       respawnNodes(g);
+    }
+    g.timers.evict -= dt;
+    if (g.timers.evict <= 0) {
+      g.timers.evict = 6;
+      g.map.evict(p.x, p.y, 480);
     }
   }
   for (let i = g.floats.length - 1; i >= 0; i--) {
