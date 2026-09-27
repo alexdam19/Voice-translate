@@ -5,7 +5,7 @@ import { Fog } from '../shared/fog';
  * Fog of war: one byte per tile (0 unexplored, ~110 explored, 255 in sight) for a window of the world around the
  * camera, sampled by every world material so terrain outside your vision goes dim.
  */
-const FW = 512;
+const FW = 768;
 const data = new Uint8Array(FW * FW);
 export const fowTexture = new DataTexture(data, FW, FW, RedFormat, UnsignedByteType);
 fowTexture.magFilter = LinearFilter;

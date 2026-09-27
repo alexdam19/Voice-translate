@@ -596,6 +596,18 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 .hud-bottom { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 14px; }
 .hp-box { width: 250px; background: rgba(13, 14, 20, 0.88); border: 2px solid var(--edge); padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; position: relative; }
 .hp-box .tank-info { cursor: pointer; }
+.drive-gauge { display: grid; grid-template-columns: auto 10px 1fr; grid-template-rows: auto auto; gap: 2px 8px; align-items: center; }
+.dg-spd { grid-row: span 2; display: flex; align-items: baseline; gap: 3px; min-width: 64px; }
+.dg-spd b { font-family: var(--px); font-size: 22px; color: #e6edf2; }
+.dg-spd small { font-size: 10px; color: var(--dim); }
+.dg-thr { grid-row: span 2; align-self: stretch; position: relative; background: #111318; border: 1px solid #3c4147; min-height: 30px; }
+.dg-thr i { position: absolute; left: 0; right: 0; bottom: 0; background: #8fa6ba; }
+.dg-thr i.rev { background: #ffab00; }
+.dg-lr { display: grid; grid-template-columns: 10px 1fr; gap: 2px 4px; align-items: center; font-size: 9px; color: var(--dim); font-family: var(--px); }
+.dg-side { height: 5px; background: #111318; border: 1px solid #2a2e34; }
+.dg-side i { display: block; height: 100%; background: #6fa8dc; }
+.dg-side i.rev { background: #ffab00; }
+.dg-note { font-family: var(--px); font-size: 9px; color: #8fa6ba; letter-spacing: 1px; }
 .hp-box .kit-btn { position: absolute; right: -2px; top: -48px; width: 46px; height: 40px; }
 .hp-box .kit-btn img { width: 26px; height: 26px; }
 .hand-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
@@ -916,6 +928,11 @@ html.touch .joy { display: block; }
   .hud-bottom { bottom: 3px; flex-direction: column; align-items: center; gap: 2px; }
   .hp-box { width: auto; align-self: stretch; padding: 2px 3px; gap: 0; border-width: 1px; }
   .hp-box .tank-info { display: none; }
+  .drive-gauge { gap: 1px 4px; }
+  .dg-spd { min-width: 44px; }
+  .dg-spd b { font-size: 14px; }
+  .dg-thr { min-height: 18px; }
+  .dg-note { display: none; }
   .hp-bar { height: 13px; border-width: 1px; }
   .hp-bar .txt { font-size: 8px; line-height: 11px; }
   .hp-bar .shield { height: 3px; }

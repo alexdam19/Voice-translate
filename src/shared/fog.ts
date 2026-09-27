@@ -6,7 +6,7 @@ import { CH } from './map';
  */
 export class Fog {
   /** Visibility window (tiles per side). */
-  static readonly W = 224;
+  static readonly W = 400;
   ox = 0;
   oy = 0;
   readonly vis = new Uint8Array(Fog.W * Fog.W);

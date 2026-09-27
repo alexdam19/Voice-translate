@@ -1,5 +1,5 @@
 import { getItem } from '../shared/items';
-import { REGION_INFO, type Region, type RegionKind } from '../shared/mapgen';
+import { MS_HULL_R, MS_PYLON_R, MS_SCALE, REGION_INFO, type Region, type RegionKind } from '../shared/mapgen';
 import { CLASSES, type HullClass } from './classes';
 import { CC_COMMANDER_LEVEL, chassisForCC } from './defs';
 import type { Enemy } from './entities';
@@ -40,7 +40,7 @@ export interface Campaign {
 export const newCampaign = (): Campaign => ({ bossesDown: [], installed: [], visited: false, finale: 'none', finaleT: 0, devourer: false });
 
 /** Docking range around the Mothership. */
-export const DOCK_R = 120;
+export const DOCK_R = MS_HULL_R + 110;
 const FINALE_TIME = 360;
 
 export function isDocked(g: Game): boolean {
@@ -149,7 +149,7 @@ export function updateCampaign(g: Game, dt: number): void {
  */
 function updateSiege(g: Game, dt: number, dMs: number): void {
   const ms = g.gen.mothership!;
-  if (dMs > 900) return;
+  if (dMs > MS_PYLON_R + 1000) return;
   g.timers.siege -= dt;
   if (g.timers.siege <= 0) {
     g.timers.siege = 1.2;
@@ -160,7 +160,7 @@ function updateSiege(g: Game, dt: number, dMs: number): void {
       const out = Math.atan2(ms.y - 5120, ms.x - 5120);
       for (let i = 0; i < 3; i++) {
         const a = out + (Math.random() - 0.5) * 2.4;
-        const d = 240 + Math.random() * 40;
+        const d = MS_PYLON_R + 70 + Math.random() * 40 * MS_SCALE;
         const e = g.spawnEnemy(Math.random() < 0.8 ? 'swarmer' : 'leaper', ms.x + Math.cos(a) * d, ms.y + Math.sin(a) * d, 5);
         e.siege = true;
         e.aggro = false;
@@ -172,9 +172,9 @@ function updateSiege(g: Game, dt: number, dMs: number): void {
   if (g.timers.pylon <= 0) {
     g.timers.pylon = 0.35;
     for (const e of g.enemies) {
-      if (!e.siege || e.hp <= 0 || Math.hypot(e.x - ms.x, e.y - ms.y) > 175) continue;
+      if (!e.siege || e.hp <= 0 || Math.hypot(e.x - ms.x, e.y - ms.y) > MS_PYLON_R + 7) continue;
       const a = Math.atan2(e.y - ms.y, e.x - ms.x);
-      g.fx.push({ t: 'beam', x0: ms.x + Math.cos(a) * 168, y0: ms.y + Math.sin(a) * 168, x1: e.x, y1: e.y, color: '#18ffff', w: 0.18, life: 0.15 });
+      g.fx.push({ t: 'beam', x0: ms.x + Math.cos(a) * MS_PYLON_R, y0: ms.y + Math.sin(a) * MS_PYLON_R, x1: e.x, y1: e.y, color: '#18ffff', w: 0.18, life: 0.15 });
       e.hp = 0;
       g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#18ffff', n: 3 });
       break;
@@ -187,7 +187,7 @@ export function siegeTarget(g: Game, e: Enemy): { x: number; y: number } | null 
   const ms = g.gen.mothership;
   if (!ms) return null;
   const p = g.player;
-  if (!p.dead && p.edgeDist(e.x, e.y) < 14) return null;
+  if (!p.dead && p.edgeDist(e.x, e.y) < (p.fortress ? 40 : 14)) return null;
   return { x: ms.x, y: ms.y };
 }
 
@@ -209,7 +209,7 @@ function updateFinale(g: Game, dt: number): void {
     const room = Math.max(0, 700 - alive);
     for (let i = 0; i < Math.min(room, 5); i++) {
       const a = Math.random() * Math.PI * 2;
-      const d = 90 + Math.random() * 30;
+      const d = p.stats.length / 2 + (p.fortress ? 110 : 40) + Math.random() * 30;
       const kinds = ['swarmer', 'swarmer', 'leaper', 'z_runner', 'skeleton', 'cy_hound', 'bat'];
       const e = g.spawnEnemy(kinds[Math.floor(Math.random() * kinds.length)], p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, 7);
       e.horde = true;
@@ -219,7 +219,7 @@ function updateFinale(g: Game, dt: number): void {
   if (!c.devourer && c.finaleT < FINALE_TIME - 45) {
     c.devourer = true;
     const a = Math.atan2(ms.y - 5120, ms.x - 5120);
-    const e = g.spawnEnemy('boss_devourer', ms.x + Math.cos(a) * 200, ms.y + Math.sin(a) * 200, 8);
+    const e = g.spawnEnemy('boss_devourer', ms.x + Math.cos(a) * (MS_PYLON_R + 100), ms.y + Math.sin(a) * (MS_PYLON_R + 100), 8);
     e.aggro = true;
     e.region = -1;
     g.hooks.toast('THE DEVOURER RISES FROM THE MARSH. Kill it before it reaches the ship!', '#ff1744');

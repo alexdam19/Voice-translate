@@ -106,6 +106,9 @@ export interface Target {
   flying: boolean;
 }
 
+/** How many crawler track marks stay on the ground (each a 4 m stretch of one crawler bank). */
+export const TRACK_MARKS = 5000;
+
 export class Game {
   gen: WorldGen;
   map: GameMap;
@@ -234,6 +237,8 @@ export class Game {
   navDirty = false;
   /** Building sections coming down after the fortress broke through them (tile, when, height). */
   collapses: { tx: number; ty: number; t: number; fx: number; fy: number }[] = [];
+  /** Crawler track marks pressed into the ground: a ring buffer of (x, y, heading), newest at `head - 1`. */
+  trackMarks = { buf: new Float32Array(TRACK_MARKS * 3), n: 0, head: 0, ver: 0 };
 
   constructor(seed: number, gen?: WorldGen, klass: HullClass = 'juggernaut') {
     this.gen = gen ?? generateWorld(seed);

@@ -308,8 +308,9 @@ export interface HullPalette {
 
 export const HULLS: Record<string, HullPalette> = {
   // Gunmetal black with cyan running lights: part land cruiser, part night-time street machine.
-  player: { plate: '#3e454c', seam: '#23282d', trim: '#5c666e', accent: '#26c6da' },
-  rival: { plate: '#3c2c2e', seam: '#1e1416', trim: '#6e3c3c', accent: '#ff1744' },
+  // Matte black and graphite: an armoured building, not a spaceship.
+  player: { plate: '#2b2e32', seam: '#17191c', trim: '#3c4147', accent: '#8fa6ba' },
+  rival: { plate: '#2e2829', seam: '#171314', trim: '#443a3b', accent: '#c62828' },
   outrider: { plate: '#4e7a6e', seam: '#34524a', trim: '#7aa89a', accent: '#ffca28' },
   enemy: { plate: '#7a4a3a', seam: '#4e2e24', trim: '#a0684e', accent: '#ff3d00' },
   outpost: { plate: '#6a6660', seam: '#48443e', trim: '#8a8680', accent: '#ff1744' },
@@ -822,7 +823,7 @@ export function getAtlas(): Atlas {
   a.add('rubber', (p) => p.ground(['#18181a', '#1e1e20', '#242426'], 4, 0.2));
   a.add('hazard', (p) => p.stripes(0, 0, 16, 16, '#ffc400', '#1e1e1e', 8));
   const solids: Record<string, string> = {
-    white: '#ffffff', glow_yellow: '#ffea00', glow_cyan: '#18ffff', glow_red: '#ff1744', glow_green: '#76ff03', glow_purple: '#e040fb',
+    white: '#ffffff', strip_white: '#e6edf2', strip_blue: '#6fa8dc', glow_amber: '#ffab00', glass: '#1c262e', glow_yellow: '#ffea00', glow_cyan: '#18ffff', glow_red: '#ff1744', glow_green: '#76ff03', glow_purple: '#e040fb',
     glow_orange: '#ff9100', glow_blue: '#40c4ff', bone: '#e8e0cc', wood: '#6d4c41', cactus: '#558b2f', crystal_c: '#80deea', crystal_g: '#b2ff59',
     crystal_p: '#ea80fc', mush: '#ab47bc', stalk: '#e0d6c2', canvas: '#a1887f', rust: '#8d4a2a', skin: '#e0ac69', black: '#101010',
   };

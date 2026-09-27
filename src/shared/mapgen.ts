@@ -96,6 +96,12 @@ export type PropKind =
 /* ---------------------------------------------------------------------- */
 
 export type Faction = 'monster' | 'zombie' | 'necro' | 'cyborg' | 'military' | 'raider';
+/** The Mothership is built at 1x and shown (and collides) at this scale: a ship the size of a city, dwarfing a Titan. */
+export const MS_SCALE = 3;
+/** Radius of its hull (collision) and of the ring of defense pylons around its landing field. */
+export const MS_HULL_R = 62 * MS_SCALE;
+export const MS_PYLON_R = 168 * MS_SCALE;
+
 export type RegionKind = 'city' | 'military' | 'cyborg' | 'zombie' | 'necro' | 'monster' | 'mothership';
 
 export interface Region {
@@ -270,8 +276,8 @@ export class OpenWorld implements WorldGen {
     major('monster', nestA, 4380, 150);
     // The Mothership: at the very edge of the world, opposite the brood it's at war with.
     const ma = -Math.PI * 0.75 + jit() * 0.5;
-    const ms = major('mothership', ma, 4520, 190);
-    this.mothership = { x: ms.x, y: ms.y, r: 70 };
+    const ms = major('mothership', ma, 4520 - 190 * (MS_SCALE - 1) * 0.55, 190 * MS_SCALE);
+    this.mothership = { x: ms.x, y: ms.y, r: 70 * MS_SCALE };
     this.buildRoads(rng);
     this.map = new GameMap(MAP_SIZE, (c) => this.fill(c));
   }
@@ -492,7 +498,7 @@ export class OpenWorld implements WorldGen {
 
   private inMothership(x: number, y: number, r: number): boolean {
     const m = this.mothership;
-    return !!m && Math.hypot(x - m.x, y - m.y) < 190 + r;
+    return !!m && Math.hypot(x - m.x, y - m.y) < 190 * MS_SCALE + r;
   }
 
   /** Streams features around (x, y): the 3x3 sectors around it become the active lists. */
@@ -577,7 +583,7 @@ export class OpenWorld implements WorldGen {
     }
     const roads = this.roadsNear(x0 - 6, y0 - 6, x0 + CH + 6, y0 + CH + 6);
     const ms = this.mothership;
-    const nearMs = Math.abs(ms.x - (x0 + 16)) < 230 && Math.abs(ms.y - (y0 + 16)) < 230;
+    const nearMs = Math.abs(ms.x - (x0 + 16)) < 200 * MS_SCALE && Math.abs(ms.y - (y0 + 16)) < 200 * MS_SCALE;
     for (let ly = 0; ly < CH; ly++) {
       for (let lx = 0; lx < CH; lx++) {
         const x = x0 + lx, y = y0 + ly;
@@ -674,14 +680,14 @@ export class OpenWorld implements WorldGen {
         // The Mothership's landing field: flat deck plating ringed by defense pylons.
         if (nearMs) {
           const d = Math.hypot(x + 0.5 - ms.x, y + 0.5 - ms.y);
-          if (d < 185) {
-            t = d < 150 ? TER.METAL : TER.CONCRETE;
+          if (d < 185 * MS_SCALE) {
+            t = d < 150 * MS_SCALE ? TER.METAL : TER.CONCRETE;
             o = 0;
             h = 0;
-            const ring = Math.abs(d - 168);
-            if (ring < 1.2 && hash2(Math.floor(Math.atan2(y - ms.y, x - ms.x) * 30), 7, seed) < 0.35) {
+            const ring = Math.abs(d - MS_PYLON_R);
+            if (ring < 2.4 && hash2(Math.floor(Math.atan2(y - ms.y, x - ms.x) * 30 * MS_SCALE), 7, seed) < 0.35) {
               o = OBS.PILLAR;
-              h = 10;
+              h = 30;
             }
           }
         }

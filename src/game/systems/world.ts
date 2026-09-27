@@ -256,7 +256,8 @@ export function updateOutposts(g: Game): void {
     if (g.outpostsDown.has(o.id)) continue;
     const d = Math.hypot(o.x - p.x, o.y - p.y);
     const live = g.outpostTanks.get(o.id);
-    if (!live && d < 75) {
+    const on = g.player.fortress ? 280 : 75;
+    if (!live && d < on) {
       const t = buildOutpost(o.threat, g.seed + o.id * 77);
       t.x = o.x;
       t.y = o.y;
@@ -265,7 +266,7 @@ export function updateOutposts(g: Game): void {
       (t as Tank & { outpostId?: number }).outpostId = o.id;
       g.outpostTanks.set(o.id, t);
       g.tanks.push(t);
-    } else if (live && d > 110 && !live.dead) {
+    } else if (live && d > on * 1.4 && !live.dead) {
       g.tanks = g.tanks.filter((t) => t !== live);
       g.outpostTanks.delete(o.id);
     }

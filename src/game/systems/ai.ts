@@ -217,7 +217,8 @@ function shootAt(g: Game, e: Enemy, tx: number, ty: number, kind: 'spit' | 'bull
 const deckY = (t: Tank): number => t.deckY(0);
 
 /** How many creatures fit on a hull at once. */
-export const latchCap = (t: Tank): number => Math.max(6, Math.floor((t.stats.length * t.stats.width) / 14));
+/** How many can be aboard a hull at once (a Titan's roof has room for a mob, but only so many find a way up). */
+export const latchCap = (t: Tank): number => Math.max(6, Math.min(t.fortress ? 180 : 1e9, Math.floor((t.stats.length * t.stats.width) / 14)));
 
 /** Pile height (world units) along each 2.5-unit stretch of a hull's perimeter, rebuilt every step. */
 const piles = new Map<number, Float32Array>();
@@ -302,7 +303,8 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
   e.y = w.y;
   e.z = deckY(t);
   e.face = l.lz >= 0 ? -1 : 1;
-  damageTank(g, t, e.dmg * 0.55 * dt * (e.elite ? 1.5 : 1), { silent: true });
+  // On a Titan they're chewing at armour plate and hatches, not a thin deck.
+  damageTank(g, t, e.dmg * (t.fortress ? 0.22 : 0.55) * dt * (e.elite ? 1.5 : 1), { silent: true });
   // Boarders on the roof go for the soldiers standing there.
   if (t === g.player && Math.random() < dt * 0.012 * (e.elite ? 3 : 1)) troopCasualty(g, 'soldier', 'Boarders killed a soldier on the roof.');
   if (Math.random() < dt * 0.6) {
@@ -828,7 +830,7 @@ export function updateEnemyTank(g: Game, t: Tank, dt: number): void {
   const p = g.player;
   const d = Math.hypot(p.x - t.x, p.y - t.y);
   // Rivals hunt you across the map; raiders only fight what they run into.
-  const aggro = d < 42 || t.lastHitAt > g.time - 8 || (t.kind === 'rival' && d < 260);
+  const aggro = p.edgeDist(t.x, t.y) < 42 + t.stats.length / 2 || t.lastHitAt > g.time - 8 || (t.kind === 'rival' && d < (p.fortress ? 700 : 260));
   const ai = (t as Tank & { ai?: { repath: number; orbit: number } }).ai ??= { repath: 0, orbit: Math.random() < 0.5 ? 1 : -1 };
   ai.repath -= dt;
   if (aggro && !p.dead) {

@@ -1,7 +1,8 @@
 import { CHUNK } from '../../shared/constants';
+import { TRACK_MARKS } from '../game';
 import { crushable, navModeFor, OBS_COLOR, TER, TRACTION, type NavMode } from '../../shared/map';
 import { findPath, moveCircle, resolveCircle } from '../../shared/motion';
-import { NODE_INFO } from '../../shared/mapgen';
+import { MS_HULL_R, NODE_INFO } from '../../shared/mapgen';
 import { turnToward, wrapAngle } from '../../shared/types';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
@@ -97,6 +98,80 @@ function crushTiles(t: Tank, full: boolean): number[] {
   return out;
 }
 
+/** Which of a Titan's crawlers is under a local point (-1 if none): 0-3 left side front to back, 4-7 right. */
+export function crawlerAt(t: Tank, lx: number, lz: number): number {
+  const L = t.rows * t.cell, W = t.cols * t.cell;
+  if (Math.abs(lz) < W / 2 - 12 || Math.abs(lx) > L / 2) return -1;
+  const i = Math.max(0, Math.min(3, Math.floor((L / 2 - lx) / (L / 4))));
+  return (lz < 0 ? 0 : 4) + i;
+}
+
+/** Rubble under a crawler lifts it; the crawlers behind ride over the same heap as they reach it. */
+function bumpCrawler(g: Game, t: Tank, x: number, y: number, h: number): void {
+  const l = t.toLocal(x, y);
+  const c = crawlerAt(t, l.lx, l.lz);
+  if (c < 0) return;
+  t.suspT[c] = Math.max(t.suspT[c], h);
+  const v = Math.abs(t.speed);
+  if (v < 0.3 || t.bumps.length > 24) return;
+  const seg = (t.rows * t.cell) / 4;
+  const dir = t.speed > 0 ? 1 : -1;
+  for (let k = 1; k < 4; k++) {
+    const i = (c % 4) + k * dir;
+    if (i < 0 || i > 3) break;
+    t.bumps.push({ c: (c < 4 ? 0 : 4) + i, at: g.time + (k * seg) / v, h });
+  }
+}
+
+/**
+ * The Titan's suspension: each crawler rides up over rubble, cliffs and dunes and settles again. The hull follows
+ * at half the travel (the view pitches and rolls it). Also presses track marks into the ground.
+ */
+export function updateSuspension(g: Game, t: Tank, dt: number): void {
+  const map = g.map;
+  const L = t.rows * t.cell, W = t.cols * t.cell;
+  for (let i = t.bumps.length - 1; i >= 0; i--) {
+    const b = t.bumps[i];
+    if (b.at > g.time) continue;
+    t.suspT[b.c] = Math.max(t.suspT[b.c], b.h);
+    t.bumps.splice(i, 1);
+  }
+  for (let c = 0; c < 8; c++) {
+    const i = c % 4;
+    const lx = L / 2 - L / 8 - (i * L) / 4, lz = (c < 4 ? -1 : 1) * (W / 2 - 5.5);
+    let h = 0;
+    for (const f of [-0.35, 0, 0.35]) {
+      const p = t.toWorld(lx + (f * L) / 4, lz);
+      const tx = Math.floor(p.x), ty = Math.floor(p.y);
+      if (!map.inside(tx, ty)) continue;
+      const o = map.getObs(tx, ty);
+      // Cliffs and anything it can't crush: it climbs them.
+      if (o && !crushable(o)) h = Math.max(h, Math.min(4, 1 + map.getOh(tx, ty) * 0.5));
+      const ter = map.getTer(tx, ty);
+      if (ter === TER.DUNE || ter === TER.SNOW) h = Math.max(h, 0.7 + 0.6 * Math.sin(p.x * 0.07 + p.y * 0.05));
+      else if (ter === TER.CRATER || ter === TER.BASALT) h = Math.max(h, 0.3 + 0.3 * Math.sin(p.x * 0.19 - p.y * 0.13));
+    }
+    t.suspT[c] = Math.max(t.suspT[c] * Math.exp(-dt * 2.2), h);
+    t.susp[c] += (t.suspT[c] - t.susp[c]) * (1 - Math.exp(-dt * 5));
+  }
+  // Track marks: the two outer crawler banks press a 4 m stretch every 4 m.
+  if (t !== g.player && t.kind !== 'rival') return;
+  t.markD += Math.abs(t.speed) * dt;
+  if (t.markD < 4) return;
+  t.markD = 0;
+  const tm = g.trackMarks;
+  for (const s of [-1, 1]) {
+    const p = t.toWorld(-L / 2 + 2, s * (W / 2 - 5.5));
+    const k = tm.head * 3;
+    tm.buf[k] = p.x;
+    tm.buf[k + 1] = p.y;
+    tm.buf[k + 2] = t.rot;
+    tm.head = (tm.head + 1) % TRACK_MARKS;
+    tm.n = Math.min(TRACK_MARKS, tm.n + 1);
+  }
+  tm.ver++;
+}
+
 /** The fortress rolls over rocks, ruins, wrecks and props, flattening them. */
 export function crushUnder(g: Game, t: Tank, full = false): void {
   const map = g.map;
@@ -113,6 +188,7 @@ export function crushUnder(g: Game, t: Tank, full = false): void {
     g.markDirty(tx, ty);
     n++;
     heavy += h;
+    if (t.fortress) bumpCrawler(g, t, tx + 0.5, ty + 0.5, Math.min(2.5, 0.4 + h * 0.3));
     if (n <= 6) {
       g.fx.push({ t: 'spark', x: tx + 0.5, y: ty + 0.5, color: OBS_COLOR[o] ?? '#8d6e63', n: 5 });
       g.fx.push({ t: 'dust', x: tx + 0.5, y: ty + 0.5, color: '#a1887f' });
@@ -297,6 +373,7 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
     break;
   }
   if (stunned) throttle = 0;
+  t.throttle = throttle;
   // Ground changes ease in over a few tenths of a second instead of jolting the speed.
   const raw = traction(g, t);
   t.trac = t.trac <= 0 ? raw : t.trac + (raw - t.trac) * (1 - Math.exp(-dt * 6));
@@ -340,6 +417,7 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   t.sideSpeed[1] = t.speed - t.yawRate * halfW;
   t.sidePhase[0] += t.sideSpeed[0] * dt;
   t.sidePhase[1] += t.sideSpeed[1] * dt;
+  if (t.fortress) updateSuspension(g, t, dt);
 }
 
 /** Keeps tanks from overlapping each other, nodes and the rune altars. */
@@ -371,10 +449,11 @@ export function separateTanks(g: Game): void {
   const ms = g.gen.mothership;
   if (ms) {
     for (const t of all) {
-      if (Math.abs(t.x - ms.x) > 120 || Math.abs(t.y - ms.y) > 120) continue;
+      const reach = MS_HULL_R + t.stats.length / 2 + 5;
+      if (Math.abs(t.x - ms.x) > reach || Math.abs(t.y - ms.y) > reach) continue;
       for (const c of t.circles()) {
         const dx = c.x - ms.x, dy = c.y - ms.y, d = Math.hypot(dx, dy);
-        const min = 62 + c.r;
+        const min = MS_HULL_R + c.r;
         if (d >= min || d < 1e-6) continue;
         t.x += (dx / d) * (min - d);
         t.y += (dy / d) * (min - d);

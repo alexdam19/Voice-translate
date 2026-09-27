@@ -175,8 +175,19 @@ export class Tank {
   treadPhase = 0;
   /** Turn rate (rad/s), each side's crawler speed (m/s, left/right) and how far each side's tracks have run. */
   yawRate = 0;
+  /** What the driver is asking for this frame (-0.5 reverse .. 1 full ahead). */
+  throttle = 0;
   sideSpeed: [number, number] = [0, 0];
   sidePhase: [number, number] = [0, 0];
+  /**
+   * A Titan's eight crawlers (0-3 left, front to back; 4-7 right): how far each has ridden up on its suspension (m),
+   * where it's heading, and bumps waiting to reach the crawlers behind.
+   */
+  susp = new Float32Array(8);
+  suspT = new Float32Array(8);
+  bumps: { c: number; at: number; h: number }[] = [];
+  /** Metres driven since the last track mark. */
+  markD = 0;
   lastHitAt = -99;
   /** Research and crew applied on recalc (player-side). */
   tech: Set<string> = new Set();
@@ -569,6 +580,8 @@ export class Tank {
       cards, forge, training, sanctum, depot, mess, cc,
       bunks: bunkTotal, crewWanted: manning.wanted, crewManned: manning.manned, depts: manning.depts,
     };
+    // From 40 m up, a Titan's lookouts and sensors see five times as far.
+    if (this.fortress) this.stats.vision = Math.max(120, this.stats.vision * 5);
     // A bridge without its officers fights half blind.
     if (this.kind === 'main') {
       this.stats.vision *= 0.6 + 0.4 * cmdK;

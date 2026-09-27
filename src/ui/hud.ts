@@ -105,6 +105,8 @@ export class Hud {
   private shFill = h('div', 'shield');
   private hpText = h('div', 'txt');
   private tankInfo = h('div', 'tank-info');
+  /** A Titan's drive readout: speed, the throttle you're asking for, and each crawler bank's speed. */
+  private gauge = h('div', 'drive-gauge');
   private kitBtn = h('div', 'kit-btn');
   private driveChip = h('div', 'drive-chip');
   private drivePop = h('div', 'drive-pop');
@@ -201,7 +203,7 @@ export class Hud {
       act.useKit();
     });
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
-    this.hpBox.append(this.tankInfo, hp, this.kitBtn, this.driveChip, this.drivePop);
+    this.hpBox.append(this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
     this.driveChip.addEventListener('click', (e) => {
       e.stopPropagation();
       this.drivePop.classList.toggle('open');
@@ -543,7 +545,17 @@ export class Hud {
     } else this.hazard.style.display = 'none';
     // Fortress
     const ch = chassisForCC(p.stats.cc);
-    setHTML(this.tankInfo, `<b>${esc(ch.name)}</b> <span>CC L${p.stats.cc} · ${p.stats.topSpeed.toFixed(1)} spd · ${Math.round(p.stats.armor * 100)}% armor${p.stats.powerRatio < 1 ? ' · <i class="bad">LOW POWER</i>' : ''}</span>`);
+    this.gauge.style.display = p.fortress && !p.dead ? '' : 'none';
+    if (p.fortress && !p.dead) {
+      const top = Math.max(1, Math.min(9, p.stats.topSpeed));
+      const bar = (v: number): string => `<div class="dg-side"><i class="${v < -0.05 ? 'rev' : ''}" style="width:${Math.round(Math.min(1, Math.abs(v) / top) * 100)}%"></i></div>`;
+      const thr = p.throttle;
+      setHTML(this.gauge, `<div class="dg-spd"><b>${Math.round(Math.abs(p.speed) * 3.6)}</b><small>km/h${p.speed < -0.05 ? ' R' : ''}</small></div>`
+        + `<div class="dg-thr" title="Throttle"><i class="${thr < 0 ? 'rev' : ''}" style="height:${Math.round(Math.min(1, Math.abs(thr)) * 100)}%"></i></div>`
+        + `<div class="dg-lr"><span>L</span>${bar(p.sideSpeed[0])}<span>R</span>${bar(p.sideSpeed[1])}</div>`
+        + `<div class="dg-note">${p.anchored ? 'ANCHORED' : Math.abs(p.yawRate) > 0.01 ? (p.yawRate > 0 ? 'TURNING RIGHT' : 'TURNING LEFT') : Math.abs(p.speed) < 0.1 ? (thr ? 'BUILDING SPEED' : 'STOPPED') : thr === 0 ? 'COASTING' : 'UNDER WAY'}</div>`);
+    }
+    setHTML(this.tankInfo, `<b>${esc(ch.name)}</b> <span>CC L${p.stats.cc} · ${Math.round(Math.min(p.fortress ? 9 : 99, p.stats.topSpeed) * 3.6)} km/h max · ${Math.round(p.stats.armor * 100)}% armor${p.stats.powerRatio < 1 ? ' · <i class="bad">LOW POWER</i>' : ''}</span>`);
     this.hpFill.style.width = `${(p.hp / p.stats.maxHp) * 100}%`;
     const barrier = p.buff('barrier')?.v ?? 0;
     this.shFill.style.width = `${Math.min(100, ((p.shield + barrier) / p.stats.maxHp) * 100)}%`;

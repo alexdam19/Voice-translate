@@ -213,11 +213,12 @@ export class Overlay {
     if (g.mode !== 'world' || g.player.dead || (w.phase !== 'warning' && w.phase !== 'surge')) return;
     if (w.phase === 'surge' && w.spawned >= w.total) return;
     const p = g.player;
-    const x = p.x + Math.cos(w.dir) * 60, y = p.y + Math.sin(w.dir) * 60;
+    const R = p.stats.length / 2 + 60;
+    const x = p.x + Math.cos(w.dir) * R, y = p.y + Math.sin(w.dir) * R;
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
     const col = pulse > 0.5 ? '#ff1744' : '#ff8a80';
     this.edgeArrow(x, y, col, w.phase === 'warning' ? `HORDE in ${Math.ceil(w.t)}s` : 'HORDE', pulse * 6, 1.6);
-    if (this.view.width > 900) for (const s of [-0.45, 0.45]) this.edgeArrow(p.x + Math.cos(w.dir + s) * 60, p.y + Math.sin(w.dir + s) * 60, col, '', pulse * 4, 1);
+    if (this.view.width > 900) for (const s of [-0.45, 0.45]) this.edgeArrow(p.x + Math.cos(w.dir + s) * R, p.y + Math.sin(w.dir + s) * R, col, '', pulse * 4, 1);
   }
 
   /** An arrow at the edge of the play area pointing toward a world point. */
@@ -233,7 +234,7 @@ export class Overlay {
       return;
     }
     // Aim at a point on the way, so the direction is right however far away it is.
-    const k = Math.min(1, 60 / d);
+    const k = Math.min(1, (p.stats.length / 2 + 60) / d);
     this.edgeArrow(p.x + (x - p.x) * k, p.y + (y - p.y) * k, '#18ffff', `${label} · ${d > 1000 ? `${(d / 1000).toFixed(1)}km` : `${Math.round(d)}m`}`, Math.sin(performance.now() / 250) * 3, 1.1);
   }
 
@@ -274,6 +275,58 @@ export class Overlay {
     if (label) this.text(label, ax - Math.cos(a) * 30, ay - Math.sin(a) * 22, '#fff8e1', 10);
   }
 
+  /**
+   * Where the Titan is going: the lane its hull will sweep over the next ~25 s at the current speed and turn rate,
+   * so a slow, heavy machine is still easy to steer.
+   */
+  private drawDrivePath(g: Game): void {
+    const t = g.player;
+    const v = this.view;
+    const c = this.ctx;
+    const speed = Math.abs(t.speed) > 0.3 ? t.speed : t.throttle * 1.5;
+    if (Math.abs(speed) < 0.3 && Math.abs(t.yawRate) < 0.005) return;
+    const dir = speed >= 0 ? 1 : -1;
+    const L = t.stats.length / 2, W = t.stats.width / 2;
+    let x = t.x, y = t.y, a = t.rot;
+    const edges: { x: number; y: number; ok: boolean }[][] = [[], []];
+    let run = 0;
+    for (let k = 0; k <= 50 && run < 260; k++) {
+      // Start at the bow (or the stern in reverse) and walk the arc forward in half-second steps.
+      const fx = x + Math.cos(a) * L * dir, fy = y + Math.sin(a) * L * dir;
+      for (const [i, s] of [[0, -1], [1, 1]] as const) edges[i].push(v.worldToScreen(fx - Math.sin(a) * W * s, fy + Math.cos(a) * W * s, 0.2));
+      const step = speed * 0.5;
+      x += Math.cos(a) * step;
+      y += Math.sin(a) * step;
+      a += t.yawRate * 0.5;
+      run += Math.abs(step);
+    }
+    c.save();
+    c.lineWidth = 2;
+    c.setLineDash([10, 8]);
+    for (const line of edges) {
+      c.beginPath();
+      let started = false;
+      for (const p of line) {
+        if (!p.ok) continue;
+        if (!started) c.moveTo(p.x, p.y);
+        else c.lineTo(p.x, p.y);
+        started = true;
+      }
+      c.strokeStyle = dir > 0 ? 'rgba(143, 166, 186, 0.75)' : 'rgba(255, 171, 0, 0.75)';
+      c.stroke();
+    }
+    // Where it ends up: a bar across the lane.
+    const a0 = edges[0][edges[0].length - 1], a1 = edges[1][edges[1].length - 1];
+    if (a0?.ok && a1?.ok) {
+      c.setLineDash([]);
+      c.beginPath();
+      c.moveTo(a0.x, a0.y);
+      c.lineTo(a1.x, a1.y);
+      c.stroke();
+    }
+    c.restore();
+  }
+
   draw(g: Game, hoverId: number): void {
     const c = this.ctx;
     const v = this.view;
@@ -282,6 +335,7 @@ export class Overlay {
     c.imageSmoothingEnabled = false;
     const scale = 34 / v.cam.zoom;
     const onScreen = (p: { x: number; y: number; ok: boolean }): boolean => p.ok && p.x > -60 && p.y > -60 && p.x < v.width + 60 && p.y < v.height + 60;
+    if (g.mode === 'world' && g.player.fortress && !g.player.dead) this.drawDrivePath(g);
     // Enemies
     for (const e of g.enemies) {
       if (e.burrowed || (g.mode === 'world' && !g.isVisible(e.x, e.y))) continue;

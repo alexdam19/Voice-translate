@@ -1,11 +1,11 @@
 import {
   BoxGeometry, Color, DepthTexture, Fog, Group, HalfFloatType, HemisphereLight, DirectionalLight, Mesh, MeshBasicMaterial, MeshLambertMaterial,
   NearestFilter, Object3D, OrthographicCamera, PerspectiveCamera, PlaneGeometry, Raycaster, Scene, ShaderMaterial, Sprite,
-  Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, AdditiveBlending, PCFShadowMap, SphereGeometry,
+  Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, AdditiveBlending, PCFShadowMap, SphereGeometry, InstancedMesh, Matrix4, DynamicDrawUsage,
 } from 'three';
 import { getItem } from '../shared/items';
 import { RARITIES } from '../shared/rarity';
-import { RUNE_INFO } from '../shared/mapgen';
+import { MS_HULL_R, MS_SCALE, RUNE_INFO } from '../shared/mapgen';
 import { ZONES, DEAD_ZONE } from '../shared/zones';
 import type { Enemy, Pickup, Projectile } from '../game/entities';
 import { ENEMIES } from '../game/enemyDefs';
@@ -94,6 +94,10 @@ export class View {
   private debris = new Debris();
   private trans = new Transients();
   private tankModels = new Map<Tank, TankModel & { deck?: number }>();
+  /** Crawler track marks pressed into the ground behind the Titan. */
+  private marks: InstancedMesh | null = null;
+  private marksVer = -1;
+  private marksHead = 0;
   /** Which deck of your fortress the base view shows (0 = roof; lower decks are a cutaway). */
   deckView = 0;
   private creatures = new CreatureLayer();
@@ -117,7 +121,15 @@ export class View {
   private shadowMat: MeshBasicMaterial;
   private shadowGeo = new PlaneGeometry(1, 1);
   /** Camera target, distance, heading of "up the screen" (radians) and pitch (degrees). */
-  cam = { x: 320, y: 320, zoom: 38, yaw: -Math.PI / 2, pitch: 56 };
+  cam = { x: 320, y: 320, zoom: 38, yaw: -Math.PI / 2, pitch: 56, fov: 32 };
+  /** Ground radius around the camera target that can be on screen (terrain, features and creatures stream in it). */
+  get groundR(): number {
+    return this.cam.zoom * (this.cam.fov > 40 ? 1.2 : 1.6) + 10;
+  }
+  /** How much larger than life small things are drawn at the current camera distance. */
+  get unitScale(): number {
+    return Math.max(1, Math.min(4, this.cam.zoom / 60));
+  }
   /** Card being aimed: a ring on the ground where it will land. */
   aim: { x: number; y: number; r: number; color: string } | null = null;
   private aimRing: Decal;
@@ -238,6 +250,7 @@ export class View {
       const ms = g.gen.mothership;
       const m = buildMothershipModel();
       m.root.position.set(ms.x, 0, ms.y);
+      m.root.scale.setScalar(MS_SCALE);
       m.root.rotation.y = -Math.atan2(5120 - ms.y, 5120 - ms.x);
       this.world.add(m.root);
       this.mothershipVis = m;
@@ -297,22 +310,33 @@ export class View {
   }
 
   private placeCamera(): void {
+    if (this.camera.fov !== this.cam.fov) {
+      this.camera.fov = this.cam.fov;
+      this.camera.updateProjectionMatrix();
+      const px = this.rh / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
+      this.addP.mat.uniforms.pxScale.value = px;
+      this.creatures.pxScale = px;
+      this.normP.mat.uniforms.pxScale.value = px;
+    }
     const pitch = (this.cam.pitch * Math.PI) / 180;
     const D = this.cam.zoom;
     let sx = 0, sy = 0;
     if (this.shakeAmt > 0.01) {
-      sx = (Math.random() - 0.5) * this.shakeAmt;
-      sy = (Math.random() - 0.5) * this.shakeAmt;
+      // Shake in proportion to how far back the camera is, so a rumble reads the same at any zoom.
+      const k = Math.max(1, D / 40);
+      sx = (Math.random() - 0.5) * this.shakeAmt * k;
+      sy = (Math.random() - 0.5) * this.shakeAmt * k;
     }
     // The camera sits behind "up the screen" and looks along it.
     const bx = -Math.cos(this.cam.yaw) * Math.cos(pitch) * D, by = -Math.sin(this.cam.yaw) * Math.cos(pitch) * D;
     this.camera.position.set(this.cam.x + bx + sx, Math.sin(pitch) * D, this.cam.y + by + sy);
     this.camera.lookAt(this.cam.x + sx, 0, this.cam.y + sy);
     this.camera.updateMatrixWorld();
-    this.sun.position.set(this.cam.x - 26, 60, this.cam.y + 34);
-    this.sun.target.position.set(this.cam.x, 0, this.cam.y);
-    // A big fortress needs a big shadow map.
+    // A big fortress needs a big shadow map, and the sun far enough back to light all of it.
     const ext = Math.max(48, Math.round(D * 1.25 / 8) * 8);
+    const sf = ext / 48;
+    this.sun.position.set(this.cam.x - 26 * sf, 60 * sf, this.cam.y + 34 * sf);
+    this.sun.target.position.set(this.cam.x, 0, this.cam.y);
     if (ext !== this.shadowExt) {
       this.shadowExt = ext;
       const sc = this.sun.shadow.camera;
@@ -320,7 +344,7 @@ export class View {
       sc.right = ext;
       sc.top = ext;
       sc.bottom = -ext;
-      sc.far = 120 + ext * 2;
+      sc.far = (120 + ext * 2) * Math.max(1, sf * 0.6);
       sc.updateProjectionMatrix();
     }
     this.camera.far = Math.max(400, D * 6);
@@ -352,7 +376,7 @@ export class View {
   private stormParticles(g: Game, dt: number): void {
     const w = g.weather;
     if (g.mode !== 'world' || w.phase !== 'active' || !w.kind || this.stormK < 0.1) return;
-    const R = this.cam.zoom * 1.3;
+    const R = this.groundR * 0.8;
     const n = Math.min(40, Math.round(dt * 900 * this.stormK));
     const col = new Color(STORMS[w.kind].color);
     for (let i = 0; i < n; i++) {
@@ -424,7 +448,7 @@ export class View {
       for (const k of g.dirtyChunks) this.terrain?.invalidate(k % 1000, Math.floor(k / 1000));
       g.dirtyChunks.clear();
     }
-    this.terrain?.update(this.cam.x, this.cam.y, this.cam.zoom * 1.6 + 10, this.time);
+    this.terrain?.update(this.cam.x, this.cam.y, this.groundR, this.time);
     if (g.mode === 'world' && g.fogVersion !== this.lastFog) {
       this.lastFog = g.fogVersion;
       updateFow(g.fog, this.cam.x, this.cam.y);
@@ -433,6 +457,7 @@ export class View {
     g.fx.length = 0;
     this.syncFeatures(g);
     this.syncTanks(g);
+    this.syncTrackMarks(g);
     this.syncEnemies(g);
     this.syncAllies(g);
     this.syncProjectiles(g.projectiles, g);
@@ -507,7 +532,7 @@ export class View {
 
   private syncFeatures(g: Game): void {
     if (g.mode !== 'world') return;
-    const R = this.cam.zoom * 1.8 + 12;
+    const R = this.groundR * 1.1;
     for (const n of g.gen.nodes) {
       const vis = this.nodeVis.get(n.id);
       const want = n.respawnAt === 0 && this.near(n.x, n.y, R);
@@ -571,7 +596,7 @@ export class View {
       const k = g.campaign.installed.length / 6;
       (c.material as MeshBasicMaterial).opacity = 0.35 + 0.6 * k + 0.05 * Math.sin(this.time * 3);
       c.scale.setScalar(0.6 + 0.6 * k);
-      this.mothershipVis.root.visible = this.near(g.gen.mothership!.x, g.gen.mothership!.y, 700);
+      this.mothershipVis.root.visible = this.near(g.gen.mothership!.x, g.gen.mothership!.y, 700 + MS_HULL_R * 2);
     }
     if (this.gateVis) {
       this.gateVis.disc.rotation.y = this.time * 0.8;
@@ -636,8 +661,9 @@ export class View {
       }
       for (const r of m.radars) r.rotation.y = this.time * 2;
       if (m.treadMat.map) m.treadMat.map.offset.x = -((t.treadPhase * 2) % 1);
+      if (m.treadMats && m.body) this.animateCrawlers(t, m);
       // Afterburners: a flicker when idling, a flame trail when moving (hotter on Nitro).
-      if (!t.dead && visible && m.exhaust.length && this.near(t.x, t.y, this.cam.zoom * 2)) {
+      if (!t.dead && visible && m.exhaust.length && this.near(t.x, t.y, this.groundR * 1.2)) {
         const hot = t.hasBuff('nitro');
         const push = Math.min(1, Math.abs(t.speed) / Math.max(1, t.stats.topSpeed));
         for (const e of m.exhaust) {
@@ -645,6 +671,11 @@ export class View {
           const w = t.toWorld(e.lx, e.lz);
           const back = -(2 + push * 6);
           const vx = Math.cos(t.rot) * back + (Math.random() - 0.5), vy = Math.sin(t.rot) * back + (Math.random() - 0.5);
+          if (m.treadMats) {
+            // A Titan's stacks breathe dark diesel smoke that drifts off behind it.
+            this.normP.emit(w.x, w.y, e.y, vx * 0.4, vy * 0.4, 1.5, 3 + push * 3, 6, new Color(hot ? "#90a4ae" : "#2e2e30"), 0.1, 0.8, 1.2);
+            continue;
+          }
           this.addP.emit(w.x, w.y, e.y, vx, vy, 0.4, 0.18 + push * 0.25, 0.5 + push * 0.5, new Color(hot ? '#18ffff' : Math.random() < 0.5 ? '#ff9100' : '#ffd740'), 0, 0.9, -0.8);
         }
       }
@@ -669,10 +700,66 @@ export class View {
     }
   }
 
+  private syncTrackMarks(g: Game): void {
+    const tm = g.trackMarks;
+    if (!this.marks) {
+      const geo = new PlaneGeometry(4.2, 10);
+      geo.rotateX(-Math.PI / 2);
+      const mat = new MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.28, depthWrite: false });
+      this.marks = new InstancedMesh(geo, mat, tm.buf.length / 3);
+      this.marks.instanceMatrix.setUsage(DynamicDrawUsage);
+      this.marks.frustumCulled = false;
+      this.marks.renderOrder = -1;
+      this.scene.add(this.marks);
+      this.marksHead = 0;
+    }
+    if (tm.ver === this.marksVer) return;
+    // A new game (or a load) starts a fresh trail.
+    if (tm.ver < this.marksVer) this.marksHead = 0;
+    this.marksVer = tm.ver;
+    const cap = tm.buf.length / 3;
+    const mx = new Matrix4();
+    let i = this.marksHead;
+    let guard = 0;
+    while (i !== tm.head && guard++ < cap) {
+      const x = tm.buf[i * 3], y = tm.buf[i * 3 + 1], r = tm.buf[i * 3 + 2];
+      mx.makeRotationY(-r);
+      mx.setPosition(x, 0.04, y);
+      this.marks.setMatrixAt(i, mx);
+      i = (i + 1) % cap;
+    }
+    this.marksHead = tm.head;
+    this.marks.count = tm.n;
+    this.marks.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Tracks run at each side's speed, road wheels turn, crawlers ride their suspension and the hull pitches and rolls. */
+  private animateCrawlers(t: Tank, m: TankModel): void {
+    const k = m.scale;
+    for (const [i, mat] of m.treadMats!.entries()) if (mat.map) mat.map.offset.x = -((t.sidePhase[i] / (0.5 * k)) % 1);
+    let front = 0, back = 0, left = 0, right = 0;
+    m.crawlers.forEach((c, i) => {
+      // Model crawlers are built left bank first (front to back), matching the game's crawler numbering.
+      const lift = t.susp[i] ?? 0;
+      c.obj.position.y = lift / k;
+      for (const w of c.wheels) w.obj.rotation.z = -t.sidePhase[c.side] / (w.r * k);
+      if (i % 4 < 2) front += lift;
+      else back += lift;
+      if (i < 4) left += lift;
+      else right += lift;
+    });
+    const L = t.rows * t.cell, W = t.cols * t.cell;
+    const b = m.body!;
+    b.position.y = ((front + back) / 8) * 0.5 / k;
+    // Front up = nose up (rotate about the width axis); right side up = roll.
+    b.rotation.z = Math.atan2((front - back) / 4, L / 2) * 0.5;
+    b.rotation.x = -Math.atan2((right - left) / 4, W) * 0.5;
+  }
+
   private syncEnemies(g: Game): void {
     const seen = new Set<number>();
     // Everything but titans goes into one batched layer (a horde is hundreds of creatures).
-    const R = this.cam.zoom * 2.2;
+    const R = this.groundR * 1.35;
     for (const e of g.enemies) {
       seen.add(e.id);
       const visible = g.mode !== 'world' || g.isVisible(e.x, e.y) || !!e.titan;
@@ -686,14 +773,16 @@ export class View {
         continue;
       }
       // Horde runners are drawn a bit bigger than their footprint so a swarm reads from a distance.
-      const size = e.r * (e.r > 0.9 ? 2.6 : e.horde ? 3.8 : 2.9);
+      // Pulled far back to take in a 200 m Titan, a 1 m creature is a pixel or two: draw them larger than life
+      // (big things less so) so a horde still reads.
+      const size = e.r * (e.r > 0.9 ? 2.6 : e.horde ? 3.8 : 2.9) * (e.r > 2 ? Math.sqrt(this.unitScale) : this.unitScale);
       const frame = Math.floor(e.anim) % 2;
       const variant = e.hitFlash > 0 ? 'flash' : e.elite ? 'elite' : 'n';
       const cell = this.creatures.cellFor(e.kind, ENEMIES[e.kind].color, frame, variant);
       const bob = e.flying ? 1.4 + Math.sin(e.anim * 0.8) * 0.2 : 0;
       // Creatures on a hull (or mid-leap) stand on the deck; their shadow falls on it too.
       const h = (e.flying ? Math.max(bob, e.z) : e.z) + (e.stun > 0 ? 0.05 : 0);
-      this.creatures.add(e.x, e.y, h, size, cell, e.face < 0, e.r * 1.2, e.latch ? h + 0.04 : 0.04);
+      this.creatures.add(e.x, e.y, h, size, cell, e.face < 0, e.r * 1.2 * this.unitScale, e.latch ? h + 0.04 : 0.04);
     }
     this.creatures.flush();
     for (const [id, m] of this.titanVis) {
@@ -988,12 +1077,12 @@ export class View {
   private handleFx(e: FxEvent): void {
     switch (e.t) {
       case 'debris':
-        if (!this.near(e.x, e.y, this.cam.zoom * 2)) return;
+        if (!this.near(e.x, e.y, this.groundR * 1.2)) return;
         this.debris.burst(e.x, e.y, e.h, e.color, e.n, e.fx, e.fy, e.push);
         if (Math.random() < 0.5) this.normP.emit(e.x, e.y, e.h * 0.5, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0.5, 2.5, 2 + e.h * 0.2, new Color('#8a8680'), -0.3, 0.6, 1.2);
         return;
       case 'boom': {
-        if (!this.near(e.x, e.y, this.cam.zoom * 2)) return;
+        if (!this.near(e.x, e.y, this.groundR * 1.2)) return;
         const n = Math.min(60, 8 + Math.floor(e.r * 10));
         const c1 = new Color(e.color), c2 = new Color('#fff3c4'), smoke = new Color('#3e3a36');
         this.trans.flash(e.x, e.y, 0.6, e.r * 0.8, e.color, 0.16);
@@ -1006,7 +1095,7 @@ export class View {
         break;
       }
       case 'muzzle':
-        if (!this.near(e.x, e.y, this.cam.zoom * 2)) return;
+        if (!this.near(e.x, e.y, this.groundR * 1.2)) return;
         this.trans.flash(e.x, e.y, 1.1, 0.25 * e.size, '#fff59d', 0.06);
         for (let i = 0; i < 3 * e.size; i++) {
           const a = e.a + (Math.random() - 0.5) * 0.6, s = 4 + Math.random() * 6;
@@ -1014,7 +1103,7 @@ export class View {
         }
         break;
       case 'spark':
-        if (!this.near(e.x, e.y, this.cam.zoom * 2)) return;
+        if (!this.near(e.x, e.y, this.groundR * 1.2)) return;
         for (let i = 0; i < e.n; i++) {
           const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 5;
           this.addP.emit(e.x, e.y, 0.8, Math.cos(a) * s, Math.sin(a) * s, 1 + Math.random() * 3, 0.2 + Math.random() * 0.2, 0.16, new Color(e.color), 12, 0.4);

@@ -42,11 +42,13 @@ export class TerrainView {
     const c0x = Math.floor((x - radius) / CHUNK), c1x = Math.floor((x + radius) / CHUNK);
     const c0y = Math.floor((y - radius) / CHUNK), c1y = Math.floor((y + radius) / CHUNK);
     let built = 0;
+    // Catch up quickly when a lot is missing (a new game, a teleport, zooming out); trickle otherwise.
+    const budget = this.chunks.size < 0.6 * (c1x - c0x + 1) * (c1y - c0y + 1) ? 12 : 4;
     for (let cy = Math.max(0, c0y); cy <= Math.min(n - 1, c1y); cy++) {
       for (let cx = Math.max(0, c0x); cx <= Math.min(n - 1, c1x); cx++) {
         const k = this.key(cx, cy);
         if (this.chunks.has(k)) continue;
-        if (built >= 4) continue; // spread the work over frames
+        if (built >= budget) continue; // spread the work over frames
         const g = this.build(cx, cy);
         this.chunks.set(k, g);
         this.group.add(g);

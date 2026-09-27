@@ -74,7 +74,8 @@ function spawnPoint(g: Game, dir: number, spread: number): { x: number; y: numbe
   const p = g.player;
   const ext = p.stats.length / 2;
   const a = dir + (Math.random() - 0.5) * spread;
-  const d = ext + 44 + Math.random() * 16;
+  // Out past the edge of sight, so the wall of them comes over the horizon.
+  const d = ext + (p.fortress ? 110 + Math.random() * 30 : 44 + Math.random() * 16);
   return {
     x: Math.max(4, Math.min(MAP_SIZE - 4, p.x + Math.cos(a) * d)),
     y: Math.max(4, Math.min(MAP_SIZE - 4, p.y + Math.sin(a) * d)),

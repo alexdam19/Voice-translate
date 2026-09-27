@@ -43,6 +43,11 @@ interface Hover {
   label: string;
 }
 
+/** Camera distance around a Titan Crawler (m): default, nearest and furthest. Phones sit a little closer. */
+const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+const TITAN_ZOOM = COARSE ? 300 : 360;
+const TITAN_MIN = 120, TITAN_MAX = COARSE ? 520 : 700;
+
 export class App {
   game!: Game;
   view: View;
@@ -236,7 +241,10 @@ export class App {
     const p = this.game.player;
     const aspect = this.view.width / Math.max(1, this.view.height);
     const narrow = Math.max(1, Math.min(1.7, Math.sqrt(1.3 / aspect)));
-    return (this.village ? (p.stats.length * 1.95 + 10) * this.villageZoomMul : (18 + p.stats.length * 2.1) * this.zoomMul) * narrow;
+    if (this.village) return (p.stats.length * 1.95 + 10) * this.villageZoomMul * narrow;
+    // A Titan: far enough back to see the whole hull and the ground around it (the wheel zooms in and out).
+    if (p.fortress) return TITAN_ZOOM * this.zoomMul * narrow;
+    return (18 + p.stats.length * 2.1) * this.zoomMul * narrow;
   }
 
   /* ---------------------------------------------------------------- */
@@ -521,7 +529,7 @@ export class App {
     const m = this.input.mouse;
     if (!m.wheel || m.overUI || this.uiBlocking) return;
     if (this.village) this.villageZoomMul = Math.max(0.55, Math.min(1.6, this.villageZoomMul + m.wheel * 0.08));
-    else this.zoomMul = Math.max(0.6, Math.min(1.5, this.zoomMul + m.wheel * 0.07));
+    else this.zoomMul = Math.max(this.game.player.fortress ? TITAN_MIN / TITAN_ZOOM : 0.6, Math.min(this.game.player.fortress ? TITAN_MAX / TITAN_ZOOM : 1.5, this.zoomMul * (1 + m.wheel * 0.08)));
   }
 
   /** The camera always follows your fortress; inside the base it turns so the front is up. */
@@ -532,7 +540,7 @@ export class App {
     const k = 1 - Math.pow(0.002, dt);
     let tx = p.x, ty = p.y;
     // Look a little ahead of where you're driving, so you see what you're about to hit.
-    const lead = Math.max(-2, Math.min(6, p.speed * 0.9));
+    const lead = p.fortress ? Math.max(-20, Math.min(60, p.speed * 8)) : Math.max(-2, Math.min(6, p.speed * 0.9));
     this.camLead.x += (Math.cos(p.rot) * lead - this.camLead.x) * (1 - Math.pow(0.05, dt));
     this.camLead.y += (Math.sin(p.rot) * lead - this.camLead.y) * (1 - Math.pow(0.05, dt));
     if (!this.village) {
@@ -548,6 +556,7 @@ export class App {
     v.cam.x += (tx - v.cam.x) * (this.village ? k : 1 - Math.pow(0.0005, dt));
     v.cam.y += (ty - v.cam.y) * (this.village ? k : 1 - Math.pow(0.0005, dt));
     v.cam.zoom += (this.autoZoom() - v.cam.zoom) * k;
+    v.cam.fov = !this.village && g.mode === 'world' && g.player.fortress ? 45 : 32;
     const wantYaw = this.village ? p.rot : -Math.PI / 2;
     v.cam.yaw = wrapAngle(v.cam.yaw + wrapAngle(wantYaw - v.cam.yaw) * k);
     v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;

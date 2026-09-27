@@ -1,4 +1,4 @@
-import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, type Material } from 'three';
+import { BoxGeometry, CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, Object3D, type BufferGeometry, type Material } from 'three';
 import { NODE_INFO, type NodeType, type RuneKind, RUNE_INFO } from '../shared/mapgen';
 import { hash2 } from '../shared/rng';
 import { WEAPONS } from '../shared/weapons';
@@ -11,10 +11,28 @@ import type { Tank } from '../game/tank';
 const CELL = 0.5;
 const TREAD = 0.5;
 import { withFow } from './fow';
-import { GeoBuilder, type UVRect } from './geo';
+import { F, GeoBuilder, type UVRect } from './geo';
 import { getAtlas, treadTexture } from './textures';
 
 const DECK = 0.78;
+
+/** A Titan's crawlers in model units (x10 m): 11 m wide, 12 m tall; the hull proper starts above them. */
+export const TITAN_CRAWLER = { w: 1.1, h: 1.2 } as const;
+const SPONSON = 1.3;
+
+const hubGeo = new BoxGeometry(0.08, 0.08, 0.1);
+
+/** Road wheels are cylinders turned on their side (axle along Z), shared per radius. */
+const wheelGeos = new Map<number, BufferGeometry>();
+function wheelGeo(r: number): BufferGeometry {
+  let g = wheelGeos.get(r);
+  if (!g) {
+    g = new CylinderGeometry(r, r, 0.12, 10);
+    g.rotateX(Math.PI / 2);
+    wheelGeos.set(r, g);
+  }
+  return g;
+}
 
 /** World height of a tank's deck surface (the roof, or an interior deck's floor). */
 export const deckHeight = (t: Tank, deck = 0): number => t.deckY(deck);
@@ -25,6 +43,13 @@ export interface TankModel {
   lit: MeshLambertMaterial;
   glow: MeshBasicMaterial;
   treadMat: MeshLambertMaterial;
+  /** A Titan's left and right crawler tracks run at their own speeds. */
+  treadMats: [MeshLambertMaterial, MeshLambertMaterial] | null;
+  /** The hull above the crawlers (it rides on their suspension), and the eight crawlers with their road wheels. */
+  body: Object3D | null;
+  crawlers: { obj: Object3D; side: 0 | 1; lx: number; wheels: { obj: Object3D; r: number }[] }[];
+  /** Model units to metres. */
+  scale: number;
   version: number;
   radars: Object3D[];
   /** Afterburner nozzles in tank-local world units (forward, up, right). */
@@ -55,10 +80,23 @@ export function buildTankModel(t: Tank, fow: boolean, viewDeck = 0): TankModel {
   const tread = treadTexture().clone();
   tread.needsUpdate = true;
   const treadMat = new MeshLambertMaterial({ map: tread });
+  const treadMats: [MeshLambertMaterial, MeshLambertMaterial] = [0, 1].map(() => {
+    const tx = treadTexture().clone();
+    tx.needsUpdate = true;
+    return new MeshLambertMaterial({ map: tx });
+  }) as [MeshLambertMaterial, MeshLambertMaterial];
+  const crawlers: TankModel['crawlers'] = [];
+  const wheelMat = new MeshLambertMaterial({ color: '#4a4f56' });
+  const hubMat = new MeshLambertMaterial({ color: '#6b7178' });
+  if (fow) {
+    withFow(wheelMat);
+    withFow(hubMat);
+  }
   if (fow) {
     withFow(lit);
     withFow(glow);
     withFow(treadMat);
+    for (const m of treadMats) withFow(m);
   }
   const root = new Group();
   const gb = new GeoBuilder();
@@ -77,109 +115,182 @@ export function buildTankModel(t: Tank, fow: boolean, viewDeck = 0): TankModel {
   const top = cut ? HULL_BASE + (t.stories - viewDeck) * STORY_H + 0.03 : roof;
   if (dread) {
     const cls = classDef(t.klass);
+    // Class colour shows only in a few small marker lamps: the Titan is graphite, not neon.
     const clsGlow = atlas.get(t.team === 'player' ? cls.glow : pal === 'remote' ? 'glow_purple' : 'glow_red');
-    // Running gear: three tracks a side under armored, stepped skirts. Big hulls get big tracks.
-    const TL = L + 0.3;
-    const TH = 0.75;
-    for (const s of [-1, 1]) {
-      for (let b = 0; b < 3; b++) {
-        const a0 = W / 2 + b * 0.19, a1 = a0 + 0.17;
-        const z0 = s < 0 ? -a1 : a0, z1 = s < 0 ? -a0 : a1;
-        tr.box(-TL / 2, 0.04, z0, TL / 2, TH, z1, { u0: 0, v0: 0, u1: TL * 2, v1: 1 }, { u0: 0, v0: 0, u1: TL * 2, v1: 1 });
-        gb.box(TL / 2 - 0.05, 0.14, z0 + 0.01, TL / 2 + 0.14, TH - 0.1, z1 - 0.01, dark, dark);
-        gb.box(-TL / 2 - 0.12, 0.14, z0 + 0.01, -TL / 2 + 0.05, TH - 0.1, z1 - 0.01, dark, dark);
-      }
-      const zi = s < 0 ? -W / 2 - 0.6 : W / 2, zo = s < 0 ? -W / 2 : W / 2 + 0.6;
-      gb.box(-TL / 2 + 0.35, TH, zi, TL / 2 - 0.45, TH + 0.22, zo, hull, hull);
-      gb.box(TL / 2 - 0.45, TH, zi + (s < 0 ? 0.08 : 0), TL / 2 - 0.1, TH + 0.12, zo - (s > 0 ? 0.08 : 0), hull, hull);
-      gb.box(-TL / 2 + 0.05, TH, zi + (s < 0 ? 0.08 : 0), -TL / 2 + 0.35, TH + 0.12, zo - (s > 0 ? 0.08 : 0), hull, hull);
-      const zl = s < 0 ? -W / 2 - 0.64 : W / 2 + 0.6;
-      gb.box(-TL / 2 + 0.5, 0.4, zl, TL / 2 - 0.6, TH - 0.05, zl + 0.04, trim, dark);
-      gl.box(-TL / 2 + 0.7, TH + 0.06, s < 0 ? zo - 0.61 : zo - 0.01, TL / 2 - 0.8, TH + 0.1, s < 0 ? zo - 0.59 : zo + 0.01, clsGlow, clsGlow);
-    }
-    // The body: a hull base, then one story per deck, each marked by a trim band and a row of lit windows.
-    gb.box(-L / 2, 0.25, -W / 2, L / 2, cut ? top : roof, W / 2, cut ? atlas.get('floor') : deck, hull);
-    // Car sections along the length (the Snowpiercer look): seams every few cells with a coupling band.
-    const segLen = Math.max(2.4, Math.min(3.6, L / Math.max(3, Math.round(L / 3))));
-    const nSeg = Math.max(2, Math.round(L / segLen));
+    const white = atlas.get('strip_white'), blue = atlas.get('strip_blue'), amber = atlas.get('glow_amber'), red = atlas.get('glow_red');
     const bodyTop = cut ? top : roof;
-    for (let k = 1; k < nSeg; k++) {
-      const x = -L / 2 + (k * L) / nSeg;
-      for (const s of [-1, 1]) gb.box(x - 0.05, HULL_BASE - 0.1, s < 0 ? -W / 2 - 0.05 : W / 2 - 0.02, x + 0.05, bodyTop - 0.02, s < 0 ? -W / 2 + 0.02 : W / 2 + 0.05, dark, dark);
+    // Eight crawlers, four a side, each its own assembly so it can ride up over rubble on its suspension.
+    const CW = TITAN_CRAWLER.w, CH = TITAN_CRAWLER.h;
+    const gap = 0.7;
+    const CL = (L - 0.4 - 3 * gap) / 4;
+    const zIn = W / 2 - CW - 0.08;
+    for (const s of [-1, 1] as const) {
+      for (let i = 0; i < 4; i++) {
+        const xc = L / 2 - 0.2 - CL / 2 - i * (CL + gap);
+        const zc = s * (W / 2 - CW / 2 - 0.04);
+        const obj = new Group();
+        obj.position.set(xc, 0, zc);
+        const cb = new GeoBuilder(), ct = new GeoBuilder(), cg = new GeoBuilder();
+        const tuv = { u0: 0, v0: 0, u1: CL * 2, v1: 1 };
+        // Track loop: bottom run, top run and the two ends.
+        ct.box(-CL / 2 + 0.3, 0.02, -CW / 2, CL / 2 - 0.3, 0.16, CW / 2, tuv, tuv);
+        ct.box(-CL / 2 + 0.2, CH * 0.62, -CW / 2, CL / 2 - 0.2, CH * 0.62 + 0.14, CW / 2, tuv, tuv);
+        ct.wedgeX(CL / 2 - 0.3, CL / 2 + 0.05, 0.02, CH * 0.76, -CW / 2, CW / 2, -1, tuv, tuv);
+        ct.wedgeX(-CL / 2 - 0.05, -CL / 2 + 0.3, 0.02, CH * 0.76, -CW / 2, CW / 2, 1, tuv, tuv);
+        // Inner frame between the runs, the armoured housing over the top, and a suspension strut up to the hull.
+        cb.box(-CL / 2 + 0.25, 0.16, -CW / 2 + 0.12, CL / 2 - 0.25, CH * 0.62, CW / 2 - 0.12, dark, dark);
+        cb.box(-CL / 2 - 0.05, CH * 0.76, -CW / 2 - 0.04, CL / 2 + 0.05, CH, CW / 2 + 0.04, hull, hull);
+        cb.box(-CL / 2 + 0.1, CH * 0.62, -CW / 2 - 0.05, CL / 2 - 0.1, CH * 0.8, CW / 2 + 0.05, trim, dark);
+        for (const x of [-CL / 4, CL / 4]) cb.box(x - 0.18, CH, -0.2, x + 0.18, CH + 0.45, 0.2, metal, dark);
+        // Road wheels and the drive sprockets on the outer face.
+        const zo = s * (CW / 2 + 0.03);
+        const wheels: { obj: Object3D; r: number }[] = [];
+        const nW = 6;
+        for (let k = 0; k < nW; k++) {
+          const x = -CL / 2 + 0.55 + (k * (CL - 1.1)) / (nW - 1);
+          const w = new Mesh(wheelGeo(0.26), wheelMat);
+          w.position.set(x, 0.3, zo);
+          // A hub bolt pattern so you can see it turn.
+          const hub = new Mesh(hubGeo, hubMat);
+          hub.position.set(0.12, 0, s * 0.03);
+          w.add(hub);
+          obj.add(w);
+          wheels.push({ obj: w, r: 0.26 });
+        }
+        for (const x of [CL / 2 - 0.12, -CL / 2 + 0.12]) {
+          const w = new Mesh(wheelGeo(0.36), wheelMat);
+          w.position.set(x, CH * 0.42, zo);
+          for (const a of [0, Math.PI / 2]) {
+            const spoke = new Mesh(hubGeo, hubMat);
+            spoke.scale.set(5, 1, 1);
+            spoke.rotation.z = a;
+            spoke.position.z = s * 0.04;
+            w.add(spoke);
+          }
+          obj.add(w);
+          wheels.push({ obj: w, r: 0.36 });
+        }
+        // An amber marker on the outboard housing.
+        cg.box(-0.25, CH * 0.86, s < 0 ? -CW / 2 - 0.06 : CW / 2 + 0.04, 0.25, CH * 0.92, s < 0 ? -CW / 2 - 0.04 : CW / 2 + 0.06, amber, amber);
+        const side = s < 0 ? 0 : 1;
+        const tm = new Mesh(ct.build(), treadMats[side]);
+        tm.castShadow = true;
+        const bm = new Mesh(cb.build(), lit);
+        bm.castShadow = true;
+        bm.receiveShadow = true;
+        obj.add(tm, bm, new Mesh(cg.build(), glow));
+        crawlers.push({ obj, side, lx: xc * (t.cell / CELL), wheels });
+      }
+    }
+    // Keel between the crawler banks, and the sponsons that carry the hull out over them.
+    gb.box(-L / 2 + 0.5, 0.32, -zIn, L / 2 - 0.5, SPONSON + 0.02, zIn, dark, dark);
+    for (let k = -3; k <= 3; k++) gb.box(k * 2.4 - 0.1, 0.5, -zIn - 0.02, k * 2.4 + 0.1, SPONSON, zIn + 0.02, metal, dark);
+    if (cut && top < SPONSON) {
+      // A cutaway of the lowest decks: the floor plan sits down between the crawler banks.
+      gb.box(-L / 2 + 0.3, 0.3, -zIn, L / 2 - 0.3, top, zIn, atlas.get('floor'), hull);
+    } else {
+      gb.box(-L / 2, SPONSON, -W / 2, L / 2, bodyTop, W / 2, cut ? atlas.get('floor') : deck, hull);
+      // Armoured skirts hanging over the top half of the crawlers, with a seam at every crawler gap.
+      for (const s of [-1, 1]) {
+        const z0 = s < 0 ? -W / 2 - 0.08 : W / 2, z1 = s < 0 ? -W / 2 : W / 2 + 0.08;
+        gb.box(-L / 2 + 0.15, CH * 0.8, z0, L / 2 - 0.15, SPONSON + 0.25, z1, trim, hull);
+        for (let i = 1; i < 4; i++) {
+          const x = L / 2 - 0.2 - i * (CL + gap) + gap / 2;
+          gb.box(x - 0.06, CH * 0.8, z0 - 0.02, x + 0.06, SPONSON + 0.25, z1 + 0.02, dark, dark);
+        }
+      }
+    }
+    // Structural bays down the length (a building's column grid), then one band per deck with sparse lit windows.
+    const bays = Math.round(L / 1.6);
+    for (let k = 1; k < bays; k++) {
+      const x = -L / 2 + (k * L) / bays;
+      for (const s of [-1, 1]) gb.box(x - 0.07, SPONSON, s < 0 ? -W / 2 - 0.05 : W / 2 - 0.02, x + 0.07, bodyTop - 0.02, s < 0 ? -W / 2 + 0.02 : W / 2 + 0.05, dark, dark);
     }
     for (let st = 0; st < t.stories; st++) {
       const y0 = HULL_BASE + st * STORY_H;
+      if (y0 < SPONSON - 0.1) continue;
       if (y0 >= bodyTop - 0.05) break;
-      // Trim band at each floor.
-      for (const s of [-1, 1]) gb.box(-L / 2, y0 - 0.03, s < 0 ? -W / 2 - 0.04 : W / 2 - 0.02, L / 2, y0 + 0.03, s < 0 ? -W / 2 + 0.02 : W / 2 + 0.04, trim, trim);
-      // Windows: pairs of panes along both sides, some dark.
-      const wy0 = y0 + STORY_H * 0.3, wy1 = Math.min(bodyTop - 0.05, y0 + STORY_H * 0.72);
+      for (const s of [-1, 1]) gb.box(-L / 2, y0 - 0.025, s < 0 ? -W / 2 - 0.035 : W / 2 - 0.02, L / 2, y0 + 0.025, s < 0 ? -W / 2 + 0.02 : W / 2 + 0.035, trim, trim);
+      const wy0 = y0 + STORY_H * 0.38, wy1 = Math.min(bodyTop - 0.05, y0 + STORY_H * 0.62);
       if (wy1 <= wy0) continue;
-      for (let x = -L / 2 + 0.35; x < L / 2 - 0.3; x += 0.62) {
+      for (let x = -L / 2 + 0.3; x < L / 2 - 0.3; x += 0.4) {
         for (const s of [-1, 1]) {
-          const lit = hash2(Math.round(x * 10), st * 7 + (s > 0 ? 1 : 0), t.id) > 0.22;
-          const tex = atlas.get(lit ? 'windows' : 'windows_dark');
-          const z = s < 0 ? -W / 2 - 0.035 : W / 2 + 0.015;
-          (lit ? gl : gb).box(x, wy0, z, x + 0.42, wy1, z + 0.02, tex, tex);
+          const on = hash2(Math.round(x * 10), st * 7 + (s > 0 ? 1 : 0), t.id) > 0.62;
+          const tex = atlas.get(on ? 'windows' : 'windows_dark');
+          const z = s < 0 ? -W / 2 - 0.03 : W / 2 + 0.01;
+          (on ? gl : gb).box(x, wy0, z, x + 0.24, wy1, z + 0.02, tex, tex);
         }
       }
-      // Rear windows.
-      for (let z = -W / 2 + 0.4; z < W / 2 - 0.4; z += 0.7) {
-        const lit = hash2(Math.round(z * 10), st * 3, t.id + 5) > 0.3;
-        const tex = atlas.get(lit ? 'windows' : 'windows_dark');
-        (lit ? gl : gb).box(-L / 2 - 0.02, wy0, z, -L / 2, wy1, z + 0.45, tex, tex);
+    }
+    // Restrained running lights: a white strip at the roof line, a blue one along the sponsons.
+    if (!cut) {
+      for (const s of [-1, 1]) {
+        const z = s < 0 ? -W / 2 - 0.05 : W / 2 + 0.03;
+        gl.box(-L / 2 + 0.6, roof - 0.12, z, L / 2 - 0.6, roof - 0.09, z + 0.02, white, white);
+        gl.box(-L / 2 + 0.8, SPONSON + 0.3, z, L / 2 - 0.8, SPONSON + 0.32, z + 0.02, blue, blue);
       }
     }
-    // The nose: every class has its own face.
+    // The bow: a sloped glacis down to a dozer blade that ploughs a road through anything.
     const nH = Math.min(bodyTop, roof);
+    gb.wedgeX(L / 2, L / 2 + NOSE, SPONSON, nH * 0.9, -W / 2 + 0.2, W / 2 - 0.2, -1, trim, hull);
+    gb.wedgeX(L / 2 - 0.1, L / 2 + NOSE * 1.3, 0.05, SPONSON + 0.2, -W / 2 + 0.05, W / 2 - 0.05, -1, dark, dark);
+    for (let z = -W / 2 + 0.4; z < W / 2 - 0.3; z += 0.6) gb.box(L / 2 + NOSE * 1.2, 0.04, z, L / 2 + NOSE * 1.4, 0.4, z + 0.16, metal, dark);
     switch (cls.nose) {
       case 'ram':
-        gb.wedgeX(L / 2, L / 2 + NOSE, 0.18, nH, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
-        gb.wedgeX(L / 2 + NOSE - 0.1, L / 2 + NOSE + 0.55, 0.06, 0.7, -W / 2 + 0.3, W / 2 - 0.3, -1, dark, dark);
+        gb.wedgeX(L / 2 + NOSE * 1.2, L / 2 + NOSE * 1.9, 0.06, 1.1, -W / 4, W / 4, -1, dark, dark);
         break;
       case 'prow':
-        for (let k = 0; k < 4; k++) {
-          const w = (W / 2 - 0.12) * (1 - k * 0.22);
-          gb.wedgeX(L / 2, L / 2 + NOSE + k * 0.25, 0.18, nH * (1 - k * 0.15), -w, w, -1, trim, hull);
-        }
+        for (let k = 0; k < 3; k++) gb.wedgeX(L / 2 + NOSE, L / 2 + NOSE + 0.4 + k * 0.3, SPONSON, nH * (0.8 - k * 0.2), -W / 3 + k * 0.6, W / 3 - k * 0.6, -1, trim, hull);
         break;
       case 'box':
-        gb.box(L / 2, 0.2, -W / 2 + 0.1, L / 2 + NOSE * 0.6, nH, W / 2 - 0.1, trim, hull);
-        gb.box(L / 2 + NOSE * 0.6, 0.3, -W / 4, L / 2 + NOSE * 0.62, nH * 0.6, W / 4, atlas.get('hazard'), atlas.get('hazard'));
+        gb.box(L / 2, 1.3, -W / 3, L / 2 + NOSE * 0.8, nH * 0.7, W / 3, trim, hull);
         break;
       case 'bat':
-        gb.wedgeX(L / 2, L / 2 + NOSE * 1.6, 0.18, nH * 0.75, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
-        for (const s of [-1, 1]) gb.box(L / 2 - 0.3, nH, s * (W / 2 - 0.3) - 0.06, L / 2 + 0.2, nH + 0.7, s * (W / 2 - 0.3) + 0.06, hull, hull);
+        for (const s of [-1, 1]) gb.wedgeX(L / 2 - 1, L / 2 + NOSE * 1.6, SPONSON, nH + 0.4, s < 0 ? -W / 2 : W / 2 - 0.5, s < 0 ? -W / 2 + 0.5 : W / 2, -1, hull, hull);
         break;
       case 'scoop':
-        gb.wedgeX(L / 2, L / 2 + NOSE, 0.18, nH, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
-        for (let z = -W / 2 + 0.3; z < W / 2 - 0.2; z += 0.35) gb.box(L / 2 + NOSE - 0.1, 0.04, z, L / 2 + NOSE + 0.45, 0.25, z + 0.14, metal, dark);
+        for (let z = -W / 2 + 0.5; z < W / 2 - 0.4; z += 0.8) gb.wedgeX(L / 2 + NOSE * 1.3, L / 2 + NOSE * 2, 0.04, 0.5, z, z + 0.3, -1, metal, dark);
         break;
     }
-    gb.box(L / 2 + NOSE - 0.25, 0.06, -W / 2 + 0.4, L / 2 + NOSE + 0.08, 0.3, W / 2 - 0.4, dark, dark);
-    gl.box(L / 2 + 0.06, nH - 0.16, -W / 2 + 0.35, L / 2 + 0.14, nH - 0.07, W / 2 - 0.35, clsGlow, clsGlow);
-    for (const s of [-1, 1]) gl.box(L / 2 + NOSE - 0.3, 0.3, s * (W / 2 - 0.35) - 0.08, L / 2 + NOSE - 0.22, 0.4, s * (W / 2 - 0.35) + 0.08, atlas.get('glow_yellow'), atlas.get('glow_yellow'));
-    // A raised rim around the top, with a light strip down each side.
-    const rimH = cut ? 0.35 : 0.08;
+    // Headlamps (white) and amber clearance lamps at the bow corners; a class-coloured marker over the glacis.
+    for (const z of [-W / 2 + 0.9, -W / 2 + 1.5, W / 2 - 1.5, W / 2 - 0.9]) gl.box(L / 2 + NOSE * 0.35, SPONSON + 0.5, z - 0.12, L / 2 + NOSE * 0.4, SPONSON + 0.62, z + 0.12, white, white);
+    for (const s of [-1, 1]) gl.box(L / 2 - 0.05, nH - 0.2, s * (W / 2 - 0.25) - 0.08, L / 2 + 0.05, nH - 0.1, s * (W / 2 - 0.25) + 0.08, amber, amber);
+    gl.box(L / 2 + 0.05, nH * 0.9 - 0.08, -0.4, L / 2 + 0.12, nH * 0.9 - 0.02, 0.4, clsGlow, clsGlow);
+    // Stern: the hangar ramp (deck -1) with red lamps either side.
+    gb.box(-L / 2 - 0.12, 0.3, -W / 4, -L / 2, SPONSON + 1.4, W / 4, dark, dark);
+    gb.box(-L / 2 - 0.16, 0.3, -W / 4 + 0.1, -L / 2 - 0.12, SPONSON + 1.3, W / 4 - 0.1, atlas.get('hazard'), dark, F.W);
+    for (const s of [-1, 1]) gl.box(-L / 2 - 0.05, SPONSON + 1.5, s * (W / 4 + 0.3) - 0.1, -L / 2 + 0.02, SPONSON + 1.7, s * (W / 4 + 0.3) + 0.1, red, red);
+    // Roof parapet, and a raised rim around a cutaway.
+    const rimH = cut ? 0.35 : 0.1;
     for (const s of [-1, 1]) {
       gb.box(-L / 2, bodyTop - 0.07, s < 0 ? -W / 2 - 0.06 : W / 2 - 0.1, L / 2, bodyTop + rimH, s < 0 ? -W / 2 + 0.1 : W / 2 + 0.06, hull, trim);
       gb.box(s < 0 ? -L / 2 : L / 2 - 0.12, bodyTop - 0.07, -W / 2 + 0.1, s < 0 ? -L / 2 + 0.12 : L / 2, bodyTop + rimH, W / 2 - 0.1, hull, trim);
-      if (!cut) gl.box(-L / 2 + 0.3, bodyTop - 0.04, s < 0 ? -W / 2 - 0.08 : W / 2 + 0.06, L / 2 - 0.3, bodyTop + 0.02, s < 0 ? -W / 2 - 0.06 : W / 2 + 0.08, clsGlow, clsGlow);
-    }
-    // Tail: an afterburner block with three nozzles, and two swept fins with tail lights.
-    gb.box(-L / 2 - TAIL, 0.28, -W * 0.24, -L / 2, 0.9, W * 0.24, dark, dark);
-    for (const [z, w] of [[0, 0.18], [-W * 0.15, 0.1], [W * 0.15, 0.1]] as const) {
-      gl.box(-L / 2 - TAIL - 0.03, 0.6 - w, z - w, -L / 2 - TAIL + 0.02, 0.6 + w, z + w, atlas.get('glow_orange'), atlas.get('glow_orange'));
-      exhaust.push({ lx: (-L / 2 - TAIL - 0.1) * (t.cell / CELL), y: 0.6 * (t.cell / CELL), lz: z * (t.cell / CELL) });
     }
     if (!cut) {
-      const finH = cls.nose === 'bat' ? 1.6 : 0.95;
+      // The Spine runs under a long skylight down the middle of the roof; elevator heads rise either side of it.
+      gb.box(-L / 2 + 2, roof, -0.45, L / 2 - 3, roof + 0.05, 0.45, atlas.get('glass'), dark);
+      for (let x = -L / 2 + 2.6; x < L / 2 - 3; x += 1.9) gl.box(x, roof + 0.05, -0.02, x + 0.3, roof + 0.06, 0.02, white, white);
+      for (const x of [-L / 4, L / 4 - 1]) for (const s of [-1, 1]) gb.box(x - 0.3, roof, s * 0.8 - 0.25, x + 0.3, roof + 0.35, s * 0.8 + 0.25, hull, trim);
+      // Command tower aft of midships: a bridge band of windows 42 m up, masts and a red beacon on top.
+      const tx0 = -3.4, tx1 = -1.0;
+      gb.box(tx0, roof, -1.1, tx1, roof + 0.55, 1.1, deck, hull);
+      gb.box(tx0 + 0.1, roof + 0.55, -0.9, tx1 - 0.1, roof + 0.75, 0.9, hull, hull);
+      gl.box(tx1 + 0.005, roof + 0.3, -0.9, tx1 + 0.02, roof + 0.45, 0.9, atlas.get('windows'), atlas.get('windows'));
+      for (const s of [-1, 1]) gl.box(tx0 + 0.1, roof + 0.3, s < 0 ? -1.12 : 1.1, tx1 - 0.1, roof + 0.45, s < 0 ? -1.1 : 1.12, atlas.get('windows'), atlas.get('windows'));
+      gb.box(tx0 + 0.8, roof + 0.75, -0.05, tx0 + 0.9, roof + 1.5, 0.05, metal, metal);
+      gb.box(tx0 + 1.5, roof + 0.75, -0.04, tx0 + 1.58, roof + 1.2, 0.04, metal, metal);
+      gl.box(tx0 + 0.78, roof + 1.5, -0.07, tx0 + 0.92, roof + 1.58, 0.07, red, red);
+      // Vents and ducting along the roof edges; exhaust stacks aft.
+      for (let x = -L / 2 + 1; x < L / 2 - 1; x += 2.3) for (const s of [-1, 1]) gb.box(x, roof, s * (W / 2 - 0.55) - 0.2, x + 0.6, roof + 0.12, s * (W / 2 - 0.55) + 0.2, dark, metal);
+      for (const s of [-1, 1]) gb.box(-L / 2 + 0.3, roof + 0.02, s * (W / 2 - 0.25) - 0.05, L / 2 - 0.3, roof + 0.1, s * (W / 2 - 0.25) + 0.05, metal, dark);
+      for (const z of [-0.9, 0, 0.9]) {
+        gb.box(-L / 2 + 0.6, roof, z - 0.18, -L / 2 + 0.96, roof + 0.7, z + 0.18, dark, hull);
+        exhaust.push({ lx: (-L / 2 + 0.78) * (t.cell / CELL), y: (roof + 0.75) * (t.cell / CELL), lz: z * (t.cell / CELL) });
+      }
+      // Red lamps on the stern corners, amber ones on the bow corners of the roof.
       for (const s of [-1, 1]) {
-        const z0 = s * (W / 2 - 0.34) - 0.07, z1 = z0 + 0.14;
-        gb.box(-L / 2 - 0.25, roof, z0, -L / 2 + 0.7, roof + 0.35, z1, hull, hull);
-        gb.box(-L / 2 - 0.25, roof + 0.35, z0, -L / 2 + 0.3, roof + finH * 0.8, z1, hull, hull);
-        gb.box(-L / 2 - 0.25, roof + finH * 0.8, z0, -L / 2 - 0.02, roof + finH, z1, trim, hull);
-        gl.box(-L / 2 - 0.28, roof + 0.2, z0 + 0.02, -L / 2 - 0.24, roof + finH * 0.6, z1 - 0.02, atlas.get('glow_red'), atlas.get('glow_red'));
+        gl.box(-L / 2 + 0.05, roof + rimH, s * (W / 2 - 0.2) - 0.08, -L / 2 + 0.2, roof + rimH + 0.08, s * (W / 2 - 0.2) + 0.08, red, red);
+        gl.box(L / 2 - 0.2, roof + rimH, s * (W / 2 - 0.2) - 0.08, L / 2 - 0.05, roof + rimH + 0.08, s * (W / 2 - 0.2) + 0.08, amber, amber);
       }
     }
   } else if (!anchored) {
@@ -409,20 +520,25 @@ export function buildTankModel(t: Tank, fow: boolean, viewDeck = 0): TankModel {
     tm.castShadow = true;
     root.add(tm);
   }
-  const body = new Mesh(gb.build(), lit);
-  body.castShadow = true;
-  body.receiveShadow = true;
-  root.add(body);
+  const hullMesh = new Mesh(gb.build(), lit);
+  hullMesh.castShadow = true;
+  hullMesh.receiveShadow = true;
+  root.add(hullMesh);
   if (!gl.empty) root.add(new Mesh(gl.build(), glow));
-  // Build at model scale, then grow to the real size (your fortress is 2x).
+  // Build at model scale, then grow to the real size (a Titan is 10x). The crawlers stay put; everything else is
+  // the hull, which rides on them.
   const k = t.cell / CELL;
-  if (k !== 1) {
+  let body: Object3D | null = null;
+  if (k !== 1 || crawlers.length) {
     const inner = new Group();
-    for (const c of [...root.children]) inner.add(c);
+    body = new Group();
+    for (const c of [...root.children]) body.add(c);
+    inner.add(body);
+    for (const c of crawlers) inner.add(c.obj);
     inner.scale.setScalar(k);
     root.add(inner);
   }
-  return { root, turrets, lit, glow, treadMat, version: t.version, radars, exhaust };
+  return { root, turrets, lit, glow, treadMat, treadMats: crawlers.length ? treadMats : null, body: crawlers.length ? body : null, crawlers, scale: k, version: t.version, radars, exhaust };
 }
 
 /**

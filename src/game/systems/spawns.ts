@@ -26,6 +26,9 @@ function spawnPoint(g: Game, minD: number, maxD: number): { x: number; y: number
   return null;
 }
 
+/** Spawn distances past the hull: a Titan sees (and is seen) from much further off. */
+const far = (p: Tank, small: number, titan: number): number => (p.fortress ? titan : small);
+
 export function updateSpawns(g: Game, dt: number): void {
   const p = g.player;
   if (p.dead) return;
@@ -35,12 +38,12 @@ export function updateSpawns(g: Game, dt: number): void {
   for (let i = g.enemies.length - 1; i >= 0; i--) {
     const e = g.enemies[i];
     if (e.camp || e.titan) continue;
-    if (Math.hypot(e.x - p.x, e.y - p.y) > 80 + ext) g.enemies.splice(i, 1);
+    if (Math.hypot(e.x - p.x, e.y - p.y) > (p.fortress ? 300 : 80) + ext) g.enemies.splice(i, 1);
   }
   for (let i = g.tanks.length - 1; i >= 0; i--) {
     const t = g.tanks[i];
-    if (t.kind === 'raider' && (t.dead ? g.time - t.lastHitAt > 20 : Math.hypot(t.x - p.x, t.y - p.y) > 120)) g.tanks.splice(i, 1);
-    else if (t.kind === 'rival' && (t.dead ? g.time - t.lastHitAt > 30 : Math.hypot(t.x - p.x, t.y - p.y) > 260)) g.tanks.splice(i, 1);
+    if (t.kind === 'raider' && (t.dead ? g.time - t.lastHitAt > 20 : Math.hypot(t.x - p.x, t.y - p.y) > (p.fortress ? 450 : 120))) g.tanks.splice(i, 1);
+    else if (t.kind === 'rival' && (t.dead ? g.time - t.lastHitAt > 30 : Math.hypot(t.x - p.x, t.y - p.y) > (p.fortress ? 700 : 260))) g.tanks.splice(i, 1);
   }
   // Rival dreadnoughts: fortresses like yours, at your level, hunting you.
   g.timers.rival -= dt;
@@ -60,7 +63,7 @@ export function updateSpawns(g: Game, dt: number): void {
     const esc = Math.min(2.2, g.escalation());
     const target = inCamp ? 0 : Math.round((6 + threat * 2.6) * (here && here.kind !== 'mothership' ? 2 : 1) * esc);
     if (ambient < target) {
-      const pt = spawnPoint(g, 26 + ext, 42 + ext);
+      const pt = spawnPoint(g, ext + far(p, 26, 80), ext + far(p, 42, 140));
       if (pt) {
         const zone = g.map.zoneAt(pt.x, pt.y);
         const t = threatAt(pt.x, pt.y);
@@ -82,7 +85,7 @@ export function updateSpawns(g: Game, dt: number): void {
     g.timers.raider = 55 + Math.random() * 40;
     const raiders = g.tanks.filter((t) => t.kind === 'raider' && !t.dead).length;
     if (!inCamp && threat >= 1.5 && raiders < 1 + Math.floor(threat / 2.5)) {
-      const pt = spawnPoint(g, 45 + ext, 60 + ext);
+      const pt = spawnPoint(g, ext + far(p, 45, 120), ext + far(p, 60, 160));
       if (pt) {
         const t = buildRaider(threatAt(pt.x, pt.y), Math.floor(Math.random() * 1e9));
         t.x = pt.x;
@@ -99,7 +102,7 @@ export function updateSpawns(g: Game, dt: number): void {
   if (g.timers.titan <= 0) {
     g.timers.titan = 240 + Math.random() * 120;
     if (threat >= 3.4 && !g.enemies.some((e) => e.titan)) {
-      const pt = spawnPoint(g, 45 + ext, 55 + ext);
+      const pt = spawnPoint(g, ext + far(p, 45, 140), ext + far(p, 55, 180));
       if (pt) {
         const zone = g.map.zoneAt(pt.x, pt.y);
         const kind = TITAN_STYLE[zone] ?? 'titan_walker';
@@ -134,7 +137,7 @@ export function factionAt(g: Game, x: number, y: number, zone: number): Faction 
 export function spawnRival(g: Game): Tank | null {
   const p = g.player;
   const ext = p.stats.length / 2;
-  const pt = spawnPoint(g, 70 + ext, 90 + ext);
+  const pt = spawnPoint(g, ext + far(p, 70, 200), ext + far(p, 90, 260));
   if (!pt) return null;
   // Your size, your guns: an even fight.
   const cc = p.stats.cc;
