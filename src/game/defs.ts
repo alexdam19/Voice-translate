@@ -34,6 +34,10 @@ export interface ModuleDef {
   height: number;
   unique?: boolean;
   required?: boolean;
+  /** Built into the hull: placed automatically, never bought, moved or removed (weapon pads, main battery). */
+  fixed?: boolean;
+  /** Weapon sizes this hardpoint takes (default: exactly its own size). */
+  mounts?: WeaponSize[];
   /** Commander level needed to build it. */
   unlock?: number;
   /** How many you may own at each Command Center level (index 0 = CC 1). */
@@ -72,6 +76,8 @@ export interface ModuleDef {
   sanctum?: boolean;
   /** Fire-rate bonus for ballistic, artillery and missile weapons. */
   depot?: number;
+  /** Tesla Coil: zaps creatures on or against the hull. */
+  tesla?: boolean;
   mess?: boolean;
 }
 
@@ -85,6 +91,10 @@ const add = (d: ModuleDef): void => {
 /* Command */
 add(M({ key: 'bridge', name: 'Command Center', w: 4, h: 4, cat: 'command', cost: {}, height: 1.2, unique: true, required: true, maxLevel: 6, crew: 2, vision: 26, power: 4, thrust: 3, desc: 'The heart of your facility. Upgrade it to grow the whole fortress and raise every building\'s max level.' }));
 
+/* Built into the hull */
+add(M({ key: 'main_gun', name: 'Main Battery Turret', w: 4, h: 4, cat: 'weapon', cost: {}, height: 0.9, fixed: true, hardpoint: 'heavy', hp: 150, armor: 0.01, desc: "The fortress's great twin-barrelled turret. Takes a heavy weapon. A second one rises on the rear deck at Command Center level 4. Each level adds +15% damage." }));
+add(M({ key: 'pad', name: 'Weapon Pad', w: 2, h: 2, cat: 'weapon', cost: {}, height: 0.5, fixed: true, hardpoint: 'medium', mounts: ['light', 'medium'], hp: 40, desc: 'An armored weapon pad built into the hull. Takes a light or medium weapon. Every corner has one, and more appear along the sides as the Command Center grows. Each level adds +15% damage.' }));
+
 /* Turrets */
 add(M({ key: 'hp_light', name: 'Light Turret Mount', w: 1, h: 1, cat: 'weapon', cost: { scrap: 15, iron_plate: 3 }, height: 0.5, hardpoint: 'light', limit: [3, 4, 5, 6, 8, 10], desc: 'Mounts one light weapon. Each level adds +15% damage.' }));
 add(M({ key: 'hp_medium', name: 'Medium Turret Mount', w: 2, h: 2, cat: 'weapon', unlock: 4, cost: { iron_plate: 12, circuit: 2 }, height: 0.6, hardpoint: 'medium', limit: [1, 2, 2, 3, 4, 5], desc: 'Mounts one medium weapon. Each level adds +15% damage.' }));
@@ -95,6 +105,7 @@ add(M({ key: 'armor', name: 'Armor Plate', w: 1, h: 1, cat: 'defense', cost: { i
 add(M({ key: 'heavy_armor', name: 'Heavy Armor Plate', w: 1, h: 2, cat: 'defense', unlock: 10, cost: { titanium_alloy: 4, iron_plate: 4, explosive: 2 }, height: 0.5, hp: 220, armor: 0.02, limit: [0, 4, 6, 8, 12, 16], desc: '+220 hull, +2% armor.' }));
 add(M({ key: 'repair_bay', name: 'Repair Bay', w: 2, h: 2, cat: 'defense', unlock: 3, cost: { iron_plate: 12, circuit: 3 }, height: 0.8, repair: 4, use: 1, limit: [1, 1, 2, 2, 3, 3], desc: 'Repairs 4 hull per second.' }));
 add(M({ key: 'shield', name: 'Shield Generator', w: 2, h: 2, cat: 'defense', unlock: 13, cost: { titanium_alloy: 8, uranium_rod: 2, circuit: 6 }, height: 1, shield: 320, shieldRegen: 20, use: 4, limit: [0, 1, 2, 2, 3, 3], desc: '+320 shield that recharges out of combat.' }));
+add(M({ key: 'tesla', name: 'Tesla Coil', w: 1, h: 1, cat: 'defense', unlock: 3, cost: { copper_wire: 10, circuit: 2, iron_plate: 4 }, height: 1.1, tesla: true, use: 1, limit: [2, 3, 4, 5, 6, 8], desc: 'Arcs lightning into creatures climbing onto the hull or crowding against it: 3 at a time (+1 per level), about once a second. The answer to hordes.' }));
 add(M({ key: 'radar', name: 'Radar Mast', w: 1, h: 1, cat: 'defense', unique: true, unlock: 5, cost: { copper_wire: 8, circuit: 2 }, height: 1.6, vision: 8, radar: 50, use: 1, desc: '+8 vision. Shows enemies within 50 units on the minimap.' }));
 
 /* Army & squads */
@@ -137,6 +148,38 @@ add(M({ key: 'thermal', name: 'Thermal Regulator', w: 1, h: 2, cat: 'utility', u
 add(M({ key: 'sealant', name: 'Sealant Pumps', w: 1, h: 2, cat: 'utility', unique: true, unlock: 12, cost: { titanium_alloy: 6, sulfur: 10, cryo_core: 2 }, height: 0.9, protects: ['toxic'], use: 1, desc: 'Seals the hull against toxic fumes (Acid Marsh).' }));
 
 export const MODULE_LIST: readonly ModuleDef[] = Object.values(MODULES);
+
+/** Can this hardpoint take a weapon of that size? */
+export function canMount(d: ModuleDef, size: WeaponSize): boolean {
+  if (!d.hardpoint) return false;
+  return (d.mounts ?? [d.hardpoint]).includes(size);
+}
+
+/** Buildings you can buy in the shop (not the Command Center or anything built into the hull). */
+export const isShopBuilding = (d: ModuleDef): boolean => !d.required && !d.fixed;
+
+/**
+ * Where the hull's built-in weapons sit for a Command Center level: a pad on every corner, the main battery at
+ * the front, then more pads along the sides and a second battery on the rear deck as the fortress grows.
+ */
+export function fixedSpots(cc: number, cols: number, rows: number): { key: 'pad' | 'main_gun'; cx: number; cy: number }[] {
+  const out: { key: 'pad' | 'main_gun'; cx: number; cy: number }[] = [
+    { key: 'main_gun', cx: Math.floor(cols / 2) - 2, cy: 1 },
+    { key: 'pad', cx: 0, cy: 0 },
+    { key: 'pad', cx: cols - 2, cy: 0 },
+    { key: 'pad', cx: 0, cy: rows - 2 },
+    { key: 'pad', cx: cols - 2, cy: rows - 2 },
+  ];
+  const side = (f: number): void => {
+    const cy = Math.max(2, Math.min(rows - 4, Math.round(rows * f) - 1));
+    out.push({ key: 'pad', cx: 0, cy }, { key: 'pad', cx: cols - 2, cy });
+  };
+  if (cc >= 2) side(0.5);
+  if (cc >= 4) out.push({ key: 'main_gun', cx: Math.floor(cols / 2) - 2, cy: rows - 6 });
+  if (cc >= 5) side(0.28);
+  if (cc >= 6) side(0.72);
+  return out;
+}
 
 /* ---------------------------------------------------------------------- */
 /* Levels, limits, costs and build times                                   */
@@ -208,16 +251,21 @@ export interface ChassisDef {
 }
 
 export const CHASSIS: ChassisDef[] = [
-  { key: 'crawler', name: 'Crawler Facility', cols: 10, rows: 14, hp: 1200, mass: 40, armor: 0.04, desc: 'A rolling camp.' },
-  { key: 'assault', name: 'Assault Facility', cols: 12, rows: 17, hp: 1800, mass: 50, armor: 0.06, desc: 'Room for a real army.' },
-  { key: 'siege', name: 'Siege Citadel', cols: 14, rows: 20, hp: 2600, mass: 62, armor: 0.08, desc: 'A rolling fortress.' },
-  { key: 'dread', name: 'Land Dreadnought', cols: 16, rows: 23, hp: 3600, mass: 76, armor: 0.1, desc: 'A town on treads.' },
-  { key: 'colossus', name: 'Colossus', cols: 18, rows: 27, hp: 4800, mass: 92, armor: 0.12, desc: 'The largest thing that moves in the wasteland.' },
-  { key: 'citadel', name: 'Moving Citadel', cols: 20, rows: 31, hp: 6400, mass: 110, armor: 0.14, desc: 'A city that walks.' },
+  { key: 'crawler', name: 'Landkreuzer', cols: 12, rows: 20, hp: 1600, mass: 44, armor: 0.05, desc: 'A land cruiser the size of a warship.' },
+  { key: 'assault', name: 'Assault Landkreuzer', cols: 14, rows: 23, hp: 2300, mass: 55, armor: 0.07, desc: 'Room for a real army.' },
+  { key: 'siege', name: 'Siege Citadel', cols: 16, rows: 26, hp: 3200, mass: 68, armor: 0.09, desc: 'A rolling fortress.' },
+  { key: 'dread', name: 'Land Dreadnought', cols: 18, rows: 29, hp: 4300, mass: 82, armor: 0.11, desc: 'A town on treads.' },
+  { key: 'colossus', name: 'Colossus', cols: 20, rows: 33, hp: 5600, mass: 98, armor: 0.13, desc: 'The largest thing that moves in the wasteland.' },
+  { key: 'citadel', name: 'Moving Citadel', cols: 22, rows: 37, hp: 7200, mass: 116, armor: 0.15, desc: 'A city that rolls.' },
   { key: 'scout', name: 'Raider Buggy-Tank', cols: 5, rows: 7, hp: 260, mass: 16, armor: 0.02, desc: '', hidden: true },
   { key: 'outrider', name: 'Outrider', cols: 4, rows: 6, hp: 420, mass: 12, armor: 0.05, desc: 'Mini tank crewed by side crew.', hidden: true },
   { key: 'outpost', name: 'Outpost', cols: 12, rows: 12, hp: 2400, mass: 999, armor: 0.1, desc: '', hidden: true },
 ];
+
+/** Deck sizes before v0.7, for moving old layouts onto the bigger hulls. */
+export const LEGACY_DIMS: Record<string, [number, number]> = {
+  crawler: [10, 14], assault: [12, 17], siege: [14, 20], dread: [16, 23], colossus: [18, 27], citadel: [20, 31],
+};
 
 /** The hull for each Command Center level. */
 export const CC_CHASSIS = CHASSIS.filter((c) => !c.hidden);

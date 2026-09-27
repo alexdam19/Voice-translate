@@ -4,7 +4,9 @@ import { threatAt } from '../../shared/mapgen';
 import { eid } from '../entities';
 import { TITAN_NAMES, TITAN_STYLE } from '../enemyDefs';
 import type { Game } from '../game';
-import { buildRaider } from '../templates';
+import { buildRaider, buildRival, RIVAL_NAMES } from '../templates';
+import { featureLevel } from '../progress';
+import type { Tank } from '../tank';
 import { pickKind, spawnFor } from './world';
 
 const SAFE_RADIUS = 30;
@@ -38,6 +40,14 @@ export function updateSpawns(g: Game, dt: number): void {
   for (let i = g.tanks.length - 1; i >= 0; i--) {
     const t = g.tanks[i];
     if (t.kind === 'raider' && (t.dead ? g.time - t.lastHitAt > 20 : Math.hypot(t.x - p.x, t.y - p.y) > 120)) g.tanks.splice(i, 1);
+    else if (t.kind === 'rival' && (t.dead ? g.time - t.lastHitAt > 30 : Math.hypot(t.x - p.x, t.y - p.y) > 260)) g.tanks.splice(i, 1);
+  }
+  // Rival dreadnoughts: fortresses like yours, at your level, hunting you.
+  g.timers.rival -= dt;
+  if (g.timers.rival <= 0) {
+    g.timers.rival = 200 + Math.random() * 90;
+    const rivals = g.tanks.filter((t) => t.kind === 'rival' && !t.dead).length;
+    if (!rivals && g.commander.level >= featureLevel('rivals') && Math.hypot(p.x - CENTER, p.y - CENTER) > SAFE_RADIUS) spawnRival(g);
   }
   const threat = threatAt(p.x, p.y);
   const inCamp = Math.hypot(p.x - CENTER, p.y - CENTER) < SAFE_RADIUS;
@@ -100,4 +110,26 @@ export function updateSpawns(g: Game, dt: number): void {
   }
   void eid;
   void spawnFor;
+}
+
+/** Brings a rival dreadnought in from out of sight. Returns it (or null if there was no room). */
+export function spawnRival(g: Game): Tank | null {
+  const p = g.player;
+  const ext = p.stats.length / 2;
+  const pt = spawnPoint(g, 70 + ext, 90 + ext);
+  if (!pt) return null;
+  // Your size, your guns: an even fight.
+  const cc = p.stats.cc;
+  const ws = p.weapons();
+  const stars = ws.length ? ws.reduce((s, m) => s + (m.weapon?.rarity ?? 0), 0) / ws.length : 0;
+  const name = RIVAL_NAMES[g.nextTitanName++ % RIVAL_NAMES.length];
+  const t = buildRival(g.commander.level, cc, Math.floor(Math.random() * 1e9), name, { tech: g.tech, stars });
+  t.x = pt.x;
+  t.y = pt.y;
+  t.rot = Math.atan2(p.y - pt.y, p.x - pt.x);
+  for (const m of t.modules) m.aim = t.rot;
+  g.tanks.push(t);
+  g.hooks.toast(`RIVAL DREADNOUGHT: ${name} is hunting you. Beat it for an Epic pack.`, '#ff1744');
+  g.hooks.sound('alarm');
+  return t;
 }

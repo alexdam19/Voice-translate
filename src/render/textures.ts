@@ -307,7 +307,9 @@ export interface HullPalette {
 }
 
 export const HULLS: Record<string, HullPalette> = {
-  player: { plate: '#5e6e76', seam: '#3c4850', trim: '#8a9aa2', accent: '#26c6da' },
+  // Gunmetal black with cyan running lights: part land cruiser, part night-time street machine.
+  player: { plate: '#3e454c', seam: '#23282d', trim: '#5c666e', accent: '#26c6da' },
+  rival: { plate: '#3c2c2e', seam: '#1e1416', trim: '#6e3c3c', accent: '#ff1744' },
   outrider: { plate: '#4e7a6e', seam: '#34524a', trim: '#7aa89a', accent: '#ffca28' },
   enemy: { plate: '#7a4a3a', seam: '#4e2e24', trim: '#a0684e', accent: '#ff3d00' },
   outpost: { plate: '#6a6660', seam: '#48443e', trim: '#8a8680', accent: '#ff1744' },
@@ -527,6 +529,28 @@ const MODULE_ART: Record<string, (p: Pix) => void> = {
     p.ring(8, 8, 5, '#5a646e');
     p.stripes(0, 0, 3, 3, '#ffc400', '#222', 2);
   },
+  pad: (p) => {
+    p.fill('#2c3238');
+    p.stripes(0, 0, 16, 2, '#ffc400', '#1a1a1a', 2);
+    p.stripes(0, 14, 16, 2, '#ffc400', '#1a1a1a', 2);
+    p.ring(8, 8, 5.5, '#161a1e');
+    p.ring(8, 8, 4, '#56606a');
+    p.set(8, 8, '#26c6da');
+  },
+  main_gun: (p) => {
+    p.fill('#262c32');
+    p.ring(8, 8, 7.5, '#121518');
+    p.ring(8, 8, 6, '#4a545e');
+    p.ring(8, 8, 3, '#1a1e22');
+    p.stripes(0, 0, 4, 4, '#ffc400', '#1a1a1a', 2);
+    p.stripes(12, 12, 4, 4, '#ffc400', '#1a1a1a', 2);
+  },
+  tesla: (p) => {
+    p.fill('#2a3038');
+    p.ring(8, 8, 6, '#40c4ff');
+    p.ring(8, 8, 3, '#b3e5fc');
+    p.set(8, 8, '#ffffff');
+  },
   hp_heavy: (p) => {
     p.fill('#363c42');
     p.ring(8, 8, 7, '#1a1e22');
@@ -705,7 +729,7 @@ export const MODULE_COLOR: Record<string, string> = {
   barracks: '#9e9d24', medbay: '#ef5350', hydroponics: '#66bb6a', cargo: '#a1887f', vault: '#ffd740', refinery: '#ff7043',
   workshop: '#ffca28', drill_mk2: '#ffb300', drill_mk3: '#e040fb', garage: '#78909c', armor: '#90a4ae', heavy_armor: '#8d9a7a',
   shield: '#40c4ff', repair_bay: '#ffca28', radar: '#b0bec5', rad_baffles: '#ffd600', thermal: '#ff7043', sealant: '#00c853',
-  hp_light: '#ff8a65', hp_medium: '#ff7043', hp_heavy: '#f4511e',
+  hp_light: '#ff8a65', hp_medium: '#ff7043', hp_heavy: '#f4511e', pad: '#ffc400', main_gun: '#ff3d00', tesla: '#40c4ff',
   science_lab: '#80deea', forge: '#ff6d00', training_grounds: '#fafafa', mess_hall: '#a1887f', arcane_sanctum: '#b388ff',
   ammo_depot: '#c8a44a', command_uplink: '#ffd740', salvo_rack: '#ff5722', smoke_launcher: '#9e9e9e', drone_bay: '#40c4ff',
   mine_layer: '#ffd740', jet_hangar: '#90caf9', teleporter: '#18ffff', dome_projector: '#69f0ae', airstrike: '#ff6e40',

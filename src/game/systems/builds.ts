@@ -43,6 +43,9 @@ export function completeJob(g: Game, job: BuildJob): void {
       // A bigger Command Center means a bigger fortress.
       const ch = chassisForCC(m.lvl);
       if (ch.key !== p.chassis) p.setChassis(ch.key);
+      // The bigger hull brings more weapon pads (and, later, a second main battery).
+      const added = g.syncHull();
+      if (added > 0) g.hooks.toast(`${added} new weapon mount${added > 1 ? 's' : ''} on the hull, armed and firing. Swap in better guns in the ARSENAL.`, '#ffd740');
       g.hooks.toast(`Command Center level ${m.lvl}! Your fortress grew into a ${ch.name}: more room, more of every building, higher levels.`, '#4dd0e1');
     } else g.hooks.toast(`${d.name} reached level ${m.lvl}.`, '#76ff03');
     g.objectiveCounters.upgraded = (g.objectiveCounters.upgraded ?? 0) + 1;

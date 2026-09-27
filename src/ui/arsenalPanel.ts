@@ -8,7 +8,7 @@ import { nextRarity, scrapValue, STAR_TIME, starBlock, starCost } from '../game/
 import {
   cancelForge, craftWeapon, findWeapon, mountWeapon, respecCost, respecTree, scrapWeapon, startForge, takeTreeNode, unmountWeapon,
 } from '../game/actions';
-import { MODULES } from '../game/defs';
+import { canMount, MODULES } from '../game/defs';
 import type { Game } from '../game/game';
 import { forgeSpeed } from '../game/systems/arsenal';
 import type { ModuleInst } from '../game/tank';
@@ -103,7 +103,7 @@ export function renderArsenal(ctx: PanelCtx): void {
   }
   if (st.uid && !findWeapon(g, st.uid)) st.uid = 0;
   for (const m of hps) {
-    const size = MODULES[m.key].hardpoint!;
+    const size = MODULES[m.key].fixed ? MODULES[m.key].name.toLowerCase() : MODULES[m.key].hardpoint!;
     const w = m.weapon;
     const on = w ? st.uid === w.uid : st.hp === m.id;
     const el = h('div', `ars-item ${on ? 'on' : ''} ${w ? '' : 'empty'}`);
@@ -145,9 +145,10 @@ function renderEmptyHardpoint(ctx: PanelCtx, box: HTMLElement, hpId: number): vo
   const g = ctx.app.game;
   const m = g.player.moduleById(hpId);
   if (!m) return;
-  const size = MODULES[m.key].hardpoint!;
-  box.appendChild(h('div', 'ars-head', `<div><div class="t">Empty ${size.toUpperCase()} hardpoint</div><div class="d">Pick a ${size} weapon to mount.</div></div>`));
-  const fits = g.armory.filter((w) => WEAPONS[w.key].size === size).sort((a, b) => weaponScore(b) - weaponScore(a));
+  const md = MODULES[m.key];
+  const size = (md.mounts ?? [md.hardpoint!]).join(' or ');
+  box.appendChild(h('div', 'ars-head', `<div><div class="t">Empty ${esc(md.fixed ? md.name : `${size} hardpoint`).toUpperCase()}</div><div class="d">Pick a ${size} weapon to mount.</div></div>`));
+  const fits = g.armory.filter((w) => canMount(md, WEAPONS[w.key].size)).sort((a, b) => weaponScore(b) - weaponScore(a));
   for (const w of fits) {
     const el = h('div', 'ars-item');
     el.innerHTML = `<img src="${weaponIcon(w.key, w.rarity)}"><div><div>${weaponTitle(w)}</div>${starsHTML(w)} <small class="d">${weaponSummary(w)}</small></div>`;
@@ -268,8 +269,8 @@ function renderWeapon(ctx: PanelCtx, box: HTMLElement, w: WeaponItem): void {
     }));
     mb.appendChild(row);
   } else {
-    const spots = p.hardpoints().filter((m) => MODULES[m.key].hardpoint === d.size);
-    if (!spots.length) mb.appendChild(h('div', 'd', `Needs a ${d.size} hardpoint: build one in BASE (B).`));
+    const spots = p.hardpoints().filter((m) => canMount(MODULES[m.key], d.size));
+    if (!spots.length) mb.appendChild(h('div', 'd', `Needs a ${d.size} mount: ${d.size === 'heavy' ? 'a main battery or a Heavy Turret Mount' : 'a weapon pad or a turret mount'} (BASE > Shop).`));
     const row = h('div', 'row wrap');
     spots.forEach((m, i) => {
       const cur = m.weapon;

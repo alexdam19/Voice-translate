@@ -1,4 +1,6 @@
 import { MAP_SIZE } from '../shared/constants';
+import { TRACTION } from '../shared/map';
+import type { DriveKey } from '../shared/types';
 import type { RuneKind } from '../shared/mapgen';
 import { sanitizeTree, WEAPONS, type WeaponItem } from '../shared/weapons';
 import { CARDS, DECK_SIZE, MAX_CARD_LEVEL, PACK_INFO, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
@@ -15,7 +17,7 @@ import { applyOutriderCrew, launchOutrider } from './systems/outrider';
 export const SAVE_KEY = 'ironcrawl3d-save-v1';
 
 export interface SaveData {
-  v: 3 | 4 | 5;
+  v: 3 | 4 | 5 | 6;
   seed: number;
   time: number;
   tank: TankSave;
@@ -49,6 +51,10 @@ export interface SaveData {
   builds?: (Omit<BuildJob, 'modId'> & { mod: number })[];
   squads?: Partial<Record<SquadType, { order: SquadOrder; gx: number; gy: number }>>;
   tracked?: { kind: 'build'; key: string } | { kind: 'upgrade'; mod: number } | { kind: 'card'; id: string } | null;
+  /* v6 */
+  drives?: DriveKey[];
+  autoDrive?: boolean;
+  wave?: number;
 }
 
 function packBits(a: Uint8Array): string {
@@ -74,7 +80,7 @@ export function serialize(g: Game): SaveData {
   for (const [k, s] of Object.entries(g.squads)) if (s) squads[k as SquadType] = { order: s.order, gx: s.gx, gy: s.gy };
   const tr = g.tracked;
   return {
-    v: 5, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
+    v: 6, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
     armory: g.armory, tech: [...g.tech], stats: g.stats, explored: packBits(g.explored),
     nodes: g.gen.nodes.filter((n) => n.respawnAt > 0 || n.amount < n.max).map((n) => [n.id, n.amount, n.respawnAt]),
     sites: g.gen.sites.filter((s) => s.readyAt > g.time).map((s) => [s.id, s.readyAt]),
@@ -85,6 +91,7 @@ export function serialize(g: Game): SaveData {
     builds: g.builds.map(({ modId, ...b }) => ({ ...b, mod: idx(modId) })).filter((b) => b.mod >= 0),
     squads,
     tracked: !tr ? null : tr.kind === 'upgrade' ? { kind: 'upgrade', mod: idx(tr.modId) } : tr,
+    drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n,
   };
 }
 
@@ -121,7 +128,7 @@ export function deserialize(d: SaveData): Game {
   const g = new Game(d.seed);
   g.time = d.time;
   let cc = 1;
-  if (d.v === 5) {
+  if (d.v >= 5) {
     g.player = Tank.deserialize(d.tank, 'player', 'main', 'Fortress');
     cc = g.player.modules.find((m) => m.key === 'bridge')?.lvl ?? 1;
     // The hull always matches the Command Center.
@@ -154,7 +161,7 @@ export function deserialize(d: SaveData): Game {
   g.relics = (d.relics ?? []).filter((id) => g.cards[id] && CARDS[id].type === 'relic').slice(0, g.relicSlots());
   g.packs = (d.packs ?? []).filter((k) => k in PACK_INFO);
   // Anyone coming from an old save gets a welcome pack for each Command Center level.
-  if (d.v !== 5) for (let i = 0; i < cc; i++) g.packs.push(i === 0 ? 'rare_pack' : 'pack');
+  if (d.v < 5) for (let i = 0; i < cc; i++) g.packs.push(i === 0 ? 'rare_pack' : 'pack');
   const at = (i: number): number => (i >= 0 ? g.player.modules[i]?.id ?? 0 : 0);
   g.builds = (d.builds ?? []).map(({ mod, ...b }) => ({ ...b, modId: at(mod) })).filter((b) => b.modId);
   for (const [k, s] of Object.entries(d.squads ?? {})) {
@@ -165,6 +172,9 @@ export function deserialize(d: SaveData): Game {
   const track: Track | null = !tr ? null : tr.kind === 'upgrade' ? (at(tr.mod) ? { kind: 'upgrade', modId: at(tr.mod) } : null) : tr;
   g.tracked = track;
   g.tankControls = !!d.tankControls;
+  g.drivesOwned = new Set<DriveKey>(['wheels', g.player.drive, ...(d.drives ?? []).filter((k) => k in TRACTION)]);
+  g.autoDrive = d.autoDrive ?? true;
+  g.wave.n = Math.max(0, Math.round(d.wave ?? 0));
   g.forgeJob = d.forgeJob ?? null;
   bumpUid(Math.max(d.nextUid ?? 1, ...g.armory.map((w) => w.uid), ...g.player.modules.map((m) => m.weapon?.uid ?? 0)));
   g.stats = { ...g.stats, ...d.stats };
@@ -188,11 +198,18 @@ export function deserialize(d: SaveData): Game {
   g.outpostsDown = new Set(d.outpostsDown ?? []);
   g.outriderLevel = d.outriderLevel ?? 0;
   // The v5 tutorial is new: old saves start it at the part about the base.
-  g.objective = d.v === 5 ? d.objective ?? 0 : 3;
+  g.objective = d.v >= 5 ? d.objective ?? 0 : 3;
+  // v0.7 added "Survive a horde" as the second goal and "Beat a rival dreadnought" before the outpost.
+  if (d.v < 6) {
+    const o = g.objective;
+    if (o >= 1) g.objective++;
+    if (o >= 16) g.objective++;
+  }
   g.objectiveCounters = d.counters ?? {};
   g.runeBuff = d.runeBuff ?? null;
-  g.applyCrew();
-  g.player.hp = d.v === 5 ? Math.min(g.player.stats.maxHp, d.tank.hp) : g.player.stats.maxHp;
+  // v0.7 hulls are bigger and come with weapon pads and a main battery; older fortresses get refitted.
+  g.syncHull(d.v < 6);
+  g.player.hp = d.v >= 5 ? Math.min(g.player.stats.maxHp, d.tank.hp) : g.player.stats.maxHp;
   g.energy = Math.max(0, Math.min(g.maxEnergy(), d.energy ?? 5));
   g.resetHand();
   if (g.outriderLevel > 0 && d.outrider) {
@@ -223,7 +240,7 @@ export function loadSave(): SaveData | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw) as SaveData;
-    return d && (d.v === 3 || d.v === 4 || d.v === 5) ? d : null;
+    return d && d.v >= 3 && d.v <= 6 ? d : null;
   } catch {
     return null;
   }

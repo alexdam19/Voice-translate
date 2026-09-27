@@ -1,6 +1,6 @@
 import type { App } from '../app';
 import { buildBlock, cancelBuild, countOf, placeBuilding, removeModule, trackBuild, trackUpgrade, upgradeBlock, upgradeBuilding, upgradeCostOf } from '../game/actions';
-import { buildLimit, buildTime, CATEGORIES, CC_COMMANDER_LEVEL, chassisForCC, levelMult, levelTime, maxModuleLevel, MODULE_LIST, MODULES, type ModuleCat, type ModuleDef } from '../game/defs';
+import { buildLimit, buildTime, CATEGORIES, isShopBuilding, CC_COMMANDER_LEVEL, chassisForCC, levelMult, levelTime, maxModuleLevel, MODULE_LIST, MODULES, type ModuleCat, type ModuleDef } from '../game/defs';
 import type { Game } from '../game/game';
 import { SQUADS, squadSize, type SquadType } from '../game/squads';
 import { jobFor } from '../game/systems/builds';
@@ -268,6 +268,7 @@ export class VillageUI {
       this.top.innerHTML = `<div class="vt-title">YOUR BASE <small>${esc(ch.name)} · Command Center L${p.stats.cc} · ${p.cols}×${p.rows} deck</small></div>
         <div class="vt-builders" title="Each builder works on one building at a time">🔨 Builders <b>${g.builders() - busy}/${g.builders()}</b> free</div>
         ${danger ? '<div class="vt-danger">⚠ UNDER ATTACK</div>' : ''}`;
+      this.top.appendChild(button(this.touch ? 'BLUEPRINT' : 'BLUEPRINT (N)', () => this.app.panels.open('blueprint')));
       const exit = button('EXIT BASE (B)', () => this.app.setVillage(false), 'primary');
       this.top.appendChild(exit);
     }
@@ -374,7 +375,7 @@ export class VillageUI {
         fn.appendChild(h('div', 'd', 'To guard a spot: leave the base and drag the squad badge (right side) onto the map.'));
       }
     }
-    if (!d.required && !job) {
+    if (isShopBuilding(d) && !job) {
       fn.appendChild(button('MOVE', () => this.startMove(m.id), 'small'));
       fn.appendChild(button('REMOVE', () => this.app.panels.confirm(`Remove ${d.name}?`, 'You get half its build cost back.', 'Remove', () => {
         const r = removeModule(g, m.id);
@@ -406,7 +407,7 @@ export class VillageUI {
     this.shop.appendChild(tabs);
     if (CAT_HINT[this.cat]) this.shop.appendChild(h('div', 'd', CAT_HINT[this.cat]));
     const grid = h('div', 'vs-grid');
-    const list = MODULE_LIST.filter((d) => d.cat === this.cat && !d.required).sort((a, b) => (a.unlock ?? 1) - (b.unlock ?? 1));
+    const list = MODULE_LIST.filter((d) => d.cat === this.cat && isShopBuilding(d)).sort((a, b) => (a.unlock ?? 1) - (b.unlock ?? 1));
     for (const d of list) {
       const locked = (d.unlock ?? 1) > g.commander.level;
       const lim = buildLimit(d, p.stats.cc);

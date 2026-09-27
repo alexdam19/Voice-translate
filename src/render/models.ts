@@ -9,7 +9,7 @@ import type { Tank } from '../game/tank';
 const CELL = 0.5;
 const TREAD = 0.5;
 import { withFow } from './fow';
-import { GeoBuilder } from './geo';
+import { GeoBuilder, type UVRect } from './geo';
 import { getAtlas, treadTexture } from './textures';
 
 const DECK = 0.78;
@@ -25,14 +25,24 @@ export interface TankModel {
   treadMat: MeshLambertMaterial;
   version: number;
   radars: Object3D[];
+  /** Afterburner nozzles in tank-local world units (forward, up, right). */
+  exhaust: { lx: number; y: number; lz: number }[];
 }
 
 function palKey(t: Tank): string {
   if (t.kind === 'outrider') return 'outrider';
   if (t.kind === 'outpost') return 'outpost';
   if (t.kind === 'remote') return 'remote';
+  if (t.kind === 'rival') return 'rival';
   return t.team === 'player' ? 'player' : 'enemy';
 }
+
+/** Fortress-class hulls (yours, rivals, other players) get the land-cruiser body. */
+export const isDreadHull = (t: Tank): boolean => t.kind === 'main' || t.kind === 'rival' || t.kind === 'remote';
+
+/** How far the nose and the afterburners stick out past the deck, in model units. */
+export const NOSE = 0.8;
+export const TAIL = 0.6;
 
 /** Builds a voxel model of a tank from its deck layout. Local +X is forward, +Z is right. */
 export function buildTankModel(t: Tank, fow: boolean): TankModel {
@@ -56,7 +66,57 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
   const hull = atlas.get(`hull_${pal}`), deck = atlas.get(`deck_${pal}`), trim = atlas.get(`trim_${pal}`);
   const dark = atlas.get('darkmetal'), metal = atlas.get('metal'), side = atlas.get('mod_side');
   const anchored = t.kind === 'outpost';
-  if (!anchored) {
+  const dread = isDreadHull(t);
+  const exhaust: { lx: number; y: number; lz: number }[] = [];
+  const accent = atlas.get(pal === 'rival' || pal === 'enemy' ? 'glow_red' : pal === 'remote' ? 'glow_purple' : 'glow_cyan');
+  if (dread) {
+    // Land-cruiser running gear: three tracks a side under armored, stepped skirts.
+    const TL = L + 0.3;
+    for (const s of [-1, 1]) {
+      for (let b = 0; b < 3; b++) {
+        const a0 = W / 2 + b * 0.175, a1 = a0 + 0.15;
+        const z0 = s < 0 ? -a1 : a0, z1 = s < 0 ? -a0 : a1;
+        tr.box(-TL / 2, 0.04, z0, TL / 2, 0.6, z1, { u0: 0, v0: 0, u1: TL * 2, v1: 1 }, { u0: 0, v0: 0, u1: TL * 2, v1: 1 });
+        // Drive sprockets up front.
+        gb.box(TL / 2 - 0.05, 0.12, z0 + 0.01, TL / 2 + 0.12, 0.5, z1 - 0.01, dark, dark);
+      }
+      const zi = s < 0 ? -W / 2 - 0.52 : W / 2, zo = s < 0 ? -W / 2 : W / 2 + 0.52;
+      // Skirt: a long armored slab with a lower lip, stepping down front and back.
+      gb.box(-TL / 2 + 0.35, 0.6, zi, TL / 2 - 0.45, 0.8, zo, hull, hull);
+      gb.box(TL / 2 - 0.45, 0.6, zi + (s < 0 ? 0.08 : 0), TL / 2 - 0.1, 0.72, zo - (s > 0 ? 0.08 : 0), hull, hull);
+      gb.box(-TL / 2 + 0.05, 0.6, zi + (s < 0 ? 0.08 : 0), -TL / 2 + 0.35, 0.72, zo - (s > 0 ? 0.08 : 0), hull, hull);
+      const zl = s < 0 ? -W / 2 - 0.56 : W / 2 + 0.52;
+      gb.box(-TL / 2 + 0.5, 0.36, zl, TL / 2 - 0.6, 0.64, zl + 0.04, trim, dark);
+      // Running lights along the skirt.
+      gl.box(-TL / 2 + 0.7, 0.66, s < 0 ? zo - 0.53 : zo - 0.01, TL / 2 - 0.8, 0.7, s < 0 ? zo - 0.51 : zo + 0.01, accent, accent);
+    }
+    // Hull body.
+    gb.box(-L / 2, 0.25, -W / 2, L / 2, DECK, W / 2, deck, hull);
+    // Wedge nose: a sloped glacis, a chin plow and a visor of light.
+    gb.wedgeX(L / 2, L / 2 + NOSE, 0.18, DECK, -W / 2 + 0.12, W / 2 - 0.12, -1, trim, hull);
+    gb.box(L / 2 + NOSE - 0.25, 0.06, -W / 2 + 0.4, L / 2 + NOSE + 0.08, 0.3, W / 2 - 0.4, dark, dark);
+    gl.box(L / 2 + 0.06, DECK - 0.12, -W / 2 + 0.35, L / 2 + 0.14, DECK - 0.05, W / 2 - 0.35, accent, accent);
+    for (const s of [-1, 1]) gl.box(L / 2 + NOSE - 0.3, 0.3, s * (W / 2 - 0.35) - 0.08, L / 2 + NOSE - 0.22, 0.4, s * (W / 2 - 0.35) + 0.08, atlas.get('glow_yellow'), atlas.get('glow_yellow'));
+    // A raised armored rim around the deck, with a light strip down each side.
+    for (const s of [-1, 1]) {
+      gb.box(-L / 2, DECK - 0.07, s < 0 ? -W / 2 - 0.06 : W / 2 - 0.1, L / 2, DECK + 0.08, s < 0 ? -W / 2 + 0.1 : W / 2 + 0.06, hull, trim);
+      gb.box(s < 0 ? -L / 2 : L / 2 - 0.12, DECK - 0.07, -W / 2 + 0.1, s < 0 ? -L / 2 + 0.12 : L / 2, DECK + 0.08, W / 2 - 0.1, hull, trim);
+      gl.box(-L / 2 + 0.3, DECK - 0.04, s < 0 ? -W / 2 - 0.08 : W / 2 + 0.06, L / 2 - 0.3, DECK + 0.02, s < 0 ? -W / 2 - 0.06 : W / 2 + 0.08, accent, accent);
+    }
+    // Tail: an afterburner block with three nozzles, and two swept fins with tail lights.
+    gb.box(-L / 2 - TAIL, 0.28, -W * 0.24, -L / 2, 0.74, W * 0.24, dark, dark);
+    for (const [z, w] of [[0, 0.16], [-W * 0.15, 0.09], [W * 0.15, 0.09]] as const) {
+      gl.box(-L / 2 - TAIL - 0.03, 0.51 - w, z - w, -L / 2 - TAIL + 0.02, 0.51 + w, z + w, atlas.get('glow_orange'), atlas.get('glow_orange'));
+      exhaust.push({ lx: (-L / 2 - TAIL - 0.1) * (t.cell / CELL), y: 0.51 * (t.cell / CELL), lz: z * (t.cell / CELL) });
+    }
+    for (const s of [-1, 1]) {
+      const z0 = s * (W / 2 - 0.34) - 0.07, z1 = z0 + 0.14;
+      gb.box(-L / 2 - 0.25, DECK, z0, -L / 2 + 0.7, DECK + 0.35, z1, hull, hull);
+      gb.box(-L / 2 - 0.25, DECK + 0.35, z0, -L / 2 + 0.3, DECK + 0.75, z1, hull, hull);
+      gb.box(-L / 2 - 0.25, DECK + 0.75, z0, -L / 2 - 0.02, DECK + 0.95, z1, trim, hull);
+      gl.box(-L / 2 - 0.28, DECK + 0.2, z0 + 0.02, -L / 2 - 0.24, DECK + 0.6, z1 - 0.02, atlas.get('glow_red'), atlas.get('glow_red'));
+    }
+  } else if (!anchored) {
     // Treads with a repeating pattern along their length.
     const TL = L + 0.4;
     for (const s of [-1, 1]) {
@@ -76,15 +136,17 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
     // Outposts sit on a concrete foundation.
     gb.box(-L / 2 - 0.6, 0, -W / 2 - 0.6, L / 2 + 0.6, 0.35, W / 2 + 0.6, atlas.get('obs11_top'), atlas.get('obs11_side'));
   }
-  // Hull body.
-  gb.box(-L / 2, 0.25, -W / 2, L / 2, DECK, W / 2, deck, hull);
-  // Glacis (front armour) and rear exhaust.
-  if (!anchored) {
-    gb.box(L / 2, 0.22, -W / 2 + 0.1, L / 2 + 0.28, DECK - 0.12, W / 2 - 0.1, trim, hull);
-    gb.box(-L / 2 - 0.18, 0.35, -W / 4, -L / 2, 0.65, W / 4, dark, dark);
+  if (!dread) {
+    // Hull body.
+    gb.box(-L / 2, 0.25, -W / 2, L / 2, DECK, W / 2, deck, hull);
+    // Glacis (front armour) and rear exhaust.
+    if (!anchored) {
+      gb.box(L / 2, 0.22, -W / 2 + 0.1, L / 2 + 0.28, DECK - 0.12, W / 2 - 0.1, trim, hull);
+      gb.box(-L / 2 - 0.18, 0.35, -W / 4, -L / 2, 0.65, W / 4, dark, dark);
+    }
+    // Side trim stripes (team color).
+    gb.box(-L / 2 + 0.1, DECK - 0.1, -W / 2 - 0.02, L / 2 - 0.1, DECK - 0.02, W / 2 + 0.02, trim, trim);
   }
-  // Side trim stripes (team color).
-  gb.box(-L / 2 + 0.1, DECK - 0.1, -W / 2 - 0.02, L / 2 - 0.1, DECK - 0.02, W / 2 + 0.02, trim, trim);
   const turrets = new Map<number, { obj: Object3D; barrel: Object3D | null }>();
   const radars: Object3D[] = [];
   for (const m of t.modules) {
@@ -98,11 +160,24 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.box(lx + sx * (fx / 2 - 0.05) - 0.03, DECK, lz + sz * (fz / 2 - 0.05) - 0.03, lx + sx * (fx / 2 - 0.05) + 0.03, DECK + 0.5, lz + sz * (fz / 2 - 0.05) + 0.03, metal, metal);
       continue;
     }
-    const h = d.hardpoint ? 0.18 : d.height * 0.75;
+    const h = m.key === 'main_gun' ? 0.3 : m.key === 'pad' ? 0.24 : d.hardpoint ? 0.18 : d.height * 0.75;
     const top = atlas.get(`mod_${m.key}`);
     gb.box(lx - fx / 2, DECK, lz - fz / 2, lx + fx / 2, DECK + h, lz + fz / 2, top, side);
     const y1 = DECK + h;
     switch (m.key) {
+      case 'pad':
+        // An armored sponson: chamfered corners and a light at each one.
+        for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gl.box(lx + sx * (fx / 2 - 0.06) - 0.03, y1, lz + sz * (fz / 2 - 0.06) - 0.03, lx + sx * (fx / 2 - 0.06) + 0.03, y1 + 0.04, lz + sz * (fz / 2 - 0.06) + 0.03, accent, accent);
+        break;
+      case 'main_gun':
+        // A heavy ring the turret sits on.
+        gb.box(lx - fx * 0.42, y1, lz - fz * 0.42, lx + fx * 0.42, y1 + 0.08, lz + fz * 0.42, dark, dark);
+        break;
+      case 'tesla':
+        gb.box(lx - 0.04, y1, lz - 0.04, lx + 0.04, y1 + 0.7, lz + 0.04, metal, metal);
+        for (let i = 0; i < 3; i++) gb.box(lx - 0.16 + i * 0.03, y1 + 0.2 + i * 0.18, lz - 0.16 + i * 0.03, lx + 0.16 - i * 0.03, y1 + 0.26 + i * 0.18, lz + 0.16 - i * 0.03, trim, metal);
+        gl.box(lx - 0.08, y1 + 0.7, lz - 0.08, lx + 0.08, y1 + 0.86, lz + 0.08, atlas.get('glow_blue'), atlas.get('glow_blue'));
+        break;
       case 'bridge':
         gb.box(lx - fx * 0.25, y1, lz - fz * 0.3, lx + fx * 0.2, y1 + 0.3, lz + fz * 0.3, atlas.get('mod_bridge'), side);
         gl.box(lx + fx * 0.2, y1 + 0.08, lz - fz * 0.28, lx + fx * 0.21, y1 + 0.24, lz + fz * 0.28, atlas.get('glow_cyan'), atlas.get('glow_cyan'));
@@ -227,10 +302,11 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
     }
     if (d.hardpoint) {
       const obj = new Group();
-      obj.position.set(lx, y1, lz);
+      obj.position.set(lx, y1 + (m.key === 'main_gun' ? 0.08 : 0), lz);
       root.add(obj);
       let barrel: Object3D | null = null;
-      if (m.weapon) barrel = buildTurret(obj, m.weapon.key, d.hardpoint, lit, glow);
+      if (m.weapon && m.key === 'main_gun') barrel = buildMainTurret(obj, m.weapon.key, lit, glow, accent, hull);
+      else if (m.weapon) barrel = buildTurret(obj, m.weapon.key, WEAPONS[m.weapon.key]?.size ?? d.hardpoint, lit, glow);
       turrets.set(m.id, { obj, barrel });
     }
   }
@@ -252,7 +328,40 @@ export function buildTankModel(t: Tank, fow: boolean): TankModel {
     inner.scale.setScalar(k);
     root.add(inner);
   }
-  return { root, turrets, lit, glow, treadMat, version: t.version, radars };
+  return { root, turrets, lit, glow, treadMat, version: t.version, radars, exhaust };
+}
+
+/**
+ * The main battery: a wide, faceted turret with a commander's cupola and twin long barrels with muzzle brakes.
+ * Returns the barrel group (it recoils).
+ */
+function buildMainTurret(obj: Object3D, key: string, lit: Material, glow: Material, accent: UVRect, hull: UVRect): Object3D {
+  const atlas = getAtlas();
+  const gb = new GeoBuilder();
+  const gbb = new GeoBuilder();
+  const gl = new GeoBuilder();
+  const metal = atlas.get('metal'), dark = atlas.get('darkmetal');
+  // Housing: a low block with a sloped face, stepped cheeks and a rear bustle.
+  gb.box(-0.8, 0, -0.78, 0.45, 0.46, 0.78, hull, hull);
+  gb.wedgeX(0.45, 0.95, 0.04, 0.46, -0.62, 0.62, -1, metal, hull);
+  gb.box(-1.05, 0.06, -0.6, -0.8, 0.4, 0.6, dark, dark);
+  gb.box(-0.45, 0.46, 0.18, -0.1, 0.64, 0.5, metal, dark);
+  gl.box(0.3, 0.3, -0.5, 0.36, 0.36, 0.5, accent, accent);
+  gl.box(-0.3, 0.64, 0.28, -0.2, 0.68, 0.4, atlas.get(WEAPONS[key]?.exclusive ? 'glow_orange' : 'glow_red'), atlas.get('glow_red'));
+  // Twin barrels with fume extractors and muzzle brakes.
+  for (const z of [-0.3, 0.3]) {
+    gbb.box(0.7, 0.2, z - 0.07, 2.6, 0.34, z + 0.07, dark, metal);
+    gbb.box(1.4, 0.18, z - 0.1, 1.7, 0.36, z + 0.1, metal, metal);
+    gbb.box(2.5, 0.16, z - 0.12, 2.8, 0.38, z + 0.12, dark, dark);
+  }
+  obj.add(new Mesh(gb.build(), lit));
+  const barrel = new Group();
+  const bm = new Mesh(gbb.build(), lit);
+  bm.castShadow = true;
+  barrel.add(bm);
+  obj.add(barrel);
+  obj.add(new Mesh(gl.build(), glow));
+  return barrel;
 }
 
 /** Adds a weapon head to a turret pivot; returns the part that recoils. */

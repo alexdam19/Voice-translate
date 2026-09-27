@@ -1,7 +1,8 @@
 import { MAP_SIZE } from '../../shared/constants';
 import { getItem } from '../../shared/items';
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
-import { ZONE } from '../../shared/map';
+import { TER, ZONE } from '../../shared/map';
+import { liquidHurts } from './drives';
 import { NODE_INFO, RUNE_INFO, SITE_INFO, threatAt } from '../../shared/mapgen';
 import { HAZARD_INFO } from '../../shared/types';
 import { ZONES } from '../../shared/zones';
@@ -287,6 +288,21 @@ export function onTankDestroyed(g: Game, t: Tank): void {
   }
   if (t.kind === 'remote') return;
   const threat = t.threat;
+  if (t.kind === 'rival') {
+    // A rival dreadnought: the big prize.
+    const lvl = g.commander.level;
+    g.stats.rivals = (g.stats.rivals ?? 0) + 1;
+    g.objectiveCounters.rivals = (g.objectiveCounters.rivals ?? 0) + 1;
+    g.dropLoot(t.x, t.y, 'raider', 5 + Math.floor(lvl / 3));
+    g.dropStacks(t.x, t.y, [{ id: 'tech_parts', n: 3 + Math.floor(lvl / 4) }]);
+    g.dropPickup(t.x, t.y, { kind: 'chest', chest: lvl >= 20 ? 'legendary_pack' : 'epic_pack', chestThreat: threat });
+    const best = t.weapons().sort((a, b) => (b.weapon?.rarity ?? 0) - (a.weapon?.rarity ?? 0))[0];
+    if (best?.weapon) g.dropPickup(t.x, t.y, { kind: 'weapon', weapon: best.weapon });
+    g.gainXp(150 + 40 * lvl);
+    g.hooks.toast(`RIVAL DESTROYED: ${t.name}! Its best gun, an Epic pack and Salvaged Tech are yours.`, '#76ff03');
+    g.hooks.sound('levelup');
+    return;
+  }
   if (t.kind === 'outpost') {
     const id = (t as Tank & { outpostId?: number }).outpostId ?? 0;
     g.outpostsDown.add(id);
@@ -412,6 +428,15 @@ function collect(g: Game, k: import('../entities').Pickup): boolean {
 export function updateHazards(g: Game, dt: number): void {
   const p = g.player;
   g.timers.hazard -= dt;
+  // Wading through lava or acid without the drive train for it.
+  const ter = g.map.terAt(p.x, p.y);
+  if (liquidHurts(p.drive, ter)) {
+    const lava = ter === TER.LAVA;
+    damageTank(g, p, p.stats.maxHp * (lava ? 0.02 : 0.014) * dt, { silent: true });
+    g.hazardWarn = lava ? 'Lava! Magma Treads or Hover Skirts cross it safely.' : 'Acid! Only Hover Skirts cross it safely.';
+    if (Math.random() < dt * 8) g.fx.push({ t: 'spark', x: p.x + (Math.random() - 0.5) * p.stats.width, y: p.y + (Math.random() - 0.5) * p.stats.length, color: lava ? '#ff6d00' : '#76ff03', n: 2 });
+    return;
+  }
   const zone = ZONES[g.map.zoneAt(p.x, p.y)];
   const hz = zone?.hazard;
   if (!hz || p.stats.protects.has(hz)) {

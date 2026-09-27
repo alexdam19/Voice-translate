@@ -1,4 +1,4 @@
-import type { GameMap, NavMode } from './map';
+import { crushable, type GameMap, type NavMode } from './map';
 
 /* ---------------------------------------------------------------------- */
 /* Circle vs tile collision                                                */
@@ -109,6 +109,8 @@ export interface PathOpts {
   maxNodes?: number;
   /** Speed multiplier per terrain id; slow terrain costs more. */
   traction?: number[];
+  /** Go-anywhere hull: obstacles add cost instead of blocking. */
+  climb?: boolean;
 }
 
 let bufSize = 0;
@@ -285,6 +287,11 @@ export function findPath(map: GameMap, sx: number, sy: number, gx: number, gy: n
       if (trac) {
         const t = trac[map.ter[ni]] || 0.2;
         step /= Math.max(0.25, Math.min(1.2, t));
+      }
+      // Go-anywhere hulls prefer to go around cliffs and pillars (climbing is slow) and barely mind rubble.
+      if (opts.climb) {
+        const o = map.obs[ni];
+        if (o) step *= crushable(o) ? 1.15 : 3;
       }
       const g = gScore[cur] + step;
       if (stamp[ni] !== gen || g < gScore[ni]) {

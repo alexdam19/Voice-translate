@@ -227,8 +227,8 @@ function updateMarine(g: Game, a: Ally, dt: number, an: Anchor): void {
   const sp = speed * far;
   if (buggy && (mx || my)) a.rot = turnToward(a.rot, Math.atan2(my, mx), 6 * dt);
   const r = moveSmall(g, a.x, a.y, buggy ? 0.5 : 0.3, mx * sp * dt, my * sp * dt, false);
-  if (r.hit && far > 1) {
-    // Stuck on rocks while catching up: hop over.
+  if (r.hit && (far > 1 || a.squad)) {
+    // Squads don't get stuck on rocks: they hop over.
     a.x += mx * sp * dt;
     a.y += my * sp * dt;
   } else {

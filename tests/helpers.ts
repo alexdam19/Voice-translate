@@ -29,7 +29,7 @@ export function ccTo(g: Game, cc: number): void {
   const b = g.player.modules.find((m) => m.key === 'bridge')!;
   b.lvl = cc;
   g.player.setChassis(chassisForCC(cc).key);
-  g.applyCrew();
+  g.syncHull();
 }
 
 /** Builds a finished building wherever it fits (raising levels as needed). Returns its id. */

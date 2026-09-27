@@ -204,7 +204,7 @@ export class App {
     const p = this.game.player;
     const aspect = this.view.width / Math.max(1, this.view.height);
     const narrow = Math.max(1, Math.min(1.7, Math.sqrt(1.3 / aspect)));
-    return (this.village ? (p.stats.length * 1.95 + 10) * this.villageZoomMul : (20 + p.stats.length * 2.4) * this.zoomMul) * narrow;
+    return (this.village ? (p.stats.length * 1.95 + 10) * this.villageZoomMul : (18 + p.stats.length * 2.1) * this.zoomMul) * narrow;
   }
 
   /* ---------------------------------------------------------------- */
@@ -453,6 +453,7 @@ export class App {
       this.vstate.ghost = this.villageUI.ghost(this.vstate.hover);
       this.overlay.drawVillage(g, this.vstate);
     } else if (g.mode === 'world') this.overlay.drawMarkers(g, this.hud.trackInfo?.target ?? null, this.hud.trackInfo?.target?.label ?? '');
+    this.overlay.drawHorde(g);
     this.minimap.draw(this.mapCtx, 220, 220, g, this.view, false);
     this.hud.update(g, dt, this.village);
     this.villageUI.update();
@@ -564,7 +565,7 @@ export class App {
       this.setVillage(!this.village);
     }
     const panelKeys: [string, string][] = [
-      ['KeyC', 'cards'], ['KeyV', 'arsenal'], ['KeyK', 'crew'], ['KeyL', 'progress'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'],
+      ['KeyC', 'cards'], ['KeyV', 'arsenal'], ['KeyK', 'crew'], ['KeyL', 'progress'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'], ['KeyN', 'blueprint'],
     ];
     for (const [k, p] of panelKeys) if (i.consume(k)) this.panels.toggle(p);
     if (this.panels.isOpen) return;

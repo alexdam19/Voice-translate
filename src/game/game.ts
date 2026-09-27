@@ -6,15 +6,18 @@ import type { GameMap } from '../shared/map';
 import { generateWorld, threatAt, type Prop, type RuneKind, type WorldGen } from '../shared/mapgen';
 import { RNG } from '../shared/rng';
 import type { WeaponItem } from '../shared/weapons';
+import type { DriveKey } from '../shared/types';
 import { BASE_MAX_ENERGY, CARDS, DECK_SIZE, ENERGY_REGEN, HAND_SIZE, levelPower, MAX_CARD_LEVEL, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
 import { computeCrewBonus, giveXp, makeRecruit, type CrewMember } from './crew';
 import { eid, type Ally, type ChestKind, type Enemy, type FloatText, type Pickup, type Projectile, type Reward, type Telegraph, type Zone } from './entities';
 import { ENEMIES } from './enemyDefs';
+import { MODULES } from './defs';
+import { EnemyGrid } from './systems/grid';
 import { builderCount, levelBonus, levelRoad, MAX_COMMANDER_LEVEL, relicSlots, techsForLevel, xpToNext, type LevelReward } from './progress';
 import type { SquadState, SquadType } from './squads';
 import { crewFx, emptyCrewFx, type CrewFx } from './tech';
 import { Tank } from './tank';
-import { buildStarterTank, starterCrew } from './templates';
+import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates';
 
 export type FxEvent =
   | { t: 'boom'; x: number; y: number; r: number; color: string; big?: boolean }
@@ -76,6 +79,8 @@ export interface GameStats {
   harvested: number;
   deaths: number;
   time: number;
+  hordes?: number;
+  rivals?: number;
 }
 
 export type OutriderOrder = { mode: 'follow' } | { mode: 'hold'; x: number; y: number } | { mode: 'expedition'; kind: 'node' | 'site'; id: number; phase: 'going' | 'working' | 'returning'; t: number };
@@ -135,7 +140,7 @@ export class Game {
   aim = { x: 0, y: 0 };
   respawnIn = 0;
   deadZoneMode = false;
-  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0 };
+  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0, drive: 0, rival: 150 };
   hazardWarn: string | null = null;
   hooks: GameHooks = { toast: () => {}, sound: () => {}, chest: () => {}, levelUp: () => {}, died: () => {}, enterDeadZone: () => {} };
   revealAll = false;
@@ -161,6 +166,23 @@ export class Game {
   driveInput = { x: 0, y: 0, active: false };
   /** Tank-style controls: W/S throttle, A/D turn. Off = screen-relative. */
   tankControls = false;
+  /**
+   * Horde waves (World War Z style): calm, a warning with the direction, then a surge that pours in from there.
+   * `n` is the wave number (it only goes up), `total`/`spawned` count this wave's horde.
+   */
+  wave = { n: 0, phase: 'calm' as 'calm' | 'warning' | 'surge', t: 100, dir: 0, total: 0, spawned: 0, batchT: 0 };
+  /** Neighbour lookups for the crowd (rebuilt each step). */
+  grid = new EnemyGrid();
+  private enemyIndex = new Map<number, Enemy>();
+  private titans: Enemy[] = [];
+  /** Targets for the player's guns, built once per step. */
+  targetCache: { at: number; list: Target[] } = { at: -1, list: [] };
+  /** Drive trains you own (swapping between them is free). */
+  drivesOwned = new Set<DriveKey>(['wheels']);
+  /** Pick the best owned drive train for the ground by itself. */
+  autoDrive = true;
+  /** Seconds before AUTO may swap again. */
+  driveSwapT = 0;
 
   /* ---------------- Commander (XP and the Level Road) ---------------- */
   commander = { level: 1, xp: 0 };
@@ -366,6 +388,27 @@ export class Game {
     return this.mainCrew().length >= MAX_BASE_CREW || this.outriderLevel > 0;
   }
 
+  /**
+   * Puts the hull's built-in weapon mounts where the Command Center says. Anything that no longer fits goes back to
+   * you: weapons to the armory, half the build cost to the hold.
+   */
+  syncHull(arm = true): number {
+    const empty = (): number => this.player.modules.filter((m) => MODULES[m.key].fixed && !m.weapon).length;
+    const before = this.player.modules.filter((m) => MODULES[m.key].fixed).length;
+    const evicted = this.player.ensureFixed();
+    const added = this.player.modules.filter((m) => MODULES[m.key].fixed).length - before;
+    // New mounts come armed: autocannons on pads, the 88mm on a battery.
+    if (arm && added > 0 && empty() > 0) armFixed(this.player, (k) => newWeapon(k));
+    for (const m of evicted) {
+      if (m.weapon) this.armory.push(m.weapon);
+      const d = MODULES[m.key];
+      for (const [k, n] of Object.entries(d.cost)) this.give(k, Math.ceil(n / 2), true);
+    }
+    if (evicted.length) this.hooks.toast(`${evicted.length} building${evicted.length > 1 ? 's' : ''} didn't fit and went back to the hold.`, '#ffab40');
+    this.applyCrew();
+    return added;
+  }
+
   applyCrew(): void {
     this.crewFx = crewFx(this.tech);
     const bonus = computeCrewBonus(this.crew);
@@ -516,8 +559,34 @@ export class Game {
   /* ---------------------------------------------------------------- */
 
   enemyById(id: number): Enemy | undefined {
-    for (const e of this.enemies) if (e.id === id) return e;
+    const e = this.enemyIndex.get(id);
+    if (e && e.hp > 0) return e;
+    for (const k of this.enemies) if (k.id === id) return k;
     return undefined;
+  }
+
+  /** Rebuilds the enemy lookups (once per step, before the crowd moves). */
+  indexEnemies(): void {
+    this.enemyIndex.clear();
+    this.titans.length = 0;
+    for (const e of this.enemies) {
+      this.enemyIndex.set(e.id, e);
+      if (e.titan) this.titans.push(e);
+    }
+    this.grid.build(this.enemies);
+  }
+
+  /** Enemies that might be within `r` of (x, y): the crowd grid plus titans (whose parts reach far). */
+  enemiesNear(x: number, y: number, r: number): Enemy[] {
+    // A fresh list: a hit can kill, and a kill can set off another blast that asks again.
+    const out = this.grid.near(x, y, r, []);
+    for (const t of this.titans) if (!out.includes(t)) out.push(t);
+    // Enemies spawned since the grid was built this step.
+    for (let i = this.enemies.length - 1; i >= 0 && i >= this.enemies.length - 8; i--) {
+      const e = this.enemies[i];
+      if (!out.includes(e) && Math.abs(e.x - x) < r + 2 && Math.abs(e.y - y) < r + 2) out.push(e);
+    }
+    return out;
   }
 
   tankById(id: number): Tank | undefined {
@@ -619,7 +688,7 @@ export class Game {
       speed: d.speed * (elite ? 1.1 : 1), dmg: d.dmg * dmgScale, range: d.range, atkCd: 1 + Math.random(), atkRate: d.rate, threat, elite,
       flying: !!d.flying, state: 'idle', stateT: 0, targetId: 0, homeX: x, homeY: y, leash: 0, camp: 0, stun: 0, slow: 0, slowAmt: 0, burn: 0, burnDps: 0,
       hitFlash: 0, anim: Math.random() * 10, burrowed: false, lastHitBy: 0, aggro: false, parts: [], loot: d.loot, xp: d.xp * (elite ? 2 : 1),
-      titan: kind.startsWith('titan'), name: d.name, z: d.flying ? 1.6 : 0,
+      titan: kind.startsWith('titan'), name: d.name, z: d.flying ? 1.6 : 0, horde: false, latch: null,
     };
     this.enemies.push(e);
     return e;

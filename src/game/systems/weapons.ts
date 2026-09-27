@@ -12,9 +12,14 @@ const HEIGHT = 1.2;
 /** Candidate targets for a side, within range of a point. */
 export function targetsFor(g: Game, team: 'player' | 'enemy'): Target[] {
   if (team === 'enemy') return g.friendlies();
+  // Built once per step and shared by every gun (a horde is hundreds of targets).
+  const c = g.targetCache;
+  if (c.at === g.time) return c.list;
   const out: Target[] = [];
-  for (const e of g.enemies) if (e.hp > 0 && !e.burrowed && (g.mode === 'raid' || g.isVisible(e.x, e.y) || e.aggro)) out.push({ id: e.id, x: e.x, y: e.y, r: e.r, flying: e.flying });
+  for (const e of g.enemies) if (e.hp > 0 && !e.burrowed && (g.mode === 'raid' || g.isVisible(e.x, e.y) || e.aggro)) out.push({ id: e.id, x: e.x, y: e.y, r: e.r, flying: e.flying || !!e.latch });
   for (const t of g.tanks) if (!t.dead) out.push({ id: t.id, x: t.x, y: t.y, r: Math.min(t.stats.width, t.stats.length) / 2, flying: false });
+  c.at = g.time;
+  c.list = out;
   return out;
 }
 
@@ -129,12 +134,15 @@ function pickTarget(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponStat
   let bestScore = Infinity;
   const lobbed = d.arc || s.sky > 0;
   for (const c of cands) {
-    const dd = Math.hypot(c.x - x, c.y - y);
+    const dx = c.x - x, dy = c.y - y;
+    if (Math.abs(dx) > s.range + c.r || Math.abs(dy) > s.range + c.r) continue;
+    const dd = Math.hypot(dx, dy);
     if (dd > s.range + c.r || dd < s.minRange) continue;
-    if (!lobbed && dd > 3 && !losClear(g.map, x, y, c.x, c.y)) continue;
-    // Flak loves flyers; everything prefers the closest.
+    // Flak loves flyers; everything prefers the closest (line of sight is only checked for a better pick).
     const score = dd - (d.kind === 'flak' && c.flying ? 6 : 0);
-    if (score < bestScore) {
+    if (score >= bestScore) continue;
+    if (!lobbed && dd > 3 && !losClear(g.map, x, y, c.x, c.y)) continue;
+    {
       bestScore = score;
       best = c;
     }

@@ -18,7 +18,8 @@ export class Title {
       <div class="logo">IRONCRAWL</div>
       <div class="tag">A rolling fortress in a tech-punk wasteland</div>
       <ul class="pitch">
-        <li>Your base is a <b>whole facility on treads</b>. Drive it with <b>WASD</b> or the touch stick; it rolls over rocks and ruins, and its guns aim themselves.</li>
+        <li>Your base is a <b>land cruiser the size of a warship</b>: triple tracks, weapon pads on every corner, a twin-barrelled main battery. Drive it with <b>WASD</b> or the touch stick, over anything.</li>
+        <li><b>Hordes</b> come in waves, hundreds strong, and climb your hull. <b>Rival dreadnoughts</b> as big as yours hunt you across the wastes.</li>
         <li><b>Battle cards</b>: drag a card onto the battlefield to call artillery, drop marines, summon a dragon or launch a nuke. Find new cards in packs.</li>
         <li>Inside, run it like a village: <b>builders</b>, a <b>shop</b>, timed upgrades, and a <b>tracker</b> that points you to whatever you're missing.</li>
         <li>Kill things for <b>XP</b>: every commander level unlocks something new. Train <b>squads</b> that guard, fight and scavenge for you.</li>

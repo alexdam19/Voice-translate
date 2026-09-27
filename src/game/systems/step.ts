@@ -14,6 +14,9 @@ import { outriderDestroyed, updateOutrider } from './outrider';
 import { updateProjectiles } from './projectiles';
 import { updateSpawns } from './spawns';
 import { updateTankWeapons } from './weapons';
+import { updateAutoDrive } from './drives';
+import { updateWaves } from './waves';
+import { updateTesla } from './tesla';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
 
 export const RESPAWN_TIME = 6;
@@ -100,7 +103,10 @@ export function stepWorld(g: Game, dt: number): void {
   updateEnemies(g, dt);
   updateTelegraphs(g, dt);
   updateAllies(g, dt);
-  if (!p.dead) updateTankWeapons(g, p, dt);
+  if (!p.dead) {
+    updateTankWeapons(g, p, dt);
+    updateTesla(g, p, dt);
+  }
   if (g.outrider && !g.outrider.dead) updateTankWeapons(g, g.outrider, dt);
   for (const t of g.tanks) if (!t.dead && t.kind !== 'remote') updateTankWeapons(g, t, dt);
   updateProjectiles(g, dt);
@@ -122,10 +128,12 @@ export function stepWorld(g: Game, dt: number): void {
       updateSites(g, dt);
       updateRunes(g, dt);
       updateHazards(g, dt);
+      updateAutoDrive(g, dt);
     }
     updateOutposts(g);
     updatePickups(g, dt);
     updateSpawns(g, dt);
+    updateWaves(g, dt);
     g.timers.vision -= dt;
     if (g.timers.vision <= 0) {
       g.timers.vision = 0.2;

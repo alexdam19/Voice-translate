@@ -60,7 +60,7 @@ function hitSomething(g: Game, p: Projectile): boolean {
   opts.kx = p.vx / sp;
   opts.ky = p.vy / sp;
   if (p.team === 'player') {
-    for (const e of g.enemies) {
+    for (const e of g.enemiesNear(p.x, p.y, p.size + 2)) {
       if (e.hp <= 0 || e.burrowed || p.hit.includes(e.id)) continue;
       const rr = e.r + p.size;
       if (Math.abs(e.x - p.x) > rr + 3 || Math.abs(e.y - p.y) > rr + 3) continue;

@@ -150,6 +150,37 @@ const DRAW: Record<string, DrawFn> = {
     p.rect(2, 22 - f, 5, 3, l);
     p.rect(25, 22 + f, 5, 3, l);
   },
+  swarmer: (p, f, c) => {
+    // A gaunt runner, leaning in, arms out.
+    const d = shade(c, 0.6), l = shade(c, 1.25);
+    p.rect(15, 5, 5, 5, l);
+    p.set(16, 7, '#ff1744');
+    p.set(18, 7, '#ff1744');
+    p.rect(16, 9, 3, 1, d);
+    p.rect(12, 10, 7, 8, c);
+    p.rect(12, 10, 7, 1, l);
+    p.rect(19, 11 + f, 7, 2, c);
+    p.rect(25, 12 + f, 2, 2, l);
+    p.rect(18, 14 - f, 6, 2, d);
+    p.rect(12, 17, 7, 2, '#4e342e');
+    leg(p, 13 + f * 2, 19, 8, d);
+    leg(p, 17 - f * 2, 19, 8, d);
+  },
+  leaper: (p, f, c) => {
+    // Hunched, long-limbed, spined.
+    const d = shade(c, 0.6), l = shade(c, 1.3);
+    p.rect(9, 12, 12, 7, c);
+    p.rect(9, 12, 12, 1, l);
+    p.rect(19, 9, 7, 5, l);
+    p.set(22, 11, '#ffea00');
+    p.set(24, 11, '#ffea00');
+    p.rect(24, 13, 3, 1, '#ffffff');
+    for (let i = 0; i < 3; i++) p.set(11 + i * 3, 11, l);
+    p.rect(20, 18, 2, 6 + f, d);
+    p.rect(9, 18, 2, 7 - f, d);
+    p.rect(6, 23 - f, 4, 2, d);
+    p.rect(22, 24, 4, 2, d);
+  },
   marine: (p, f, c) => {
     p.rect(13, 6, 6, 6, '#455a64');
     p.rect(14, 8, 4, 2, '#4fc3f7');
@@ -173,6 +204,21 @@ const DRAW: Record<string, DrawFn> = {
 const cache = new Map<string, SpriteMaterial>();
 
 function makeTex(draw: DrawFn, frame: number, color: string, variant: 'n' | 'flash' | 'elite'): CanvasTexture {
+  const c = drawSprite(draw, frame, color, variant);
+  const t = new CanvasTexture(c);
+  t.magFilter = NearestFilter;
+  t.minFilter = NearestFilter;
+  t.generateMipmaps = false;
+  t.colorSpace = SRGBColorSpace;
+  return t;
+}
+
+/** A creature sprite frame as a 32x32 canvas (for the batched creature atlas). */
+export function creatureCanvas(kind: string, color: string, frame: number, variant: 'n' | 'flash' | 'elite'): HTMLCanvasElement {
+  return drawSprite(DRAW[kind] ?? DRAW.rat, frame, color, variant);
+}
+
+function drawSprite(draw: DrawFn, frame: number, color: string, variant: 'n' | 'flash' | 'elite'): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = S;
   c.height = S;
@@ -203,12 +249,7 @@ function makeTex(draw: DrawFn, frame: number, color: string, variant: 'n' | 'fla
     ctx.fillStyle = 'rgba(12,10,14,0.85)';
     for (const [x, y] of out) ctx.fillRect(x, y, 1, 1);
   }
-  const t = new CanvasTexture(c);
-  t.magFilter = NearestFilter;
-  t.minFilter = NearestFilter;
-  t.generateMipmaps = false;
-  t.colorSpace = SRGBColorSpace;
-  return t;
+  return c;
 }
 
 /** Sprite material for a creature kind, frame, facing and variant. */

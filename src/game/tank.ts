@@ -2,11 +2,11 @@ import { Inventory, type Slot } from '../shared/inventory';
 import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
 import { emptyBonus, type CrewBonus } from './crew';
-import { chassisDef, levelMult, MODULES, type ModuleDef } from './defs';
+import { chassisDef, fixedSpots, LEGACY_DIMS, levelMult, MODULES, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
 
 export type Team = 'player' | 'enemy';
-export type TankKind = 'main' | 'outrider' | 'raider' | 'outpost' | 'remote';
+export type TankKind = 'main' | 'outrider' | 'raider' | 'outpost' | 'remote' | 'rival';
 export type FireMode = 'auto' | 'manual';
 
 export const BASE_CARGO = 12;
@@ -150,8 +150,8 @@ export class Tank {
     this.team = team;
     this.kind = kind;
     this.name = name;
-    this.cell = kind === 'main' || kind === 'remote' ? 1 : kind === 'outrider' ? 0.5 : kind === 'raider' ? 0.6 : 0.75;
-    this.crush = kind === 'main';
+    this.cell = kind === 'main' || kind === 'remote' || kind === 'rival' ? 1 : kind === 'outrider' ? 0.5 : kind === 'raider' ? 0.6 : 0.75;
+    this.crush = kind === 'main' || kind === 'rival';
     this.chassis = chassis;
     const c = chassisDef(chassis);
     this.cols = c.cols;
@@ -210,7 +210,7 @@ export class Tank {
     const i = this.modules.findIndex((m) => m.id === id);
     if (i < 0) return null;
     const m = this.modules[i];
-    if (MODULES[m.key].required) return null;
+    if (MODULES[m.key].required || MODULES[m.key].fixed) return null;
     this.modules.splice(i, 1);
     for (let k = 0; k < this.grid.length; k++) if (this.grid[k] === id) this.grid[k] = -1;
     this.version++;
@@ -220,7 +220,7 @@ export class Tank {
 
   moveModule(id: number, cx: number, cy: number): boolean {
     const m = this.moduleById(id);
-    if (!m || !this.canPlace(m.key, cx, cy, id)) return false;
+    if (!m || MODULES[m.key].fixed || !this.canPlace(m.key, cx, cy, id)) return false;
     for (let k = 0; k < this.grid.length; k++) if (this.grid[k] === id) this.grid[k] = -1;
     const d = MODULES[m.key];
     m.cx = cx;
@@ -263,6 +263,72 @@ export class Tank {
     const frac = this.hp / Math.max(1, this.stats.maxHp);
     this.recalc();
     this.hp = Math.max(1, this.stats.maxHp * frac);
+    return true;
+  }
+
+  /**
+   * Puts the hull's built-in weapons (corner pads, side pads, main batteries) where the Command Center level says,
+   * moving anything in the way to the nearest free spot. Returns buildings that no longer fit anywhere.
+   */
+  ensureFixed(): ModuleInst[] {
+    const cc = this.modules.find((m) => MODULES[m.key].required)?.lvl ?? 1;
+    const spots = fixedSpots(cc, this.cols, this.rows);
+    const have = { pad: this.modules.filter((m) => m.key === 'pad').sort((a, b) => a.id - b.id), main_gun: this.modules.filter((m) => m.key === 'main_gun').sort((a, b) => a.id - b.id) };
+    const used = { pad: 0, main_gun: 0 };
+    this.grid.fill(-1);
+    const stamp = (m: ModuleInst): void => {
+      const d = MODULES[m.key];
+      for (let y = m.cy; y < m.cy + d.h; y++) for (let x = m.cx; x < m.cx + d.w; x++) this.grid[y * this.cols + x] = m.id;
+    };
+    const keep = new Set<ModuleInst>();
+    for (const sp of spots) {
+      let m = have[sp.key][used[sp.key]++];
+      if (!m) {
+        m = {
+          id: this.nextModId++, key: sp.key, cx: sp.cx, cy: sp.cy, weapon: null, mode: 'auto', aim: this.rot, cd: Math.random() * 0.5, recoil: 0, targetId: 0, stats: null,
+          burst: 0, lvl: 1, shots: 0, ramp: 0, rampTarget: 0, cd2: 0, built: true,
+        };
+        this.modules.push(m);
+      }
+      m.cx = sp.cx;
+      m.cy = sp.cy;
+      stamp(m);
+      keep.add(m);
+    }
+    // Fixed weapons beyond this level's spots (shouldn't happen) are dropped with the rest below.
+    const evicted: ModuleInst[] = [];
+    const rest = this.modules.filter((m) => !keep.has(m));
+    for (const m of rest) {
+      if (MODULES[m.key].fixed) {
+        evicted.push(m);
+        continue;
+      }
+      if (this.canPlace(m.key, m.cx, m.cy, m.id) || this.moveToFree(m)) stamp(m);
+      else evicted.push(m);
+    }
+    if (evicted.length) this.modules = this.modules.filter((m) => !evicted.includes(m));
+    this.version++;
+    this.recalc();
+    return evicted;
+  }
+
+  /** Moves a module (not yet on the grid) to the free spot nearest its current one. */
+  private moveToFree(m: ModuleInst): boolean {
+    const d = MODULES[m.key];
+    let best: [number, number] | null = null;
+    let bd = Infinity;
+    for (let cy = 0; cy + d.h <= this.rows; cy++) {
+      for (let cx = 0; cx + d.w <= this.cols; cx++) {
+        const dd = Math.abs(cx - m.cx) + Math.abs(cy - m.cy);
+        if (dd < bd && this.canPlace(m.key, cx, cy, m.id)) {
+          bd = dd;
+          best = [cx, cy];
+        }
+      }
+    }
+    if (!best) return false;
+    m.cx = best[0];
+    m.cy = best[1];
     return true;
   }
 
@@ -348,7 +414,9 @@ export class Tank {
     power *= 1 + crew.power;
     const powerRatio = use <= 0 ? 1 : Math.min(1, power / use);
     const width = this.cols * this.cell + this.cell * 2;
-    const length = this.rows * this.cell + 0.3 * this.cell / 0.5;
+    // Fortress-class hulls carry a wedge nose and an afterburner tail past the deck.
+    const dread = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
+    const length = this.rows * this.cell + (dread ? 2.8 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
     const topSpeed = this.anchored ? 0 : (2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed);
     const turnRate = 1.9 * Math.sqrt(8 / ((this.rows + this.cols * 0.5) * this.cell / 0.5)) * (this.kind === 'main' ? 1.6 : 1);
@@ -452,7 +520,7 @@ export class Tank {
 
   serialize(): TankSave {
     return {
-      chassis: this.chassis, drive: this.drive, x: this.x, y: this.y, rot: this.rot, hp: this.hp, shield: this.shield,
+      chassis: this.chassis, cols: this.cols, rows: this.rows, drive: this.drive, x: this.x, y: this.y, rot: this.rot, hp: this.hp, shield: this.shield,
       modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined, b: m.built ? undefined : false })),
       cargo: this.cargo.snapshot(),
     };
@@ -464,9 +532,13 @@ export class Tank {
     t.x = s.x;
     t.y = s.y;
     t.rot = s.rot;
+    // Layouts saved on an older, smaller deck move to the middle of the new one.
+    const legacy = LEGACY_DIMS[s.chassis];
+    const oldCols = s.cols ?? (legacy && kind === 'main' ? legacy[0] : t.cols), oldRows = s.rows ?? (legacy && kind === 'main' ? legacy[1] : t.rows);
+    const ox = Math.max(0, Math.floor((t.cols - oldCols) / 2)), oy = Math.max(0, Math.floor((t.rows - oldRows) / 2));
     for (const m of s.modules) {
       if (!MODULES[m.key]) continue;
-      const inst = t.addModule(m.key, m.cx, m.cy, m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null);
+      const inst = t.addModule(m.key, m.cx + ox, m.cy + oy, m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null);
       if (inst) {
         inst.mode = 'auto';
         inst.aim = t.rot;
@@ -485,6 +557,9 @@ export class Tank {
 
 export interface TankSave {
   chassis: string;
+  /** Deck size when saved (v0.7+); older saves used the smaller legacy decks. */
+  cols?: number;
+  rows?: number;
   drive: DriveKey;
   x: number;
   y: number;

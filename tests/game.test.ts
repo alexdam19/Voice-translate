@@ -48,16 +48,20 @@ describe('rarity and weapons', () => {
 });
 
 describe('fortress', () => {
-  it('mounts weapons only on matching hardpoints', () => {
+  it('mounts weapons only on matching hardpoints (pads take light or medium)', () => {
     const g = game();
-    const heavy = g.player.modules.find((m) => m.key === 'hp_heavy')!;
-    const light = g.player.modules.find((m) => m.key === 'hp_light')!;
+    const heavy = g.player.modules.find((m) => m.key === 'main_gun')!;
+    const pads = g.player.modules.filter((m) => m.key === 'pad');
     const w = makeWeapon(999, 'gatling', 2);
     g.armory.push(w);
     expect(mountWeapon(g, heavy.id, w.uid).ok).toBe(false);
-    expect(mountWeapon(g, light.id, w.uid).ok).toBe(true);
-    expect(light.weapon?.key).toBe('gatling');
+    expect(mountWeapon(g, pads[0].id, w.uid).ok).toBe(true);
+    expect(pads[0].weapon?.key).toBe('gatling');
     expect(g.armory.some((k) => k.key === 'autocannon')).toBe(true);
+    const med = Object.values(WEAPONS).find((d) => d.size === 'medium')!;
+    const mw = makeWeapon(1000, med.key, 1);
+    g.armory.push(mw);
+    expect(mountWeapon(g, pads[1].id, mw.uid).ok).toBe(true);
   });
 
   it('the old tech tree is still a DAG (the Level Road hands it out in order)', () => {

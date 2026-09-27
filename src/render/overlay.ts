@@ -196,9 +196,28 @@ export class Overlay {
       this.text(`${label} · ${dist}m`, p.x, p.y - 32 + bob, '#fff8e1', 10);
       return;
     }
-    // Arrow at the edge of the screen, pointing toward the target.
+    this.edgeArrow(target.x, target.y, '#ffd740', `${label} · ${dist}m`, bob);
+  }
+
+  /** Warning arrows toward an incoming horde (and red ticks at the screen edge while it's pouring in). */
+  drawHorde(g: Game): void {
+    const w = g.wave;
+    if (g.mode !== 'world' || g.player.dead || (w.phase !== 'warning' && w.phase !== 'surge')) return;
+    if (w.phase === 'surge' && w.spawned >= w.total) return;
+    const p = g.player;
+    const x = p.x + Math.cos(w.dir) * 60, y = p.y + Math.sin(w.dir) * 60;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+    const col = pulse > 0.5 ? '#ff1744' : '#ff8a80';
+    this.edgeArrow(x, y, col, w.phase === 'warning' ? `HORDE in ${Math.ceil(w.t)}s` : 'HORDE', pulse * 6, 1.6);
+    if (this.view.width > 900) for (const s of [-0.45, 0.45]) this.edgeArrow(p.x + Math.cos(w.dir + s) * 60, p.y + Math.sin(w.dir + s) * 60, col, '', pulse * 4, 1);
+  }
+
+  /** An arrow at the edge of the play area pointing toward a world point. */
+  private edgeArrow(wx: number, wy: number, color: string, label: string, bob = 0, scale = 1): void {
+    const v = this.view;
+    const c = this.ctx;
     const cx = v.width / 2, cy = v.height / 2;
-    const q = v.worldToScreen(target.x, target.y, 0);
+    const q = v.worldToScreen(wx, wy, 0);
     let dx = q.x - cx, dy = q.y - cy;
     if (!q.ok) {
       dx = -dx;
@@ -206,7 +225,7 @@ export class Overlay {
     }
     const a = Math.atan2(dy, dx);
     // Keep the arrow inside the play area: clear of the top bar and the card hand at the bottom.
-    const x0 = 70, x1 = v.width - 70, y0 = 110, y1 = v.height - 240;
+    const x0 = 60, x1 = v.width - 60, y0 = Math.min(110, v.height * 0.2), y1 = Math.max(y0 + 40, v.height - Math.min(240, v.height * 0.38));
     const ca = Math.cos(a), sa = Math.sin(a);
     const kx = ca > 0 ? (x1 - cx) / ca : ca < 0 ? (x0 - cx) / ca : Infinity;
     const ky = sa > 0 ? (y1 - cy) / sa : sa < 0 ? (y0 - cy) / sa : Infinity;
@@ -215,7 +234,8 @@ export class Overlay {
     c.save();
     c.translate(ax, ay);
     c.rotate(a);
-    c.fillStyle = '#ffd740';
+    c.scale(scale, scale);
+    c.fillStyle = color;
     c.strokeStyle = '#0b0b0e';
     c.lineWidth = 3;
     c.beginPath();
@@ -227,7 +247,7 @@ export class Overlay {
     c.stroke();
     c.fill();
     c.restore();
-    this.text(`${label} · ${dist}m`, ax - Math.cos(a) * 30, ay - Math.sin(a) * 22, '#fff8e1', 10);
+    if (label) this.text(label, ax - Math.cos(a) * 30, ay - Math.sin(a) * 22, '#fff8e1', 10);
   }
 
   draw(g: Game, hoverId: number): void {
@@ -243,12 +263,15 @@ export class Overlay {
       if (e.burrowed || (g.mode === 'world' && !g.isVisible(e.x, e.y))) continue;
       if (e.titan) continue;
       const full = e.hp >= e.maxHp;
-      if (full && !e.elite && e.id !== hoverId && e.kind !== 'guardian' && e.id !== g.player.focusId) continue;
-      const p = v.worldToScreen(e.x, e.y, (e.flying ? 1.6 : 0) + e.r * 3.1 + 0.2);
+      const picked = e.id === hoverId || e.id === g.player.focusId;
+      // Horde fodder gets no bars (there are hundreds); its elites get a small one, no name.
+      if (e.horde && !picked && !e.elite) continue;
+      if (full && !e.elite && !picked && e.kind !== 'guardian') continue;
+      const p = v.worldToScreen(e.x, e.y, (e.flying ? 1.6 : 0) + e.z + e.r * 3.1 + 0.2);
       if (!onScreen(p)) continue;
-      const w = Math.max(26, Math.min(70, e.r * 36 * scale));
-      this.bar(p.x, p.y, w, e.hp / e.maxHp, e.elite ? '#ff40ff' : '#e53935', 0, 0, 4);
-      if (e.kind === 'guardian' || e.id === hoverId || e.elite) this.text(`${e.elite ? 'Elite ' : ''}${e.name}`, p.x, p.y - 8, e.elite ? '#ff80ff' : '#ffcdd2', 9);
+      const w = Math.max(e.horde ? 16 : 26, Math.min(70, e.r * 36 * scale));
+      this.bar(p.x, p.y, w, e.hp / e.maxHp, e.elite ? '#ff40ff' : '#e53935', 0, 0, e.horde ? 3 : 4);
+      if (e.kind === 'guardian' || e.id === hoverId || (e.elite && !e.horde)) this.text(`${e.elite ? 'Elite ' : ''}${e.name}`, p.x, p.y - 8, e.elite ? '#ff80ff' : '#ffcdd2', 9);
       if (e.id === g.player.focusId) this.text('▼', p.x, p.y - (e.id === hoverId ? 20 : 9), '#ff5252', 12);
     }
     // Tanks

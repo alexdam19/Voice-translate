@@ -5,6 +5,7 @@ import type { CrewMember } from './crew';
 
 export type EnemyKind =
   | 'rat' | 'drone' | 'raider' | 'bomber' | 'buggy' | 'stalker' | 'spitter' | 'brute' | 'rocketeer' | 'mech' | 'wraith' | 'guardian'
+  | 'swarmer' | 'leaper'
   | 'titan_walker' | 'titan_beast' | 'titan_worm';
 
 export interface Enemy {
@@ -53,6 +54,10 @@ export interface Enemy {
   titan: boolean;
   name: string;
   z: number;
+  /** Part of a horde wave: always hunting you, never wanders off. */
+  horde: boolean;
+  /** Clinging to a hull (tank-local position and the tank's id) instead of walking. */
+  latch: { tank: number; lx: number; lz: number } | null;
 }
 
 export type Team = 'player' | 'enemy';

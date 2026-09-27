@@ -15,6 +15,7 @@ import { renderCargo } from './cargoPanel';
 import { renderArsenal } from './arsenalPanel';
 import { renderCards } from './cardsPanel';
 import { renderProgress } from './progressPanel';
+import { renderBlueprint } from './blueprintPanel';
 
 const SWITCH: [string, string, string][] = [
   ['cards', 'CARDS (C)', ''], ['arsenal', 'ARSENAL (V)', 'arsenal'], ['crew', 'CREW (K)', 'crew'], ['progress', 'LEVEL ROAD (L)', ''],
@@ -81,6 +82,7 @@ export class Panels {
       map: { title: 'WORLD MAP', sub: 'Click to drive there. Zones further from camp are more dangerous and need special gear.', render: (c) => this.renderMap(c), wide: true },
       help: { title: 'HOW TO PLAY', sub: 'Commander\'s field manual', render: (c) => this.renderHelp(c), wide: true },
       menu: { title: 'PAUSED', sub: '', render: (c) => this.renderMenu(c) },
+      blueprint: { title: 'BLUEPRINT', sub: 'A technical drawing of your whole fortress, and an analysis of what it can do.', render: renderBlueprint, wide: true, cls: 'blueprint' },
     };
   }
 
@@ -244,7 +246,8 @@ export class Panels {
       ${isTouch()
         ? '<li><b>Push the stick</b> (bottom left) to drive. It rolls straight over rocks, ruins and wrecks. <b>Tap the ground</b> to drive there, <b>hold a finger</b> down to keep steering, tap an enemy to focus fire, tap a node to drill it. <b>Pinch</b> to zoom.</li>'
         : '<li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive your fortress. It rolls straight over rocks, ruins and wrecks. Right-click also drives, attacks, harvests.</li>'}
-      <li>Your guns <b>aim and fire on their own</b>.</li>
+      <li>Your guns <b>aim and fire on their own</b>: a pad on every corner and the main battery up front, with more as the Command Center grows.</li>
+      <li><b>Nothing stops you</b>: you crush rubble, climb cliffs and wade through lava. The right <b>drive train</b> makes it fast (and lava safe); tap the drive chip by your hull bar, or leave it on AUTO.</li>
       <li><b>Park on a resource node</b> to drill it.</li>
       <li>If your fortress goes down, it's towed to camp and comes back <b>fully repaired</b>.</li>
     </ul>
@@ -273,6 +276,12 @@ export class Panels {
     </ul>
   </div>
   <div class="help-col">
+    <h3>HORDES &amp; RIVALS</h3>
+    <ul>
+      <li><b class="bad">Hordes</b> come in waves. A warning and a red arrow show where from; then hundreds pour in and climb your hull. Drive hard to shake them off; <b>Tesla Coils</b> zap climbers.</li>
+      <li><b class="bad">Rival dreadnoughts</b> (level 6+) are fortresses as strong as yours, hunting you. Big prize: an Epic pack and their best gun.</li>
+      <li><b>BLUEPRINT</b> (${isTouch() ? '☰ menu or the base' : '<kbd>N</kbd>'}) shows your whole fortress, its firepower on each side and its weak spots.</li>
+    </ul>
     <h3>LOOT</h3>
     <ul>
       <li><b class="y">◆ Loot areas:</b> park inside the ring and hold.</li>
@@ -327,6 +336,7 @@ export class Panels {
     // Screens that don't have their own HUD button on a phone.
     const quick = h('div', 'menu-quick');
     quick.append(
+      button('BLUEPRINT', () => this.open('blueprint')),
       button('CARGO', () => this.open('cargo')),
       button('MAP', () => this.open('map')),
       button('LEVEL ROAD', () => this.open('progress')),

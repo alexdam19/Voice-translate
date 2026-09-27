@@ -39,6 +39,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
   brute: { kind: 'brute', name: 'Scrap Brute', hp: 420, r: 1, speed: 2.4, dmg: 38, range: 1.1, rate: 0.6, loot: 'trooper', xp: 40, minThreat: 3.5, zones: { ...ALL(2), [ZONE.MAGMA]: 4 }, color: '#a1887f' },
   rocketeer: { kind: 'rocketeer', name: 'Rocketeer', hp: 100, r: 0.45, speed: 3, dmg: 26, range: 15, rate: 0.4, proj: 'missile', projSpeed: 13, splash: 1.5, loot: 'trooper', xp: 20, minThreat: 3.4, zones: ALL(3), color: '#ef5350' },
   mech: { kind: 'mech', name: 'Walker Mech', hp: 900, r: 1.35, speed: 2.2, dmg: 16, range: 16, rate: 2.2, proj: 'bullet', projSpeed: 26, loot: 'elite', xp: 80, minThreat: 5, zones: ALL(1.5), color: '#78909c' },
+  swarmer: { kind: 'swarmer', name: 'Swarmer', hp: 16, r: 0.32, speed: 6.2, dmg: 4, range: 0.4, rate: 1.4, loot: 'swarm', xp: 1.2, minThreat: 99, zones: {}, color: '#a5a58d' },
+  leaper: { kind: 'leaper', name: 'Leaper', hp: 30, r: 0.36, speed: 5.2, dmg: 6, range: 0.4, rate: 1.2, loot: 'swarm', xp: 2.5, minThreat: 99, zones: {}, color: '#7cb342' },
   guardian: { kind: 'guardian', name: 'Rune Guardian', hp: 700, r: 1.25, speed: 3, dmg: 30, range: 1.4, rate: 0.7, loot: 'elite', xp: 60, minThreat: 99, zones: {}, color: '#b388ff' },
   titan_walker: { kind: 'titan_walker', name: 'Colossal Walker', hp: 6000, r: 3, speed: 2, dmg: 90, range: 6, rate: 0.3, loot: 'titan', xp: 400, minThreat: 99, zones: {}, color: '#8d8d8d' },
   titan_beast: { kind: 'titan_beast', name: 'Dread Behemoth', hp: 5000, r: 2.6, speed: 3.6, dmg: 70, range: 3.5, rate: 0.5, loot: 'titan', xp: 400, minThreat: 99, zones: {}, color: '#6d4c41' },

@@ -16,6 +16,7 @@ import { makeDecal, Particles, Transients, type Decal } from './fx';
 import { fowUniforms, updateFow, fillFow } from './fow';
 import { buildAllyModel, buildGateModel, buildNodeModel, buildRuneModel, buildSiteModel, buildTankModel, buildTitanModel, disposeModel, type AllyModel, type TankModel, type TitanModel } from './models';
 import { shadowTexture, spriteMat } from './sprites';
+import { CreatureLayer } from './creatures';
 import { TerrainView } from './terrain';
 import { getAtlas } from './textures';
 
@@ -90,7 +91,7 @@ export class View {
   private normP = new Particles(3000, false);
   private trans = new Transients();
   private tankModels = new Map<Tank, TankModel>();
-  private enemyVis = new Map<number, EnemyVis>();
+  private creatures = new CreatureLayer();
   private titanVis = new Map<number, TitanModel>();
   private allyVis = new Map<number, EnemyVis>();
   private allyModels = new Map<number, AllyModel & { shadow: Mesh }>();
@@ -170,7 +171,7 @@ export class View {
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.scene.fog = new Fog('#c89a78', 60, 140);
-    this.scene.add(this.world, this.units, this.addP.points, this.normP.points, this.trans.group);
+    this.scene.add(this.world, this.units, this.addP.points, this.normP.points, this.trans.group, this.creatures.sprites.points, this.creatures.shadows.points);
     this.shadowMat = new MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false });
     this.shadowGeo.rotateX(-Math.PI / 2);
     this.rangeRing = makeDecal('circle', '#4dd0e1');
@@ -257,6 +258,7 @@ export class View {
     this.camera.updateProjectionMatrix();
     const px = this.rh / (2 * Math.tan((this.camera.fov * Math.PI) / 360));
     this.addP.mat.uniforms.pxScale.value = px;
+    this.creatures.pxScale = px;
     this.normP.mat.uniforms.pxScale.value = px;
   }
 
@@ -532,11 +534,23 @@ export class View {
       }
       for (const r of m.radars) r.rotation.y = this.time * 2;
       if (m.treadMat.map) m.treadMat.map.offset.x = -((t.treadPhase * 2) % 1);
+      // Afterburners: a flicker when idling, a flame trail when moving (hotter on Nitro).
+      if (!t.dead && visible && m.exhaust.length && this.near(t.x, t.y, this.cam.zoom * 2)) {
+        const hot = t.hasBuff('nitro');
+        const push = Math.min(1, Math.abs(t.speed) / Math.max(1, t.stats.topSpeed));
+        for (const e of m.exhaust) {
+          if (Math.random() > 0.25 + push * 0.6) continue;
+          const w = t.toWorld(e.lx, e.lz);
+          const back = -(2 + push * 6);
+          const vx = Math.cos(t.rot) * back + (Math.random() - 0.5), vy = Math.sin(t.rot) * back + (Math.random() - 0.5);
+          this.addP.emit(w.x, w.y, e.y, vx, vy, 0.4, 0.18 + push * 0.25, 0.5 + push * 0.5, new Color(hot ? '#18ffff' : Math.random() < 0.5 ? '#ff9100' : '#ffd740'), 0, 0.9, -0.8);
+        }
+      }
       if (t.hasBuff('invuln')) {
         const k = 0.18 + 0.1 * Math.sin(this.time * 12);
         m.lit.emissive.setRGB(k * 0.8, k, k * 0.5);
       } else if (t.hitFlash > 0) {
-        const k = (t.hitFlash / 0.1) * (t.team === 'player' ? 0.22 : 0.35);
+        const k = (t.hitFlash / 0.1) * (t.team === 'player' ? 0.1 : 0.3);
         m.lit.emissive.setRGB(k, k * (t.team === 'player' ? 0.35 : 0.9), k * (t.team === 'player' ? 0.3 : 0.8));
       } else m.lit.emissive.setRGB(0, 0, 0);
       if (t.dead) {
@@ -555,6 +569,8 @@ export class View {
 
   private syncEnemies(g: Game): void {
     const seen = new Set<number>();
+    // Everything but titans goes into one batched layer (a horde is hundreds of creatures).
+    const R = this.cam.zoom * 2.2;
     for (const e of g.enemies) {
       seen.add(e.id);
       const visible = g.mode !== 'world' || g.isVisible(e.x, e.y) || !!e.titan;
@@ -562,36 +578,22 @@ export class View {
         this.syncTitan(e, visible);
         continue;
       }
-      let v = this.enemyVis.get(e.id);
-      if (!v) {
-        const sprite = new Sprite(spriteMat(e.kind, ENEMIES[e.kind].color, 0, 'n', false));
-        sprite.center.set(0.5, 0.08);
-        const shadow = new Mesh(this.shadowGeo, this.shadowMat);
-        this.units.add(sprite, shadow);
-        v = { sprite, shadow, kind: e.kind };
-        this.enemyVis.set(e.id, v);
+      if (!visible || !this.near(e.x, e.y, R)) continue;
+      if (e.burrowed) {
+        if (Math.random() < 0.3) this.normP.emit(e.x, e.y, 0.1, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2, 0.5, 0.25, new Color('#b08858'), 6);
+        continue;
       }
-      const show = visible && !e.burrowed;
-      v.sprite.visible = show;
-      v.shadow.visible = show;
-      if (e.burrowed && visible && Math.random() < 0.3) this.normP.emit(e.x, e.y, 0.1, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2, 0.5, 0.25, new Color('#b08858'), 6);
-      if (!show) continue;
-      const size = e.r * (e.titan ? 3 : e.r > 0.9 ? 2.6 : 2.9);
+      // Horde runners are drawn a bit bigger than their footprint so a swarm reads from a distance.
+      const size = e.r * (e.r > 0.9 ? 2.6 : e.horde ? 3.8 : 2.9);
       const frame = Math.floor(e.anim) % 2;
       const variant = e.hitFlash > 0 ? 'flash' : e.elite ? 'elite' : 'n';
-      v.sprite.material = spriteMat(e.kind, ENEMIES[e.kind].color, frame, variant, e.face < 0);
+      const cell = this.creatures.cellFor(e.kind, ENEMIES[e.kind].color, frame, variant);
       const bob = e.flying ? 1.4 + Math.sin(e.anim * 0.8) * 0.2 : 0;
-      v.sprite.position.set(e.x, bob + (e.stun > 0 ? 0.05 : 0), e.y);
-      v.sprite.scale.set(size, size, 1);
-      v.shadow.position.set(e.x, 0.04, e.y);
-      v.shadow.scale.set(e.r * 2.4, 1, e.r * 1.6);
+      // Creatures on a hull (or mid-leap) stand on the deck; their shadow falls on it too.
+      const h = bob + e.z * (e.flying ? 0 : 1) + (e.stun > 0 ? 0.05 : 0);
+      this.creatures.add(e.x, e.y, h, size, cell, e.face < 0, e.r * 1.2, e.latch ? h + 0.04 : 0.04);
     }
-    for (const [id, v] of this.enemyVis) {
-      if (!seen.has(id)) {
-        this.units.remove(v.sprite, v.shadow);
-        this.enemyVis.delete(id);
-      }
-    }
+    this.creatures.flush();
     for (const [id, m] of this.titanVis) {
       if (!seen.has(id)) {
         this.units.remove(m.root);

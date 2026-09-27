@@ -7,10 +7,10 @@ import type { Tank } from '../tank';
 import { damageEnemy, damageFriendly, damageTank, explode } from './damage';
 import { driveTank, moveSmall, planPath } from './movement';
 
-function nearestFriendly(g: Game, e: Enemy, range: number): Target | null {
+function nearestFriendly(g: Game, e: Enemy, range: number, friends: Target[]): Target | null {
   let best: Target | null = null;
   let bd = range;
-  for (const f of g.friendlies()) {
+  for (const f of friends) {
     const d = g.friendlyEdgeDist(f.id, e.x, e.y);
     if (d < bd) {
       bd = d;
@@ -207,8 +207,182 @@ function shootAt(g: Game, e: Enemy, tx: number, ty: number, kind: 'spit' | 'bull
 /* Creatures                                                               */
 /* ---------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------- */
+/* Hordes                                                                  */
+/* ---------------------------------------------------------------------- */
+
+/** World height of a fortress deck (matches the model). */
+const deckY = (t: Tank): number => 1.56 * t.cell;
+
+/** How many creatures fit on a hull at once. */
+export const latchCap = (t: Tank): number => Math.max(6, Math.floor((t.stats.length * t.stats.width) / 14));
+
+/** The point on a tank's hull nearest to (x, y). */
+function hullPoint(t: Tank, x: number, y: number): { x: number; y: number } {
+  const l = t.toLocal(x, y);
+  const hl = t.stats.length / 2, hw = t.stats.width / 2;
+  return t.toWorld(Math.max(-hl, Math.min(hl, l.lx)), Math.max(-hw, Math.min(hw, l.lz)));
+}
+
+function latchOn(e: Enemy, t: Tank, lx: number, lz: number): void {
+  const hl = t.stats.length / 2 - 1, hw = t.stats.width / 2 - 1;
+  e.latch = { tank: t.id, lx: Math.max(-hl, Math.min(hl, lx)), lz: Math.max(-hw, Math.min(hw, lz)) };
+  e.vx = 0;
+  e.vy = 0;
+  e.state = 'latched';
+}
+
+/** Clinging to a hull: chewing on it, crawling toward the middle, until shot or shaken off. */
+function updateLatched(g: Game, e: Enemy, dt: number): void {
+  const l = e.latch!;
+  const t = g.tankById(l.tank);
+  if (!t || t.dead) {
+    e.latch = null;
+    e.z = 0;
+    return;
+  }
+  // Crawl inward (they climb over the rim and head for the middle of the deck).
+  if (Math.abs(l.lz) > 1.5) l.lz -= Math.sign(l.lz) * dt * 0.35;
+  if (Math.abs(l.lx) > 2) l.lx -= Math.sign(l.lx) * dt * 0.2;
+  const w = t.toWorld(l.lx, l.lz);
+  e.x = w.x;
+  e.y = w.y;
+  e.z = deckY(t);
+  e.face = l.lz >= 0 ? -1 : 1;
+  damageTank(g, t, e.dmg * 0.8 * dt * (e.elite ? 1.5 : 1), { silent: true });
+  if (Math.random() < dt * 0.6) {
+    g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffab40', n: 2 });
+    g.hooks.sound('bite', e.x, e.y, 0.15);
+  }
+  // Driving hard shakes them off.
+  const fast = Math.abs(t.speed) > t.stats.topSpeed * 0.55 || t.hasBuff('nitro');
+  if (fast && Math.random() < dt * (t.hasBuff('nitro') ? 2 : 0.5)) {
+    e.latch = null;
+    e.state = 'idle';
+    e.z = 0;
+    const dx = e.x - t.x, dy = e.y - t.y, d = Math.hypot(dx, dy) || 1;
+    const edge = hullPoint(t, e.x + (dx / d) * 50, e.y + (dy / d) * 50);
+    e.x = edge.x + (dx / d) * 0.6;
+    e.y = edge.y + (dy / d) * 0.6;
+    e.vx = (dx / d) * 8;
+    e.vy = (dy / d) * 8;
+    e.stun = 0.8;
+    damageEnemy(g, e, e.maxHp * 0.3, { silent: true });
+  }
+}
+
+/**
+ * Swarmers and leapers: sprint straight at the fortress over anything in the way, pile up against the hull
+ * and climb aboard. Leapers jump the last few metres onto the deck.
+ */
+function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched: Map<number, number>, near: Enemy[]): void {
+  // A leap in progress.
+  if (e.state === 'leap') {
+    e.stateT -= dt;
+    const t = g.tankById(e.targetId);
+    const k = 1 - Math.max(0, e.stateT) / 0.6;
+    e.x += e.vx * dt;
+    e.y += e.vy * dt;
+    e.z = Math.sin(Math.PI * k) * 3 + k * (t ? deckY(t) : 0);
+    if (e.stateT <= 0) {
+      e.state = 'idle';
+      e.vx = e.vy = 0;
+      if (t && !t.dead && t.hits(e.x, e.y, 0.5) && (latched.get(t.id) ?? 0) < latchCap(t)) {
+        const l = t.toLocal(e.x, e.y);
+        latchOn(e, t, l.lx, l.lz);
+        latched.set(t.id, (latched.get(t.id) ?? 0) + 1);
+        g.fx.push({ t: 'dust', x: e.x, y: e.y, color: '#a1887f' });
+      } else e.z = 0;
+    }
+    return;
+  }
+  // Squad units in the way get mobbed; otherwise it's the fortress.
+  let tgt = nearestFriendly(g, e, 3, friends);
+  if (!tgt && !g.player.dead) tgt = { id: g.player.id, x: g.player.x, y: g.player.y, r: g.player.stats.width / 2, flying: false };
+  if (!tgt) return;
+  e.targetId = tgt.id;
+  const tank = g.tankById(tgt.id);
+  const aim = tank ? hullPoint(tank, e.x, e.y) : { x: tgt.x, y: tgt.y };
+  let dx = aim.x - e.x, dy = aim.y - e.y;
+  const edge = Math.hypot(dx, dy) - (tank ? 0 : tgt.r);
+  const len = Math.hypot(dx, dy) || 1;
+  dx /= len;
+  dy /= len;
+  e.face = dx >= 0 ? 1 : -1;
+  e.atkCd -= dt;
+  if (tank && !tank.dead) {
+    const full = (latched.get(tank.id) ?? 0) >= latchCap(tank);
+    if (e.kind === 'leaper' && !full && edge > 1 && edge < 7 && e.atkCd <= 0) {
+      // Jump for the deck.
+      const l = tank.toLocal(e.x, e.y);
+      const land = tank.toWorld(Math.max(-tank.stats.length / 2 + 2, Math.min(tank.stats.length / 2 - 2, l.lx * 0.6)), Math.max(-tank.stats.width / 2 + 1.5, Math.min(tank.stats.width / 2 - 1.5, l.lz * 0.5)));
+      e.state = 'leap';
+      e.stateT = 0.6;
+      e.vx = (land.x - e.x) / 0.6 + Math.cos(tank.rot) * tank.speed;
+      e.vy = (land.y - e.y) / 0.6 + Math.sin(tank.rot) * tank.speed;
+      e.atkCd = 3;
+      g.hooks.sound('bite', e.x, e.y, 0.2);
+      return;
+    }
+    if (edge < 0.5 && !full && Math.random() < dt * 1.4) {
+      // Pile up and climb aboard.
+      const l = tank.toLocal(e.x, e.y);
+      latchOn(e, tank, l.lx, l.lz);
+      latched.set(tank.id, (latched.get(tank.id) ?? 0) + 1);
+      return;
+    }
+  }
+  if (edge <= e.range + 0.25 && e.atkCd <= 0) {
+    e.atkCd = 1 / e.atkRate;
+    if (e.kind === 'bomber') {
+      explode(g, e.x, e.y, ENEMIES.bomber.splash ?? 2, e.dmg, 'enemy', {}, '#ff5252');
+      e.hp = 0;
+      return;
+    }
+    // Against a hull they mostly claw for a grip to climb; the damage is done once they're aboard.
+    damageFriendly(g, tgt.id, tank ? e.dmg * 0.08 : e.dmg, { silent: true });
+    if (Math.random() < 0.3) g.fx.push({ t: 'spark', x: e.x + dx * e.r, y: e.y + dy * e.r, color: '#ffab40', n: 2 });
+  }
+  // Run at it, shoulder to shoulder, climbing over whatever is in the way.
+  let mx = edge > 0.3 ? dx : 0, my = edge > 0.3 ? dy : 0;
+  g.grid.near(e.x, e.y, 1.2, near);
+  for (const o of near) {
+    if (o === e || o.hp <= 0 || o.latch || o.titan) continue;
+    const ox = e.x - o.x, oy = e.y - o.y;
+    const rr = e.r + o.r;
+    if (Math.abs(ox) > rr || Math.abs(oy) > rr) continue;
+    const dd = Math.hypot(ox, oy);
+    if (dd < rr && dd > 1e-4) {
+      mx += (ox / dd) * 0.7;
+      my += (oy / dd) * 0.7;
+    }
+  }
+  const ml = Math.hypot(mx, my);
+  if (ml > 1) {
+    mx /= ml;
+    my /= ml;
+  }
+  const sp = e.speed * slowMul(e);
+  e.x += (mx * sp + e.vx) * dt;
+  e.y += (my * sp + e.vy) * dt;
+  const decay = Math.pow(0.05, dt);
+  e.vx *= decay;
+  e.vy *= decay;
+  // Clambering over rocks and ruins.
+  const tx = Math.floor(e.x), ty = Math.floor(e.y);
+  const oh = g.map.inside(tx, ty) && g.map.obs[ty * g.map.size + tx] ? g.map.oh[ty * g.map.size + tx] * 0.3 : 0;
+  e.z += (oh - e.z) * Math.min(1, dt * 8);
+  crushAndPush(g, e, dt);
+}
+
 export function updateEnemies(g: Game, dt: number): void {
   const list = g.enemies;
+  g.indexEnemies();
+  const friends = g.friendlies();
+  const near: Enemy[] = [];
+  // How many are already clinging to each hull.
+  const latched = new Map<number, number>();
+  for (const e of list) if (e.latch && e.hp > 0) latched.set(e.latch.tank, (latched.get(e.latch.tank) ?? 0) + 1);
   for (const e of list) {
     if (e.hp <= 0) continue;
     e.anim += dt * (2 + e.speed);
@@ -219,16 +393,33 @@ export function updateEnemies(g: Game, dt: number): void {
       if (Math.random() < dt * 6) g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ff6d00', n: 1 });
       if (e.hp <= 0) continue;
     }
+    if (e.latch) {
+      if (e.stun > 0) e.stun -= dt;
+      else updateLatched(g, e, dt);
+      continue;
+    }
     if (e.stun > 0) {
       e.stun -= dt;
+      if (e.horde) {
+        // Still sliding from being flung.
+        e.x += e.vx * dt;
+        e.y += e.vy * dt;
+        e.vx *= Math.pow(0.05, dt);
+        e.vy *= Math.pow(0.05, dt);
+      }
       continue;
     }
     e.slow = Math.max(0, e.slow - dt);
     if (e.slow <= 0) e.slowAmt = 0;
+    if (e.horde || e.kind === 'swarmer' || e.kind === 'leaper') {
+      e.anim += dt * 4;
+      updateSwarmer(g, e, dt, friends, latched, near);
+      continue;
+    }
     // Knockback decay.
     const kb = Math.hypot(e.vx, e.vy);
     const aggroR = e.camp ? 12 : 17 + e.threat * 1.5;
-    let tgt = nearestFriendly(g, e, e.aggro ? aggroR * 2.2 : aggroR);
+    let tgt = nearestFriendly(g, e, e.aggro ? aggroR * 2.2 : aggroR, friends);
     if (e.camp) {
       const home = Math.hypot(e.x - e.homeX, e.y - e.homeY);
       if (home > 22) {
@@ -324,8 +515,8 @@ export function updateEnemies(g: Game, dt: number): void {
       }
     }
     // Separation.
-    for (const o of list) {
-      if (o === e || o.hp <= 0 || o.titan) continue;
+    for (const o of g.grid.near(e.x, e.y, e.r + 1.5, near)) {
+      if (o === e || o.hp <= 0 || o.titan || o.latch) continue;
       const dx = e.x - o.x, dy = e.y - o.y;
       const rr = e.r + o.r;
       if (Math.abs(dx) > rr || Math.abs(dy) > rr) continue;
@@ -354,13 +545,17 @@ export function updateEnemies(g: Game, dt: number): void {
     // Pushed out of (and crushed by) tanks.
     if (!e.flying && !e.burrowed) crushAndPush(g, e, dt);
   }
-  for (let i = list.length - 1; i >= 0; i--) if (list[i].hp <= 0) list.splice(i, 1);
+  // Drop the dead in one pass (a horde can lose dozens a second).
+  let k = 0;
+  for (let i = 0; i < list.length; i++) if (list[i].hp > 0) list[k++] = list[i];
+  list.length = k;
 }
 
 function crushAndPush(g: Game, e: Enemy, dt: number): void {
-  const tanks: Tank[] = [g.player, ...(g.outrider ? [g.outrider] : []), ...g.tanks];
-  for (const t of tanks) {
-    if (t.dead) continue;
+  for (let i = -2; i < g.tanks.length; i++) {
+    const t = i === -2 ? g.player : i === -1 ? g.outrider : g.tanks[i];
+    if (!t || t.dead) continue;
+    if (Math.abs(e.x - t.x) > t.stats.length || Math.abs(e.y - t.y) > t.stats.length) continue;
     const l = t.toLocal(e.x, e.y);
     const hl = t.stats.length / 2 + e.r, hw = t.stats.width / 2 + e.r;
     if (Math.abs(l.lx) >= hl || Math.abs(l.lz) >= hw) continue;
@@ -392,11 +587,14 @@ export function updateEnemyTank(g: Game, t: Tank, dt: number): void {
   if (t.anchored) return;
   const p = g.player;
   const d = Math.hypot(p.x - t.x, p.y - t.y);
-  const aggro = d < 42 || t.lastHitAt > g.time - 8;
+  // Rivals hunt you across the map; raiders only fight what they run into.
+  const aggro = d < 42 || t.lastHitAt > g.time - 8 || (t.kind === 'rival' && d < 260);
   const ai = (t as Tank & { ai?: { repath: number; orbit: number } }).ai ??= { repath: 0, orbit: Math.random() < 0.5 ? 1 : -1 };
   ai.repath -= dt;
   if (aggro && !p.dead) {
-    const range = Math.max(8, ...t.weapons().map((m) => m.stats?.range ?? 0)) * 0.7;
+    // Rivals close in until most of their guns reach; raiders hang back at their longest range.
+    const ranges = t.weapons().map((m) => m.stats?.range ?? 0).sort((a, b) => a - b);
+    const range = t.kind === 'rival' ? Math.max(8, ranges[Math.floor(ranges.length / 2)] ?? 12) * 0.75 : Math.max(8, ...ranges) * 0.7;
     if (ai.repath <= 0) {
       ai.repath = 1.2;
       const a = Math.atan2(t.y - p.y, t.x - p.x) + ai.orbit * 0.5;

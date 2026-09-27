@@ -49,7 +49,8 @@ describe('weapons', () => {
     expect(takeTreeNode(g, w.uid, 'F2').ok).toBe(true);
     // 2★ = 2 points.
     expect(takeTreeNode(g, w.uid, 'H1').ok).toBe(false);
-    const before = weaponStats(makeWeapon(501, 'autocannon', 1)).dmg;
+    // Same weapon (same affixes) without its tree: only the two nodes differ.
+    const before = weaponStats({ ...w, tree: [] }).dmg;
     expect(weaponStats(w).dmg).toBeGreaterThan(before * 1.25);
     expect(respecTree(g, w.uid).ok).toBe(true);
     expect(w.tree).toEqual([]);
@@ -80,8 +81,10 @@ describe('weapons', () => {
     const id = build(g, 'hp_medium');
     const m = g.player.moduleById(id)!;
     m.weapon = makeWeapon(900, 'hornet_nest', 2);
+    // Only the launcher fires (the hull's own pads would kill the target first).
+    for (const k of g.player.modules) if (k.id !== m.id) k.weapon = null;
     g.player.recalc();
-    g.spawnEnemy('raider', g.player.x + 16, g.player.y, 1);
+    g.spawnEnemy('brute', g.player.x + g.player.stats.width / 2 + 8, g.player.y, 1);
     for (let i = 0; i < 60 * 4; i++) stepWorld(g, 1 / 60);
     expect(g.allies.some((a) => a.kind === 'jet' && a.owner === m.id)).toBe(true);
   });

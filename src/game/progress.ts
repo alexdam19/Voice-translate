@@ -13,7 +13,7 @@ export const MAX_COMMANDER_LEVEL = 30;
 /** XP needed to go from `level` to `level + 1`. */
 export const xpToNext = (level: number): number => Math.round(40 * Math.pow(level, 1.5));
 
-export type FeatureKey = 'cards' | 'packs' | 'crew' | 'squads' | 'arsenal' | 'relics' | 'outrider' | 'deadzone';
+export type FeatureKey = 'cards' | 'packs' | 'crew' | 'squads' | 'arsenal' | 'relics' | 'outrider' | 'deadzone' | 'tracks' | 'chains' | 'magma' | 'hover' | 'rivals';
 
 export interface FeatureDef {
   key: FeatureKey;
@@ -27,10 +27,15 @@ export const FEATURES: FeatureDef[] = [
   { key: 'cards', level: 1, name: 'Battle Cards', desc: 'Drag a card from your hand onto the battlefield to play it. Cards cost energy, which refills over time.' },
   { key: 'packs', level: 2, name: 'Card Collection', desc: 'Card Packs drop from elites, raider tanks, outposts and titans. Open CARDS (C) to build your deck of 8.' },
   { key: 'crew', level: 2, name: 'Crew', desc: 'Open CREW (K) to hire people. Each role gives a passive bonus, and they level up and pick perks.' },
+  { key: 'tracks', level: 3, name: 'Dune Tracks', desc: 'A drive train for sand and dunes. AUTO swaps it on when the ground calls for it (tap the drive chip by your hull bar).' },
   { key: 'squads', level: 3, name: 'Squads', desc: 'Build a Barracks: it trains a Marine squad. Drag its badge onto the map to guard a spot. At level 5 the Garage adds Scout Buggies that scavenge ahead.' },
   { key: 'arsenal', level: 4, name: 'Arsenal', desc: 'Mount looted weapons on your turrets and spend star points in their upgrade trees (ARSENAL, V). A Weapon Forge (level 6) adds stars.' },
+  { key: 'chains', level: 5, name: 'Spiked Chains', desc: 'A drive train for ice and snow.' },
   { key: 'relics', level: 6, name: 'Relics', desc: 'Relic cards are permanent: slot them in CARDS > Relics for always-on bonuses.' },
+  { key: 'magma', level: 8, name: 'Magma Treads', desc: 'Cross lava without burning.' },
+  { key: 'rivals', level: 6, name: 'Rival Dreadnoughts', desc: 'Enemy fortresses as big as yours now roam the wastes. Beat one for an Epic pack, Salvaged Tech and one of its guns.' },
   { key: 'deadzone', level: 8, name: 'The Dead Zone', desc: 'The multiplayer warzone north-east of camp is open. What you carry in there is at risk.' },
+  { key: 'hover', level: 12, name: 'Hover Skirts', desc: 'Glide over everything, even acid.' },
   { key: 'outrider', level: 12, name: 'Outrider', desc: 'Your Garage can build the Outrider mini tank (needs 15 crew aboard).' },
 ];
 
@@ -74,7 +79,7 @@ export function levelRoad(): LevelReward[] {
     road.push({
       level,
       techs: TECH.filter((t) => !t.free && techLevel(t.id) === level),
-      modules: MODULE_LIST.filter((m) => (m.unlock ?? 1) === level && !m.required),
+      modules: MODULE_LIST.filter((m) => (m.unlock ?? 1) === level && !m.required && !m.fixed),
       features: FEATURES.filter((f) => f.level === level),
       pack: level % 10 === 0 ? 'legendary_pack' : level % 5 === 0 ? 'epic_pack' : level % 3 === 0 ? 'rare_pack' : 'pack',
       relicSlot: relicSlots(level) > relicSlots(level - 1),

@@ -2,6 +2,7 @@ import { RNG } from '../shared/rng';
 import { rollDropRarity, rollWeaponKey } from '../shared/loot';
 import { makeWeapon, WEAPONS, type WeaponItem, type WeaponSize } from '../shared/weapons';
 import { makeCrew, type CrewMember } from './crew';
+import { chassisForCC } from './defs';
 import { Tank } from './tank';
 
 let nextUid = 1;
@@ -20,22 +21,29 @@ export function newWeapon(key: string, rarity: WeaponItem['rarity'] = 0, rng: ()
 }
 
 /**
- * The Crawler Facility every run starts with: a Command Center in the middle, a few turrets,
- * bunks, a cargo hold, a reactor and two engines, and plenty of open deck to build on.
- * Row 0 is the front of the fortress.
+ * The Landkreuzer every run starts with. The hull brings its own weapons: a pad on each corner and the main
+ * battery up front (placed by `ensureFixed`). Inside: the Command Center, bunks, a cargo hold, a reactor and two
+ * engines, and plenty of open deck to build on. Row 0 is the front of the fortress.
  */
 export const STARTER_LAYOUT: [string, number, number, string?][] = [
-  ['hp_heavy', 3, 1, 'main_battery'],
-  ['hp_light', 0, 0, 'autocannon'],
-  ['hp_light', 9, 0, 'autocannon'],
-  ['hp_light', 0, 13, 'autocannon'],
-  ['bridge', 3, 5],
-  ['quarters', 0, 5],
-  ['cargo', 8, 5],
-  ['reactor', 0, 9],
-  ['engine', 3, 11],
-  ['engine', 5, 11],
+  ['bridge', 4, 8],
+  ['quarters', 2, 8],
+  ['cargo', 8, 8],
+  ['reactor', 2, 13],
+  ['engine', 4, 16],
+  ['engine', 6, 16],
 ];
+
+/** What the built-in weapons start with: the main battery, and an autocannon on every corner pad. */
+export function armFixed(t: Tank, weapon: (key: string) => WeaponItem = (k) => newWeapon(k)): void {
+  for (const m of t.modules) {
+    if (m.weapon) continue;
+    if (m.key === 'main_gun') m.weapon = weapon('main_battery');
+    else if (m.key === 'pad') m.weapon = weapon('autocannon');
+  }
+  t.version++;
+  t.recalc();
+}
 
 export function buildStarterTank(x: number, y: number): Tank {
   const t = new Tank('player', 'main', 'crawler', 'Fortress');
@@ -43,6 +51,8 @@ export function buildStarterTank(x: number, y: number): Tank {
   t.y = y;
   t.rot = -Math.PI / 2;
   for (const [key, cx, cy, w] of STARTER_LAYOUT) t.addModule(key, cx, cy, w ? newWeapon(w) : null);
+  t.ensureFixed();
+  armFixed(t);
   for (const m of t.modules) m.aim = t.rot;
   t.recalc();
   t.hp = t.stats.maxHp;
@@ -92,6 +102,50 @@ export function buildRaider(threat: number, seed: number): Tank {
   t.recalc();
   const hpScale = 0.45 + 0.2 * threat;
   t.stats.maxHp = Math.round(t.stats.maxHp * hpScale);
+  t.hp = t.stats.maxHp;
+  t.shield = t.stats.shield;
+  return t;
+}
+
+export const RIVAL_NAMES = [
+  'The Iron Tyrant', "Warlord Krag's Behemoth", 'The Rust Baron', 'Crimson Colossus', 'Mother of Treads', 'The Scrapyard King',
+  'Black Ratte', 'Duchess of Cinders', 'The Last Parade', 'Hellcart', 'The Grinning Citadel', 'Old Ironsides',
+];
+
+/**
+ * A rival dreadnought: an enemy fortress built like yours (same hull class, weapon pads, main battery)
+ * and scaled to your commander level, so the fight is between equals.
+ */
+export function buildRival(level: number, cc: number, seed: number, name: string, kit: { tech?: Set<string>; stars?: number } = {}): Tank {
+  const rng = new RNG(seed);
+  const r = (): number => rng.next();
+  const t = new Tank('enemy', 'rival', chassisForCC(cc).key, name);
+  t.threat = 1 + level / 5;
+  // Enemy guns fire at base stats times this; yours get the Level Road, crew and forge on top.
+  t.dmgScale = 0.34 + 0.016 * level;
+  t.drive = 'tracks';
+  t.addModule('bridge', Math.floor(t.cols / 2) - 2, Math.floor(t.rows / 2) - 2);
+  t.modules[0].lvl = cc;
+  t.ensureFixed();
+  // Weapons about as good as yours: the same kinds you've unlocked, at about your stars.
+  const stars = kit.stars ?? Math.floor(level / 6);
+  const rar = (): WeaponItem['rarity'] => Math.max(0, Math.min(5, Math.round(stars) + (r() < 0.25 ? 1 : 0))) as WeaponItem['rarity'];
+  const pick = (size: WeaponSize, fallback: string): string => {
+    const ok = (d: { key: string; size: WeaponSize; exclusive?: boolean; tech?: string }): boolean => d.size === size && !d.exclusive && (!kit.tech || !d.tech || kit.tech.has(d.tech));
+    return Object.values(WEAPONS).some(ok) ? rollWeaponKey(r, ok) : fallback;
+  };
+  for (const m of t.modules) {
+    if (m.key === 'main_gun') m.weapon = newWeapon(pick('heavy', 'main_battery'), rar(), r);
+    else if (m.key === 'pad') m.weapon = newWeapon(pick(r() < 0.3 + level * 0.02 ? 'medium' : 'light', 'autocannon'), rar(), r);
+  }
+  for (let i = 0; i < 1 + cc; i++) t.autoAdd('engine');
+  for (let i = 0; i < 2 + cc; i++) t.autoAdd('reactor');
+  for (let i = 0; i < 6 + cc * 3; i++) t.autoAdd('armor');
+  if (cc >= 2) t.autoAdd('repair_bay');
+  if (cc >= 3) t.autoAdd('shield');
+  t.autoAdd('barracks');
+  t.recalc();
+  t.stats.maxHp = Math.round(t.stats.maxHp * (0.62 + 0.012 * level));
   t.hp = t.stats.maxHp;
   t.shield = t.stats.shield;
   return t;

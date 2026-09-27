@@ -99,7 +99,8 @@ export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): vo
     e.vy += (o.ky ?? 0) * o.knock / Math.max(0.5, e.r * 2);
   }
   lifesteal(g, o.srcTank, dealt, o.lifesteal);
-  if (!o.silent && g.isVisible(e.x, e.y)) g.float(e.x, e.y, String(Math.round(dmg)), o.crit ? '#ffea00' : '#ffffff', !!o.crit);
+  // Horde fodder doesn't get damage numbers (there'd be hundreds); crits still show.
+  if (!o.silent && (!e.horde || o.crit) && g.isVisible(e.x, e.y)) g.float(e.x, e.y, String(Math.round(dmg)), o.crit ? '#ffea00' : '#ffffff', !!o.crit);
   if (e.hp > 0) postHit(g, e, o.fx, o);
   if (e.hp <= 0) {
     killEnemy(g, e);
@@ -111,9 +112,17 @@ export function killEnemy(g: Game, e: Enemy): void {
   e.hp = 0;
   g.stats.kills++;
   g.objectiveCounters.kills = (g.objectiveCounters.kills ?? 0) + 1;
+  const threat = e.threat;
+  if (e.horde && !e.elite) {
+    // Horde fodder: a splat, the odd scrap, a little XP.
+    g.fx.push({ t: 'spark', x: e.x, y: e.y, color: e.kind === 'leaper' ? '#9ccc65' : '#8d6e63', n: 4 });
+    if (Math.random() < 0.25) g.hooks.sound('splat', e.x, e.y, 0.5);
+    if (Math.random() < 0.1) g.dropLoot(e.x, e.y, 'swarm', 1);
+    g.gainXp(e.xp * (0.8 + 0.2 * threat));
+    return;
+  }
   g.fx.push({ t: 'boom', x: e.x, y: e.y, r: e.r * 1.6, color: e.titan ? '#ff9100' : '#ffcc80', big: e.titan });
   g.hooks.sound(e.titan ? 'bigboom' : 'splat', e.x, e.y);
-  const threat = e.threat;
   if (e.titan) {
     g.stats.titans++;
     g.dropLoot(e.x, e.y, 'titan', 4);
@@ -233,7 +242,7 @@ export function explode(g: Game, x: number, y: number, r: number, dmg: number, t
     g.hooks.sound(r >= 2.5 ? 'bigboom' : 'boom', x, y, Math.min(1, 0.4 + r * 0.15));
   }
   if (team === 'player') {
-    for (const e of g.enemies) {
+    for (const e of g.enemiesNear(x, y, r + 2)) {
       if (e.hp <= 0 || e.burrowed) continue;
       const d = Math.hypot(e.x - x, e.y - y) - e.r;
       if (d > r) continue;

@@ -1,16 +1,20 @@
 # IRONCRAWL
 
-An overhead 3D, pixel-art wasteland game about commanding a **whole facility on treads**. It plays with mouse and keyboard or on a **phone** (touch stick, taps, drag-and-drop cards). Drive it with **WASD** or the stick: it rolls straight over rocks, ruins and wrecks, and its guns aim and fire on their own. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
+An overhead 3D, pixel-art wasteland game about commanding a **land cruiser the size of a warship**, part P1000 Ratte, part Batmobile: triple tracks, a wedge nose, afterburners, weapon pads on every corner and a twin-barrelled main battery. It plays with mouse and keyboard or on a **phone** (touch stick, taps, drag-and-drop cards). Drive it with **WASD** or the stick, anywhere: it crushes rubble, climbs cliffs and wades through lava, and its guns aim and fire on their own. **Hordes** of hundreds come at you in waves, World War Z style, and climb your hull. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
 
 The pieces:
 - **Battle cards**, in the spirit of Magic: The Gathering. There are 42 cards in five schools (Iron, Volt, Rust, Void, Aegis) and six rarities, plus 12 permanent **relics**. You hold 4 cards from a deck of 8 and spend energy to play them: artillery, rocket salvos, drop squads, EMP, lightning storms, a dragon, a mech, a nuke. **Card packs** drop from elites, raider tanks, outposts, runes and titans. Duplicates level your cards up.
-- **Your base is huge.** It starts as a 10×14 facility and grows to 20×31 as you upgrade the **Command Center**. Inside, **builders** put up and upgrade buildings in real time. The Command Center caps how many of each building you can have and how high they go.
+- **Hordes.** Every minute or so a warning says where the next wave comes from, then a wall of swarmers pours in, piles against the hull and climbs aboard. Drive hard to shake them off, let the guns work, build **Tesla Coils**. Every wave is bigger.
+- **Rival dreadnoughts.** From commander level 6, enemy fortresses built like yours and as strong as yours hunt you across the map.
+- **Go anywhere.** Nothing blocks the fortress. The right **drive train** (unlocked on the Level Road, swapped automatically on AUTO) makes each ground fast, and makes lava and acid safe.
+- **Blueprint.** A technical drawing of your whole fortress with its firepower on each side, speed on each ground, and an assessment of its weak spots.
+- **Your base is huge.** It starts as a 12×20 land cruiser and grows to 22×37 as you upgrade the **Command Center**, gaining weapon pads along the sides and a second main battery. Inside, **builders** put up and upgrade buildings in real time. The Command Center caps how many of each building you can have and how high they go.
 - **Two kinds of progress.** Materials and weapons come from combat and scavenging. **Commander XP** comes only from fighting (kills, loot areas, outposts, raider tanks, runes, titans). Each level adds hull and damage, gives a card pack, and unlocks buildings, weapons and features on the **Level Road**.
 - **Squads.** Army buildings train sub-units: marines, scout buggies, guard drones, a fighter wing and a walker mech. They follow you, **guard a spot** (drag their badge onto the map), or **scavenge ahead** (collect loot drops and drill nodes, then drive the haul home).
 - **Tracking.** Can't afford an upgrade? Press **TRACK**. A box lists what you still need, and a marker and beam of light point at the nearest place to get the first missing thing.
 - When your fortress goes down, it's towed back to camp and comes back **fully repaired**.
 
-Near camp you meet scrap rats and scavengers. Deeper in you meet raider tanks, enemy outposts, elites and **titans**. North-east of camp is **the Dead Zone**, a multiplayer warzone where other players can loot your wreck.
+Near camp you meet scrap rats and scavengers. Deeper in you meet raider tanks, rival dreadnoughts, enemy outposts, elites and **titans**, and the hordes find you everywhere. North-east of camp is **the Dead Zone**, a multiplayer warzone where other players can loot your wreck.
 
 ![A mid-game dreadnought: squads, a summoned dragon and a meteor storm](docs/screenshots/hero.jpg)
 
@@ -37,7 +41,7 @@ Open http://localhost:5173 and press **Start**. Single-player only needs the bro
 |---|---|
 | `npm run build` | Typecheck and build the client into `dist/` |
 | `npm start` | One process for production: serves `dist/` **and** the Dead Zone on `PORT` (default 8787) |
-| `npm test` | Unit tests (world gen, pathing, the base and builders, cards, the Level Road, squads, tracking, crew, chests, saves, arsenal, Dead Zone server rules) |
+| `npm test` | Unit tests (world gen, pathing, the base and builders, cards, the Level Road, squads, tracking, hordes, drive trains, rivals, the blueprint analysis, crew, chests, saves, arsenal, Dead Zone server rules) |
 | `npm run typecheck` | `tsc --noEmit` |
 
 Server environment variables: `PORT`, `WARZONE_SEED` (fixed arena), `WARZONE_BOTS` (AI raiders, default 5).
@@ -55,6 +59,7 @@ Everything works with the mouse. The camera always follows your fortress.
 | **B**, or click your fortress | Your base (the village view). WASD drives off and leaves it. |
 | **C** / **V** / **K** / **L** | Cards · Arsenal · Crew · Level Road |
 | **I** / **M** / **H** / **Esc** | Cargo, Refinery & Workshop · World map · Help · Menu |
+| **N** | Blueprint: the whole fortress drawn out, with an analysis |
 | **5** | Repair kit |
 | **Wheel** | Zoom |
 | **J** | Send the Outrider to the node or loot area under the cursor |
@@ -75,7 +80,8 @@ The first touch switches the game to touch controls (phones and tablets start in
 | **Drag a card** out of the hand | Play it where you let go. Or tap the card, then tap the ground (tap the card again to cancel). |
 | **Pinch** | Zoom |
 | **Tap your fortress** or **BASE** | The base view. Tap a building to see it. To place one, tap a spot to preview it, then tap **PLACE** (or the same spot again). |
-| **☰** | The menu: Cargo, Map, Level Road, Help, fullscreen, sound. |
+| **☰** | The menu: Blueprint, Cargo, Map, Level Road, Help, fullscreen, sound. |
+| **Drive chip** (left of the hull bar) | Pick a drive train, or leave AUTO on. |
 | **Drag a squad badge** | Guard that spot. |
 
 ## How it plays
@@ -83,6 +89,8 @@ The first touch switches the game to touch controls (phones and tablets start in
 ### Fight
 
 - Your turrets pick their own targets. Drive toward trouble, or away from it.
+- **Hordes** arrive in waves: a calm spell, a warning with the direction (and a red arrow at the screen edge), then the surge. Swarmers sprint, pile against the hull and climb aboard, where they chew on it until they're shot, zapped by a **Tesla Coil**, or flung off when you drive at speed. Leapers jump straight onto the deck. Beat a wave for XP and scrap (and a card pack every third wave); the next one is bigger.
+- **Rival dreadnoughts** (commander level 6+) are enemy fortresses with the same hull, the same size and about the same guns as yours. They hunt you (a red ring on the minimap, a bar at the top when close). Destroy one for an Epic pack (Legendary from level 20), Salvaged Tech and its best gun.
 - **Energy** (the purple bar) refills over time, 10 max. Every card has a cost. Play a card and the next one in your deck slides in, and the played card goes to the back.
 - Area cards land where you drop them (up to 70 units from the fortress). Self cards (repairs, shields, speed, buffs) affect your fortress.
 
@@ -109,21 +117,23 @@ The first touch switches the game to touch controls (phones and tablets start in
 - **Builders:** 2 at the start (3 at level 10, 4 at level 20). Each works on one job at a time, in real time, while you drive and fight. Buildings keep working while they're being upgraded.
 - **Command Center:** its level (1-6) sets the fortress size and the cap on everything else. Upgrading it needs commander levels 3, 7, 12, 18 and 24.
 
-  | Command Center | Fortress | Deck |
-  |---|---|---|
-  | 1 | Crawler Facility | 10×14 |
-  | 2 | Assault Facility | 12×17 |
-  | 3 | Siege Citadel | 14×20 |
-  | 4 | Land Dreadnought | 16×23 |
-  | 5 | Colossus | 18×27 |
-  | 6 | Moving Citadel | 20×31 |
+  | Command Center | Fortress | Deck | Built-in weapons |
+  |---|---|---|---|
+  | 1 | Landkreuzer | 12×20 | 4 corner pads, main battery |
+  | 2 | Assault Landkreuzer | 14×23 | +2 side pads |
+  | 3 | Siege Citadel | 16×26 | |
+  | 4 | Land Dreadnought | 18×29 | +rear main battery |
+  | 5 | Colossus | 20×33 | +2 side pads |
+  | 6 | Moving Citadel | 22×37 | +2 side pads |
+
+  Pads take a light or medium weapon; main batteries take a heavy one. New mounts arrive armed. On top of these you can build as many turret mounts as the Command Center allows.
 
 - **Buildings:**
 
   | Group | Buildings |
   |---|---|
   | Turrets | Light, medium and heavy turret mounts (each level +15% damage) |
-  | Defense | Armor Plate, Heavy Armor Plate, Repair Bay, Shield Generator, Radar Mast |
+  | Defense | Armor Plate, Heavy Armor Plate, Repair Bay, Shield Generator, **Tesla Coil** (zaps climbers), Radar Mast |
   | Army & squads | Barracks (marines), Garage (scout buggies, the Outrider), Drone Bay, Jet Hangar, Mech Bay |
   | Crew | Living Quarters, Medbay, Hydroponics, Mess Hall, Training Grounds |
   | Resources | Cargo Hold, Refinery, Mk2/Mk3 drill rigs, Secure Vault |
@@ -153,16 +163,16 @@ The building's level sets the squad's size and strength. Fallen units are replac
 
 ### The wasteland
 
-The world is 640×640 tiles in six zones. Danger rises with distance from camp, in tiers I–V:
+The world is 640×640 tiles in six zones. Danger rises with distance from camp, in tiers I–V. Every tile is drivable; the gear below makes it fast or safe:
 
 | Zone | Direction | What you need |
 |---|---|---|
 | **Rustbelt** | Center | Home turf |
-| **Dune Sea** | East | Dune tracks, or you crawl |
-| **Cryo Spires** | North | Spiked chains and a Thermal Regulator |
+| **Dune Sea** | East | Dune Tracks (level 3), or you crawl |
+| **Cryo Spires** | North | Spiked Chains (level 5) and a Thermal Regulator |
 | **Glass Crater** | South | Rad Baffles |
-| **Magma Rift** | West | A Thermal Regulator, plus magma treads to cross lava |
-| **Acid Marsh** | Outer ring | Hover skirts and Sealant Pumps |
+| **Magma Rift** | West | A Thermal Regulator, plus Magma Treads (level 8) so lava doesn't burn |
+| **Acid Marsh** | Outer ring | Hover Skirts (level 12) and Sealant Pumps |
 
 ### The Dead Zone (multiplayer, commander level 8)
 
@@ -173,9 +183,10 @@ Drive into the gate north-east of camp. Loot crates and supply drops, fight othe
 - **TypeScript + Vite**, **three.js** for rendering, **ws** for the server, **Vitest** for tests. No image or audio files: every texture, sprite, portrait, card illustration, icon and sound is generated at startup.
 - **8-bit look:** the scene renders at 1/2–1/4 resolution into a render target (on phones, about 300 lines on the short side, each game pixel a whole number of device pixels). A post pass draws 1-pixel depth outlines and posterizes with ordered dithering, and the result is upscaled with nearest-neighbour filtering.
 - **Simulation:** fixed 60 Hz steps.
-  - Your fortress is one world unit per deck cell (enemy rigs are smaller). It paths with A* over a "crush" clearance field where only cliffs, pillars and liquids block, and it flattens obstacles and props under its hull. The terrain chunks it touches are rebuilt in the same frame.
+  - Your fortress is one world unit per deck cell (enemy rigs are smaller). Nothing blocks it: A* weighs terrain by the drive train's traction and makes cliffs cost more, and it flattens obstacles and props under its hull. The terrain chunks it touches are rebuilt in the same frame.
+  - Hordes of 300+ run on a uniform enemy grid (neighbours, hits and blasts look up nearby cells instead of every enemy) and render as two batched point-sprite draws from a sprite atlas.
   - Squads and summons are `Ally` entities with anchors: follow the fortress, guard a point, or scavenge a target.
-- **Save:** localStorage (`ironcrawl3d-save-v1`, format v5), autosaved every 30 s. Older saves move into the bigger fortress automatically.
+- **Save:** localStorage (`ironcrawl3d-save-v1`, format v6), autosaved every 30 s. Older saves move onto the bigger hull automatically and get their pads and main battery.
 
 ```
 src/shared/   map (with crush nav), world + arena generation, collision & A*, items, weapons, rarity, loot, protocol, Dead Zone server sim
@@ -183,7 +194,8 @@ src/game/     Game state, tank, cards, progress (Level Road), squads, crew, arse
               (movement + crushing, weapons, projectiles, cards, squads, builds, tracking, allies, AI, world, crew, outrider, spawns)
 src/render/   three.js view (camera follow, base view, aim ring, beacon), pixel post pass, terrain chunks, voxel models, sprites, particles,
               fog of war, overlay (bars, base grid, tracking arrow), minimap, icons and card art
-src/ui/       HUD (commander, hand, energy, squads, tracker, touch stick), base view, CARDS / LEVEL ROAD / ARSENAL / CREW / CARGO / MAP panels, chests, title
+src/ui/       HUD (commander, hand, energy, squads, tracker, horde bar, drive chip, touch stick), base view, BLUEPRINT / CARDS / LEVEL ROAD / ARSENAL /
+              CREW / CARGO / MAP panels, chests, title
 src/net/      Dead Zone client (WebSocket with an in-browser fallback)
 server/       Node host for the Dead Zone (serves dist/ too)
 legacy/2d/    the original side-view 2D prototype, kept for reference

@@ -77,8 +77,9 @@ export const ZONE = { RUSTBELT: 0, DUNES: 1, CRYO: 2, GLASS: 3, MAGMA: 4, ACID: 
 export type ZoneId = (typeof ZONE)[keyof typeof ZONE];
 
 /**
- * How a mover interacts with liquids and obstacles. The `crush` modes belong to your fortress:
- * it is a full facility on treads and rolls straight over rocks, ruins and wrecks (only cliffs and pillars stop it).
+ * How a mover interacts with liquids and obstacles. The `crush` modes belong to fortress-class hulls (yours and
+ * rivals): nothing stops them. They flatten rocks, ruins and wrecks, climb cliffs slowly and wade through lava
+ * and acid (which hurts without the right drive train).
  */
 export type NavMode = 'ground' | 'magma' | 'hover' | 'air' | 'crush' | 'crushMagma' | 'crushHover';
 
@@ -136,7 +137,7 @@ export class GameMap {
   blocked(tx: number, ty: number, mode: NavMode): boolean {
     if (!this.inside(tx, ty)) return true;
     const i = ty * this.size + tx;
-    if (mode === 'air') return false;
+    if (mode === 'air' || isCrushMode(mode)) return false;
     const o = this.obs[i];
     if (o !== 0 && !(isCrushMode(mode) && crushable(o))) return true;
     const t = this.ter[i];

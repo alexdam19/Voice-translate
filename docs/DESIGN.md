@@ -3,7 +3,7 @@
 ## Pillars
 
 1. **Easy to get into.** The first minutes ask for three things: drive with WASD, watch your guns fire on their own, drag a card onto the battlefield. Everything else switches on one feature at a time as your commander levels up (menu buttons appear when their feature unlocks), and a one-step-at-a-time goal box says what to try next.
-2. **Your base is a facility, not a vehicle.** One deck cell is one world unit, so the starting fortress is 12 units wide and the biggest is 22 wide and 32 long. It rolls over rubble instead of steering around it. Inside, it's run like a Clash of Clans village: a shop, builders, timed upgrades, and a Command Center that caps everything.
+2. **Your base is a facility, not a vehicle.** A land cruiser in the spirit of the P1000 Ratte, styled like the Tumbler Batmobile. One deck cell is one world unit, so the starting fortress is 14 units wide and 23 long and the biggest is 24 wide and 40 long. Nothing stops it: it rolls over rubble, climbs cliffs and wades through lava. Inside, it's run like a Clash of Clans village: a shop, builders, timed upgrades, and a Command Center that caps everything.
 3. **Two kinds of progress, earned two ways.**
    - Things you **find**: materials, weapons, crew and card packs come from combat, harvesting and scavenging.
    - Things you **earn**: commander XP comes only from fighting. It's the only source of the Level Road's unlocks and its per-level hull and damage bonus.
@@ -11,6 +11,7 @@
 5. **Always know what to do next.** Tap TRACK on anything you can't afford. The tracker shows what's missing and points (marker, beam, edge arrow) at the nearest place to get the first missing thing, recursing through refinery recipes to the raw ore.
 6. **Distance is difficulty.** Threat rises from the camp outward, and every zone asks for gear before it's comfortable.
 7. **Losing is cheap in the open world.** Your fortress comes back at full health. The Dead Zone is where losses are real.
+8. **Swarms, not skirmishes.** Hordes of hundreds come in waves and climb the hull; rival fortresses as strong as yours hunt you. The answers are movement, turrets on every side and the right buildings, and the blueprint says where you're weak.
 
 ## Loops
 
@@ -21,10 +22,35 @@
 ## The fortress
 
 - `Tank.cell` is world units per deck cell: 1 for your fortress and remote players, 0.75 for outposts, 0.6 for raiders and 0.5 for the Outrider. Hull size, turn rate, module positions and the model scale all read it.
-- **Chassis follow the Command Center.** CC levels 1-6 map to Crawler Facility (10×14), Assault Facility (12×17), Siege Citadel (14×20), Land Dreadnought (16×23), Colossus (18×27) and Moving Citadel (20×31). When a CC upgrade finishes, `setChassis` grows the deck and centres the existing layout.
+- **Chassis follow the Command Center.** CC levels 1-6 map to Landkreuzer (12×20), Assault Landkreuzer (14×23), Siege Citadel (16×26), Land Dreadnought (18×29), Colossus (20×33) and Moving Citadel (22×37). When a CC upgrade finishes, `setChassis` grows the deck and centres the existing layout, then `Game.syncHull` places the built-in weapons.
+- **Built-in weapons.** `fixedSpots(cc, cols, rows)` lists them: a 2×2 **Weapon Pad** on every corner and a 4×4 **Main Battery** at the front centre, then side pads at CC 2, 5 and 6 and a rear battery at CC 4. They're `fixed` modules: never bought, moved or removed. `Tank.ensureFixed` stamps them first and moves anything in their way to the nearest free spot (buildings that fit nowhere go back to the hold with half their cost). New mounts arrive armed (autocannons on pads, the 88mm on batteries). Pads take light or medium weapons (`mounts`), batteries heavy ones.
+- **Save migration.** Hulls grew in v0.7. `TankSave` now records `cols`/`rows`; older saves use `LEGACY_DIMS` to centre their layout on the new deck, then `syncHull` adds and arms the pads and battery.
+- **The model.** Fortress-class hulls (yours, rivals, other players) get the land-cruiser body: three tracks a side under stepped armored skirts with running lights, a sloped wedge nose with a chin plow and a visor light, a lit rim around the deck, and a tail with two swept fins, red tail lights and an afterburner block whose nozzles throw flame particles when moving. The main battery is a faceted turret with twin long barrels and muzzle brakes. The hull is 2.8 units longer than the deck to cover nose and tail.
 - **Crushing.** The player's nav modes are `crush`, `crushMagma` and `crushHover`, where only cliffs, pillars, map edges and the wrong liquids block. `crushUnder` clears crushable obstacle tiles and marks props under the hull as `gone`. It runs every frame while moving and four times a second while parked (after a tow, a Blink card or a load). Each change marks its terrain chunk dirty, and the view rebuilds that chunk in the same frame. The non-crush clearance caches (used by enemy tanks) are invalidated at most every 3 s.
 - **Death:** the fortress is towed to camp after 6 s and comes back at full hull and shields, with at least half energy.
-- **Camera:** it always follows the fortress. Distance is `20 + 2.4 × hull length` (times the wheel zoom), and enemy spawn distances add half the hull length so fights start at the same distance from its edge.
+- **Camera:** it always follows the fortress. Distance is `18 + 2.1 × hull length` (times the wheel or pinch zoom), and enemy spawn distances add half the hull length so fights start at the same distance from its edge.
+
+## Going anywhere
+
+- `GameMap.blocked` returns false for the crush nav modes (fortress-class hulls), so nothing but the map edge stops them. A* (`findPath` with `climb`) still prefers good ground: tiles cost `1 / traction`, cliffs and pillars cost 3× and rubble 1.15×.
+- `traction()` for crush hulls turns "impassable" into 0.35 (wading) and halves speed on cliffs and pillars (climbing). Lava hurts 2% max hull a second without Magma Treads or Hover Skirts, acid 1.4% without Hover Skirts.
+- **Drive trains** (`systems/drives.ts`): owned once unlocked on the Level Road (Dune Tracks 3, Spiked Chains 5, Magma Treads 8, Hover Skirts 12) or crafted, and swapping is free. `driveScore` samples the ground under and ahead of the hull; with AUTO on, every half second it swaps to an owned drive that scores 12% better (with a 3 s cooldown). Picking one by hand turns AUTO off. The HUD drive chip opens the picker.
+
+## Hordes
+
+- **The director** (`systems/waves.ts`): calm (100 s the first time, then `max(38, 75 − 2.5n)` s), an 8 s warning with the direction (toast, alarm, HUD bar, red edge arrows), then a surge that spawns the wave over about 15 s along a ±0.55 rad front 42–56 units beyond the hull. Size is `(50 + 18n) × (0.7 + 0.22 × threat)`, ×0.75 in camp. Live horde units are capped at 340 (220 on touch devices). Mostly swarmers; leapers from wave 2, bombers from wave 4, a sprinkling of zone enemies and ~n% elites. Later waves get +6% hp per wave and faster swarmers. The wave ends when only 6% are left: stragglers scatter, and you get `20 + 8n` XP, `15 + 6n` scrap and a card pack every third wave. If the fortress dies, the horde disperses.
+- **Swarm AI:** swarmers sprint straight at the nearest point of the hull, over anything, with grid-based separation. Pressed against a hull they claw for a grip (8% damage) and climb aboard at 1.4/s while there's room (`latchCap` = hull area / 14). Aboard, they stand on the deck (`latch` holds tank-local coordinates), crawl inward and chew for 80% of their damage per second. Driving above 55% top speed (or on Nitro) flings them off, stunned and hurt. Leapers jump the last few metres onto the deck.
+- **Counters:** turrets target climbers like any enemy (splash never hurts your own hull), **Tesla Coils** arc into the 2 + level nearest climbers or crowding creatures about once a second, and moving at speed crushes the ones in front and sheds the ones aboard.
+- **Performance:** `Game.indexEnemies` rebuilds an id map and a uniform grid (`EnemyGrid`) each step; separation, projectile hits and blasts query nearby cells (`enemiesNear`, plus titans whose parts reach far). The player's target list is built once per step. Horde deaths skip explosions, loot rolls and damage numbers. A wave-12 horde of 330 runs at about 0.2 ms per step.
+
+## Rivals
+
+- From commander level 6 (the Level Road lists it), every 200–290 s a **rival dreadnought** spawns out of sight if none is alive: an enemy `Tank` of kind `rival` built by `buildRival` at your Command Center level, with your hull class, built-in pads and battery, weapons from the families you've unlocked at about your average stars, and engines, reactors, armor, a repair bay and a shield to match. Its guns fire at `0.34 + 0.016 × level` of base damage (yours get the Level Road, crew and forge), and its hull is scaled to `0.62 + 0.012 × level`, so a same-level duel ends with both sides hurt.
+- Rivals hunt you within 260 units, close in to the median range of their guns and circle. They show on the minimap with a pulsing ring and on the top bar within 110 units. The prize: an Epic pack (Legendary from level 20), 3 + level/4 Salvaged Tech, raider loot and their best gun.
+
+## Blueprint
+
+`N`, the base view's top bar or the ☰ menu. A canvas technical drawing (top view, front up, with the triple tracks, nose, tail, deck cells and every building; hardpoints show their ring and barrel; tap one for details) and a side profile. `game/analysis.ts` computes each weapon's sustained DPS, a **coverage rose** (DPS that reaches a target 8 units off the hull in each of 8 directions, from each mount's actual position and range), a combat rating (`sqrt(DPS × effective hp) / 4`) and an assessment: power deficit, empty mounts, a weak side, no Tesla Coils, no shield, too slow to shake off climbers, unprotected hazards, a better drive train for this ground, unused deck. The panel also charts top speed on each ground with the current drive.
 
 ## The base view (village)
 
@@ -150,11 +176,13 @@ The view shows a beacon beam at the target, and the overlay adds a bobbing marke
 - The camera has a yaw and a pitch, for the base view. The shadow camera's extent follows the zoom.
 - Terrain is chunked (32×32 tiles), built lazily around the camera, and rebuilt in place when crushed.
 - Tanks are voxel meshes regenerated when the layout changes, scaled by `cell`. Unbuilt buildings render as scaffolds.
+- Creatures (everything but titans) are one batched `Points` draw from a sprite atlas (frames, hit-flash and elite variants drawn on first use; facing flips in the shader; anchored at the feet by a view-space offset), plus one batch of blob shadows. Squads still use individual sprites.
 - Card art is generated per card: a school-coloured sky and a pixel motif.
 
 ## Roadmap
 
 - Card synergies (school bonuses for a deck built around one or two colours) and a draft mode.
-- Defending the base: raids that target your fortress while you're in the base view, and walls and gates as buildings.
+- Horde variety: armored brutes that pry plates off, spitters that stay back, and a boss that leads every tenth wave.
+- Walls and gates as buildings.
 - Day/night, music, gamepad support and key rebinding.
 - Dead Zone matchmaking and leaderboards.

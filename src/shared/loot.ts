@@ -21,6 +21,7 @@ export const LOOT_TABLES: Record<string, LootEntry[]> = {
   site_foundry: [...COMMON, L('sulfur', 6, 14, 5), L('explosive', 3, 6, 3), L('titanium_alloy', 2, 4, 2), L('cryo_core', 1, 2, 1)],
   site_hive: [...COMMON, L('xenite', 3, 7, 5), L('biomass', 6, 14, 4), L('uranium_rod', 1, 2, 2), L('xeno_alloy', 1, 2, 1)],
   creature: [L('scrap', 2, 6, 10), L('biomass', 1, 2, 4)],
+  swarm: [L('scrap', 1, 4, 10), L('biomass', 1, 1, 3), L('iron_ore', 1, 3, 2)],
   trooper: [L('scrap', 3, 8, 10), L('rations', 1, 1, 2), L('circuit', 1, 1, 1), L('explosive', 1, 1, 1)],
   elite: [L('tech_parts', 1, 1, 5), L('scrap', 10, 20, 6), L('circuit', 1, 3, 4), L('repair_kit', 1, 1, 2)],
   raider: [L('scrap', 20, 45, 10), L('iron_plate', 4, 10, 6), L('circuit', 1, 4, 5), L('copper_wire', 4, 10, 4), L('explosive', 1, 3, 3), L('repair_kit', 1, 2, 2), L('titanium_alloy', 1, 3, 2)],

@@ -1,4 +1,4 @@
-import { getItem } from '../shared/items';
+import { DRIVE_ITEM, getItem } from '../shared/items';
 import { RUNE_INFO, TIER_NAMES, threatAt, threatTier } from '../shared/mapgen';
 import { RARITIES } from '../shared/rarity';
 import { treePoints, WEAPONS } from '../shared/weapons';
@@ -6,7 +6,11 @@ import { ZONES } from '../shared/zones';
 import { CARDS, HAND_SIZE, PACK_INFO } from '../game/cards';
 import { PERK_BY_ID, perkText, ROLES } from '../game/crew';
 import { buildBlock, upgradeBlock, upgradeCostOf } from '../game/actions';
-import { chassisForCC, DRIVE_INFO, MODULE_LIST, MODULES } from '../game/defs';
+import { chassisForCC, DRIVE_INFO, isShopBuilding, MODULE_LIST, MODULES } from '../game/defs';
+import { DRIVE_LEVEL, DRIVES, driveScore, ownsDrive, setDrive } from '../game/systems/drives';
+import { waveStatus } from '../game/systems/waves';
+
+import type { DriveKey } from '../shared/types';
 import type { Game } from '../game/game';
 import { FEATURES, levelRoad, MAX_COMMANDER_LEVEL, type FeatureKey, type LevelReward } from '../game/progress';
 import { SQUADS, squadSize, type SquadType } from '../game/squads';
@@ -26,7 +30,7 @@ import { fmtTime } from './village';
 function builderWork(g: Game): boolean {
   if (g.freeBuilders() <= 0) return false;
   for (const m of g.player.modules) if (!upgradeBlock(g, m.id) && g.canPay(upgradeCostOf(g, m.id))) return true;
-  for (const d of MODULE_LIST) if (!d.required && !buildBlock(g, d.key) && g.canPay(d.cost) && g.player.findSpot(d.key)) return true;
+  for (const d of MODULE_LIST) if (isShopBuilding(d) && !buildBlock(g, d.key) && g.canPay(d.cost) && g.player.findSpot(d.key)) return true;
   return false;
 }
 
@@ -65,6 +69,7 @@ const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
   { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
   { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
+  { key: 'blueprint', label: 'BLUEPRINT', sub: 'N' },
   { key: 'cargo', label: 'CARGO', sub: 'I' },
   { key: 'map', label: 'MAP', sub: 'M' },
   { key: 'help', label: '?', sub: 'H' },
@@ -81,6 +86,7 @@ export class Hud {
   private res = h('div', 'resources');
   private menu = h('div', 'menu-buttons');
   private boss = h('div', 'bossbar');
+  private waveBar = h('div', 'wave-bar');
   private buffs = h('div', 'buffbar');
   private toasts = h('div', 'toasts');
   private lvlBanner = h('div', 'lvl-banner');
@@ -91,6 +97,9 @@ export class Hud {
   private hpText = h('div', 'txt');
   private tankInfo = h('div', 'tank-info');
   private kitBtn = h('div', 'kit-btn');
+  private driveChip = h('div', 'drive-chip');
+  private drivePop = h('div', 'drive-pop');
+  private driveKey = '';
   private hand = h('div', 'hand');
   private handSlots: HTMLDivElement[] = [];
   private handKeys: string[] = [];
@@ -151,7 +160,7 @@ export class Hud {
     const tr = h('div', 'hud-tr');
     tr.append(this.menu, this.res);
     const tc = h('div', 'hud-tc');
-    tc.append(this.lvlBanner, this.boss, this.buffs, this.hazard, this.toasts);
+    tc.append(this.waveBar, this.lvlBanner, this.boss, this.buffs, this.hazard, this.toasts);
     this.lvlBanner.addEventListener('click', (e) => {
       e.stopPropagation();
       this.lvlT = 0;
@@ -178,7 +187,31 @@ export class Hud {
       act.useKit();
     });
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
-    this.hpBox.append(this.tankInfo, hp, this.kitBtn);
+    this.hpBox.append(this.tankInfo, hp, this.kitBtn, this.driveChip, this.drivePop);
+    this.driveChip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.drivePop.classList.toggle('open');
+      this.driveKey = '';
+    });
+    this.drivePop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const g = this.game;
+      const b = (e.target as HTMLElement).closest('[data-drive]') as HTMLElement | null;
+      if (!g || !b) return;
+      const k = b.dataset.drive!;
+      if (k === 'auto') {
+        g.autoDrive = !g.autoDrive;
+        g.driveSwapT = 0;
+        this.toast(g.autoDrive ? 'AUTO drive on: the fortress picks the best drive train for the ground.' : 'AUTO drive off.', '#ffd740');
+      } else if (ownsDrive(g, k as DriveKey)) {
+        // Picking one by hand turns AUTO off, or it would swap straight back.
+        if (g.autoDrive) g.autoDrive = false;
+        setDrive(g, k as DriveKey);
+        this.drivePop.classList.remove('open');
+      } else this.toast(`${DRIVE_INFO[k].name} unlocks at commander level ${DRIVE_LEVEL[k as DriveKey]}.`, '#ff8a80');
+      this.driveKey = '';
+    });
+    tooltip(this.driveChip, () => `<h4>Drive train</h4><div>Every part of the map is drivable; the right drive train makes it fast, and makes lava and acid safe.</div><div class="d">Tap to switch. AUTO picks the best one for the ground by itself.</div>`);
     this.tankInfo.addEventListener('click', (e) => {
       e.stopPropagation();
       act.village(true);
@@ -426,9 +459,21 @@ export class Hud {
     const pts = [...g.armory, ...p.weapons().map((m) => m.weapon!)].some((w) => (w.tree ?? []).length < treePoints(w));
     const spare = g.armory.length > 0 && p.hardpoints().some((m) => !m.weapon && m.built);
     badge('arsenal', spare ? '!' : pts ? '★' : '');
+    // Horde wave
+    const ws = waveStatus(g);
+    if (ws) {
+      this.waveBar.style.display = 'block';
+      this.waveBar.classList.toggle('urgent', ws.urgent);
+      setHTML(this.waveBar, `<div class="wb-t">${ws.urgent ? '☣ ' : ''}${esc(ws.label)}</div><div class="wb-b"><div style="width:${Math.round(Math.max(0, Math.min(1, ws.frac)) * 100)}%"></div></div>`);
+    } else this.waveBar.style.display = 'none';
     // Boss bar
     const titan = g.enemies.find((e) => e.titan && Math.hypot(e.x - p.x, e.y - p.y) < 70);
-    if (titan) {
+    const rival = g.tanks.find((t) => t.kind === 'rival' && !t.dead && Math.hypot(t.x - p.x, t.y - p.y) < 110);
+    if (rival) {
+      this.boss.style.display = 'block';
+      const hp = (rival.hp + rival.shield) / (rival.stats.maxHp + rival.stats.shield);
+      setHTML(this.boss, `<div class="bn">${esc(rival.name)} <small>RIVAL ${esc(chassisForCC(rival.stats.cc).name.toUpperCase())} · ${Math.round(Math.hypot(rival.x - p.x, rival.y - p.y))}m</small></div><div class="bb"><div style="width:${hp * 100}%"></div></div>`);
+    } else if (titan) {
       this.boss.style.display = 'block';
       setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${esc(titan.kind.replace('titan_', '').toUpperCase())} TITAN</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
     } else this.boss.style.display = 'none';
@@ -463,6 +508,7 @@ export class Hud {
     this.shFill.style.width = `${Math.min(100, ((p.shield + barrier) / p.stats.maxHp) * 100)}%`;
     setText(this.hpText, `${Math.ceil(p.hp)} / ${p.stats.maxHp}${p.stats.shield ? `  ⛨ ${Math.ceil(p.shield)}` : ''}${barrier > 0 ? `  +${Math.ceil(barrier)}` : ''}`);
     setHTML(this.kitBtn, `<img src="${itemIcon('repair_kit')}"><span class="k">5</span><span class="n">${p.cargo.count('repair_kit')}</span>`);
+    this.updateDrive(g);
     this.updateHand(g);
     this.updateSquads(g);
     this.updatePerks(g);
@@ -471,6 +517,25 @@ export class Hud {
       this.death.style.display = 'flex';
       setHTML(this.death, `<div><h2>FORTRESS DISABLED</h2><p>Your crew is towing it back to camp... ${Math.ceil(g.respawnIn)}</p><p class="d">It comes back fully repaired. You dropped a quarter of your scrap.</p></div>`);
     } else this.death.style.display = 'none';
+  }
+
+  /* ---------------- drive train ---------------- */
+
+  private updateDrive(g: Game): void {
+    const p = g.player;
+    const open = this.drivePop.classList.contains('open');
+    const best = DRIVES.filter((k) => ownsDrive(g, k)).reduce((a, k) => (driveScore(g, k) > driveScore(g, a) + 0.05 ? k : a), p.drive);
+    const key = `${p.drive}:${g.autoDrive}:${open}:${best}:${DRIVES.map((k) => (ownsDrive(g, k) ? 1 : 0)).join('')}`;
+    if (key === this.driveKey) return;
+    this.driveKey = key;
+    this.driveChip.classList.toggle('warn', best !== p.drive && !g.autoDrive);
+    setHTML(this.driveChip, `<img src="${itemIcon(DRIVE_ITEM[p.drive])}"><span>${esc(DRIVE_INFO[p.drive].name)}</span>${g.autoDrive ? '<b>AUTO</b>' : ''}`);
+    if (!open) return;
+    const rows = DRIVES.map((k) => {
+      const own = ownsDrive(g, k);
+      return `<div class="dp-row ${p.drive === k ? 'on' : ''} ${own ? '' : 'locked'}" data-drive="${k}"><img src="${itemIcon(DRIVE_ITEM[k])}"><div><b>${esc(DRIVE_INFO[k].name)}</b>${k === best && k !== p.drive ? ' <span class="good">best here</span>' : ''}<small>${own ? esc(DRIVE_INFO[k].best) : `🔒 commander level ${DRIVE_LEVEL[k]}`}</small></div></div>`;
+    }).join('');
+    setHTML(this.drivePop, `<div class="dp-head">DRIVE TRAIN</div>${rows}<div class="dp-row auto ${g.autoDrive ? 'on' : ''}" data-drive="auto"><b>AUTO: ${g.autoDrive ? 'ON' : 'OFF'}</b><small>swap to the best one for the ground</small></div>`);
   }
 
   /* ---------------- cards ---------------- */

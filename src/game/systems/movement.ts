@@ -58,6 +58,13 @@ export function traction(g: Game, t: Tank): number {
     const ter = g.map.terAt(p.x, p.y);
     let v = table[ter] ?? 1;
     if (t === g.player && t.crew.terrainImmune && (ter === TER.SAND || ter === TER.DUNE || ter === TER.ICE || ter === TER.SNOW || ter === TER.MUD)) v = Math.max(v, 1);
+    if (t.crush) {
+      // Go-anywhere hulls wade through liquids the drive can't handle and climb cliffs, slowly.
+      if (v <= 0) v = 0.35;
+      const tx = Math.floor(p.x), ty = Math.floor(p.y);
+      const o = g.map.inside(tx, ty) ? g.map.obs[ty * g.map.size + tx] : 0;
+      if (o && !crushable(o)) v *= 0.5;
+    }
     if (v <= 0) v = 0.15; // stuck in something it shouldn't be in; let it crawl out
     worst = Math.min(worst, v);
   }
@@ -70,6 +77,7 @@ export function planPath(g: Game, t: Tank, x: number, y: number): boolean {
     radius: Math.max(0.8, t.stats.radius * 0.85),
     mode: tankNav(t),
     traction: TRACTION[t.drive],
+    climb: t.crush,
     maxNodes: 90000,
   });
   if (!path || !path.length) {

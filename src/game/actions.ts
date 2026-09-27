@@ -6,11 +6,12 @@ import { canTakeNode, treeNode, WEAPONS, type WeaponItem } from '../shared/weapo
 import { nextRarity, scrapValue, STAR_TIME, starBlock, starCost } from './arsenal';
 import { CARDS, DECK_SIZE, MAX_CARD_LEVEL, rollPack, shardsNeeded, upgradeCost, type PackKind } from './cards';
 import { hireCost, pickPerk } from './crew';
-import { buildLimit, buildTime, CC_COMMANDER_LEVEL, chassisDef, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
+import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
 import type { Reward } from './entities';
 import type { Game } from './game';
 import { techLevel } from './progress';
 import { completeJob, jobFor } from './systems/builds';
+import { DRIVE_LEVEL, ownsDrive, setDrive } from './systems/drives';
 import { weaponCraftable } from './tech';
 import { newWeapon } from './templates';
 import { applyOutriderCrew, OUTRIDER_UPGRADE } from './systems/outrider';
@@ -33,6 +34,7 @@ export function buildBlock(g: Game, key: string): string | null {
   const d = MODULES[key];
   if (!d) return 'Unknown building.';
   if (d.required) return 'You only get one Command Center.';
+  if (d.fixed) return 'Built into the hull: it comes with the Command Center.';
   if ((d.unlock ?? 1) > g.commander.level) return `Unlocks at commander level ${d.unlock}.`;
   const cc = g.player.stats.cc;
   const lim = buildLimit(d, cc);
@@ -128,6 +130,7 @@ export function removeModule(g: Game, id: number): Result {
   if (!m) return NO('Nothing there.');
   const d = MODULES[m.key];
   if (d.required) return NO("The Command Center can't be removed.");
+  if (d.fixed) return NO("It's built into the hull.");
   if (jobFor(g, id)) return NO('Builders are working on it. Cancel the job first.');
   if (d.crew) {
     const capAfter = Math.min(MAX_BASE_CREW, p.stats.crewCap - d.crew);
@@ -155,7 +158,7 @@ export function mountWeapon(g: Game, modId: number, uid: number): Result {
   const hp = MODULES[m.key].hardpoint;
   const w = g.armory[i];
   if (!hp) return NO('That is not a hardpoint.');
-  if (WEAPONS[w.key].size !== hp) return NO(`${WEAPONS[w.key].name} needs a ${WEAPONS[w.key].size} hardpoint.`);
+  if (!canMount(MODULES[m.key], WEAPONS[w.key].size)) return NO(`${WEAPONS[w.key].name} needs a ${WEAPONS[w.key].size} hardpoint.`);
   g.armory.splice(i, 1);
   if (m.weapon) g.armory.push(m.weapon);
   m.weapon = w;
@@ -217,14 +220,9 @@ export function craftRecipe(g: Game, r: Recipe, times = 1): Result {
 export function installDrive(g: Game, drive: DriveKey): Result {
   const p = g.player;
   if (p.drive === drive) return NO('Already installed.');
-  const item = DRIVE_ITEM[drive];
-  if (drive !== 'wheels' && p.cargo.count(item) < 1) return NO(`Craft ${getItem(item).name} in CARGO > Workshop first.`);
-  if (drive !== 'wheels') p.cargo.take(item, 1);
-  if (p.drive !== 'wheels') p.cargo.add(DRIVE_ITEM[p.drive], 1);
-  p.drive = drive;
-  p.version++;
-  p.path = [];
-  return OK(`${getItem(item).name} installed.`);
+  if (!ownsDrive(g, drive)) return NO(`${getItem(DRIVE_ITEM[drive]).name} unlocks at commander level ${DRIVE_LEVEL[drive]} (or craft it in CARGO > Workshop).`);
+  setDrive(g, drive);
+  return OK(`${getItem(DRIVE_ITEM[drive]).name} installed.`);
 }
 
 /* ---------------- arsenal: forge and trees ---------------- */

@@ -14,6 +14,7 @@ const C = (g: Game, k: string): number => g.objectiveCounters[k] ?? 0;
 
 export const OBJECTIVES: Objective[] = [
   { title: 'Drive your fortress', hint: 'Hold W A S D to drive. It rolls right over rocks and ruins. Your guns aim and fire on their own.', touch: 'Push the stick (bottom left) or tap the ground to drive. It rolls right over rocks and ruins. Your guns fire on their own.', done: (g) => C(g, 'wasd') >= 1, reward: { scrap: 20 } },
+  { title: 'Survive a horde', hint: 'Hordes come in waves; a warning says from where. Let your guns work, drive hard to shake off the ones that climb aboard, and build Tesla Coils (level 3).', done: (g) => C(g, 'hordes') >= 1, reward: { scrap: 40 } },
   { title: 'Destroy 5 enemies', hint: 'Drive toward hostiles. Kills give XP: every commander level unlocks something new.', done: (g) => C(g, 'kills') >= 5, reward: { iron_plate: 6 } },
   { title: 'Play a battle card', hint: 'Drag a card from the bottom of the screen onto the battlefield and let go. Cards cost energy (the purple bar).', done: (g) => C(g, 'cards') >= 1, reward: { scrap: 30 } },
   { title: 'Build something in your base', hint: 'Press B (or the BASE button). Tap SHOP, pick a building and tap an empty spot on your fortress.', touch: 'Tap BASE (top right), then SHOP. Pick a building, tap a spot on your fortress, then PLACE.', done: (g) => C(g, 'placed') >= 1, reward: { scrap: 40 } },
@@ -29,5 +30,6 @@ export const OBJECTIVES: Objective[] = [
   { title: 'Upgrade the Command Center', hint: 'Needs commander level 3. It grows your whole fortress and lets you build more.', done: (g) => g.player.stats.cc >= 2, reward: { tech_parts: 3 } },
   { title: 'Send a squad scavenging', hint: 'Build a Garage (level 5) for Scout Buggies, then tap SCAVENGE on their badge.', done: (g) => C(g, 'squad_scavenge') >= 1, reward: { titanium_alloy: 4 } },
   { title: 'Claim a rune', hint: 'Colored circles on the minimap. Beat the guardians, park by the altar. Rune Chests can hold champions!', done: (g) => C(g, 'runes') >= 1, reward: { tech_parts: 2 } },
+  { title: 'Beat a rival dreadnought', hint: 'From level 6, enemy fortresses as big as yours hunt you (red ring on the minimap). Check your BLUEPRINT for weak spots first.', done: (g) => C(g, 'rivals') >= 1, reward: { tech_parts: 4 } },
   { title: 'Take out an outpost', hint: 'Red fort icons on the map. Big loot, a card pack and a freed prisoner.', done: (g) => C(g, 'outposts') >= 1, reward: { tech_parts: 3 } },
 ];

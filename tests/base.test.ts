@@ -8,21 +8,27 @@ import { stepWorld } from '../src/game/systems/step';
 import { ccTo, game, levelTo, rich } from './helpers';
 
 describe('the fortress is a full facility', () => {
-  it('starts as a 10x14 facility with a Command Center, turrets, bunks and room to build', () => {
+  it('starts as a 12x20 Landkreuzer with weapon pads, a main battery, bunks and room to build', () => {
     const g = game();
     const p = g.player;
     expect(p.chassis).toBe('crawler');
-    expect(p.cols * p.rows).toBe(140);
+    expect(p.cols * p.rows).toBe(240);
     expect(p.cell).toBe(1);
-    expect(p.stats.width).toBeGreaterThan(11);
-    expect(p.stats.length).toBeGreaterThan(14);
-    expect(p.weapons().length).toBe(4);
+    expect(p.stats.width).toBeGreaterThan(13);
+    expect(p.stats.length).toBeGreaterThan(20);
+    // A pad on every corner and the main battery up front, all armed.
+    const pads = p.modules.filter((m) => m.key === 'pad');
+    expect(pads.map((m) => `${m.cx},${m.cy}`).sort()).toEqual(['0,0', '0,18', '10,0', '10,18']);
+    const main = p.modules.find((m) => m.key === 'main_gun')!;
+    expect(main.cy).toBe(1);
+    expect(main.weapon?.key).toBe('main_battery');
+    expect(p.weapons().length).toBe(5);
     expect(p.stats.powerRatio).toBe(1);
     expect(p.stats.cc).toBe(1);
     expect(g.crewCap()).toBe(5);
     expect(g.mainCrew().length).toBe(4);
     const used = p.modules.reduce((s, m) => s + MODULES[m.key].w * MODULES[m.key].h, 0);
-    expect(used).toBeLessThan(70);
+    expect(used).toBeLessThan(120);
     // Enemy rigs are much smaller.
     expect(p.stats.topSpeed).toBeGreaterThan(3);
   });
@@ -59,9 +65,20 @@ describe('the fortress is a full facility', () => {
     expect(placeBuilding(g, 'barracks', s[0], s[1]).ok).toBe(false); // level 3
     levelTo(g, 3);
     expect(placeBuilding(g, 'barracks', s[0], s[1]).ok).toBe(true);
-    // Only 3 light turret mounts at CC 1 (the starter has 3).
+    // Only 3 light turret mounts at CC 1 (on top of the hull's own pads).
+    for (let i = 0; i < 3; i++) {
+      const t = g.player.findSpot('hp_light')!;
+      const r = placeBuilding(g, 'hp_light', t[0], t[1]);
+      expect(r.ok).toBe(true);
+      finishNow(g, g.player.modules[g.player.modules.length - 1].id);
+    }
     const t = g.player.findSpot('hp_light')!;
-    expect(placeBuilding(g, 'hp_light', t[0], t[1]).ok).toBe(false);
+    expect(placeBuilding(g, 'hp_light', t[0], t[1]).msg).toMatch(/Command Center/);
+    // Pads and the main battery come with the hull: they can't be bought, moved or removed.
+    expect(placeBuilding(g, 'pad', 3, 3).ok).toBe(false);
+    const pad = g.player.modules.find((m) => m.key === 'pad')!;
+    expect(removeModule(g, pad.id).ok).toBe(false);
+    expect(g.player.moveModule(pad.id, 3, 3)).toBe(false);
     // Buildings can't pass the Command Center's level.
     const q = g.player.modules.find((m) => m.key === 'quarters')!;
     expect(upgradeBuilding(g, q.id).ok).toBe(false);
@@ -80,7 +97,12 @@ describe('the fortress is a full facility', () => {
     finishNow(g, cc.id);
     expect(cc.lvl).toBe(2);
     expect(g.player.chassis).toBe('assault');
-    expect(g.player.modules.length).toBe(n);
+    // The bigger hull adds a pad on each side, already armed; the corners keep theirs.
+    expect(g.player.modules.length).toBe(n + 2);
+    const pads = g.player.modules.filter((m) => m.key === 'pad');
+    expect(pads.length).toBe(6);
+    expect(pads.every((m) => m.weapon)).toBe(true);
+    expect(pads.some((m) => m.cx === g.player.cols - 2 && m.cy === g.player.rows - 2)).toBe(true);
     expect(g.player.stats.width).toBeGreaterThan(width);
     // Now quarters can go to level 2.
     const q = g.player.modules.find((m) => m.key === 'quarters')!;

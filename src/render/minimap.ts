@@ -148,10 +148,19 @@ export class Minimap {
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
     for (const t of g.tanks) {
-      if (t.dead || (g.mode === 'world' && !g.isVisible(t.x, t.y) && Math.hypot(t.x - g.player.x, t.y - g.player.y) > radar)) continue;
+      // Rivals are always on the map: they're hunting you, and you should be able to hunt them back.
+      if (t.dead || (t.kind !== 'rival' && g.mode === 'world' && !g.isVisible(t.x, t.y) && Math.hypot(t.x - g.player.x, t.y - g.player.y) > radar)) continue;
       const [x, y] = P(t.x, t.y);
       ctx.fillStyle = t.kind === 'remote' ? '#e040fb' : '#ff5252';
-      ctx.fillRect(x - 3, y - 3, 6, 6);
+      const s = t.kind === 'rival' ? 5 : 3;
+      ctx.fillRect(x - s, y - s, s * 2, s * 2);
+      if (t.kind === 'rival') {
+        ctx.strokeStyle = '#ff1744';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, s + 3 + (Math.sin(performance.now() / 200) + 1) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
     for (const k of g.pickups) {
       if (k.kind !== 'chest' && k.kind !== 'weapon') continue;
