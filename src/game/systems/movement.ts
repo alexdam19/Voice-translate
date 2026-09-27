@@ -62,35 +62,70 @@ export function updateCollapses(g: Game): void {
   if (Math.random() < 0.3) g.hooks.sound('crunch', g.player.x, g.player.y, 0.5);
 }
 
+/**
+ * Tiles to test for crushing. Small hulls scan their whole footprint; a Titan Crawler (200 m of hull) only scans a
+ * band around its perimeter while moving, since that's the only ground it can newly reach in a frame.
+ */
+function crushTiles(t: Tank, full: boolean): number[] {
+  const L = t.stats.length / 2, W = t.stats.width / 2;
+  const out: number[] = [];
+  if (full || !t.fortress) {
+    const half = Math.hypot(L, W);
+    for (let ty = Math.floor(t.y - half); ty <= Math.floor(t.y + half); ty++) for (let tx = Math.floor(t.x - half); tx <= Math.floor(t.x + half); tx++) out.push(tx, ty);
+    return out;
+  }
+  const seen = new Set<number>();
+  const band = 2.5 + Math.abs(t.speed) * 0.1 + Math.abs(t.yawRate) * L * 0.1;
+  const add = (lx: number, lz: number): void => {
+    const p = t.toWorld(lx, lz);
+    const tx = Math.floor(p.x), ty = Math.floor(p.y);
+    const k = ty * 20000 + tx;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(tx, ty);
+  };
+  for (let d = 0; d <= band; d += 0.7) {
+    for (let lx = -L; lx <= L; lx += 0.7) {
+      add(lx, -W + d);
+      add(lx, W - d);
+    }
+    for (let lz = -W; lz <= W; lz += 0.7) {
+      add(L - d, lz);
+      add(-L + d, lz);
+    }
+  }
+  return out;
+}
+
 /** The fortress rolls over rocks, ruins, wrecks and props, flattening them. */
-export function crushUnder(g: Game, t: Tank): void {
+export function crushUnder(g: Game, t: Tank, full = false): void {
   const map = g.map;
-  const half = Math.hypot(t.stats.length, t.stats.width) / 2;
-  const x0 = Math.floor(t.x - half), x1 = Math.floor(t.x + half), y0 = Math.floor(t.y - half), y1 = Math.floor(t.y + half);
+  const tiles = crushTiles(t, full);
   let n = 0;
   let heavy = 0;
-  for (let ty = y0; ty <= y1; ty++) {
-    for (let tx = x0; tx <= x1; tx++) {
-      if (!map.inside(tx, ty)) continue;
-      const o = map.getObs(tx, ty);
-      if (!crushable(o) || !t.hits(tx + 0.5, ty + 0.5, 0.2)) continue;
-      const h = map.getOh(tx, ty);
-      map.crush(tx, ty);
-      g.markDirty(tx, ty);
-      n++;
-      heavy += h;
-      if (n <= 6) {
-        g.fx.push({ t: 'spark', x: tx + 0.5, y: ty + 0.5, color: OBS_COLOR[o] ?? '#8d6e63', n: 5 });
-        g.fx.push({ t: 'dust', x: tx + 0.5, y: ty + 0.5, color: '#a1887f' });
-      }
-      // Tall things come down in chunks, and bring the rest of the building with them.
-      if (h >= 4) {
-        g.fx.push({ t: 'debris', x: tx + 0.5, y: ty + 0.5, h: h * 0.5, color: OBS_COLOR[o] ?? '#8a8680', n: 2 + Math.min(5, Math.floor(h / 4)), fx: t.x, fy: t.y, push: Math.abs(t.speed) });
-        if (t === g.player && g.collapses.length < 300) queueCollapse(g, tx, ty, t.x, t.y);
-      }
+  for (let i = 0; i < tiles.length; i += 2) {
+    const tx = tiles[i], ty = tiles[i + 1];
+    if (!map.inside(tx, ty)) continue;
+    const o = map.getObs(tx, ty);
+    if (!crushable(o) || !t.hits(tx + 0.5, ty + 0.5, 0.2)) continue;
+    const h = map.getOh(tx, ty);
+    map.crush(tx, ty);
+    g.markDirty(tx, ty);
+    n++;
+    heavy += h;
+    if (n <= 6) {
+      g.fx.push({ t: 'spark', x: tx + 0.5, y: ty + 0.5, color: OBS_COLOR[o] ?? '#8d6e63', n: 5 });
+      g.fx.push({ t: 'dust', x: tx + 0.5, y: ty + 0.5, color: '#a1887f' });
+    }
+    // Tall things come down in chunks, and bring the rest of the building with them.
+    if (h >= 4) {
+      g.fx.push({ t: 'debris', x: tx + 0.5, y: ty + 0.5, h: h * 0.5, color: OBS_COLOR[o] ?? '#8a8680', n: 2 + Math.min(5, Math.floor(h / 4)), fx: t.x, fy: t.y, push: Math.abs(t.speed) });
+      if (t === g.player && g.collapses.length < 300) queueCollapse(g, tx, ty, t.x, t.y);
     }
   }
   // Props (bones, barrels, cacti...) just get squashed.
+  const half = Math.hypot(t.stats.length, t.stats.width) / 2;
+  const x0 = Math.floor(t.x - half), x1 = Math.floor(t.x + half), y0 = Math.floor(t.y - half), y1 = Math.floor(t.y + half);
   for (let cy = Math.floor(y0 / CHUNK); cy <= Math.floor(y1 / CHUNK); cy++) {
     for (let cx = Math.floor(x0 / CHUNK); cx <= Math.floor(x1 / CHUNK); cx++) {
       for (const p of g.propsInChunk(cx, cy)) {
@@ -102,10 +137,11 @@ export function crushUnder(g: Game, t: Tank): void {
   }
   if (n > 0) {
     g.navDirty = true;
-    // Rubble slows you a little; ploughing through a skyscraper slows you more.
-    t.speed *= Math.pow(t.kind === 'main' ? 0.994 : 0.985, Math.min(n, 12)) * Math.max(0.8, 1 - heavy * 0.0015);
+    // Rubble slows you a little; ploughing through a skyscraper slows you more. A Titan barely notices.
+    if (t.fortress) t.speed *= Math.pow(0.9985, Math.min(n, 20)) * Math.max(0.96, 1 - heavy * 0.0002);
+    else t.speed *= Math.pow(0.985, Math.min(n, 12)) * Math.max(0.8, 1 - heavy * 0.0015);
     if (Math.random() < 0.5) g.hooks.sound('crunch', t.x, t.y, Math.min(1, 0.3 + n * 0.1));
-    if (n >= 4) g.fx.push({ t: 'shake', amt: 0.15 });
+    if (n >= 4) g.fx.push({ t: 'shake', amt: t.fortress ? 0.08 : 0.15 });
   }
 }
 
@@ -204,14 +240,26 @@ export function arcThrottle(diff: number): number {
   return Math.max(0.2, 0.45 - (diff - 1.7) * 0.2);
 }
 
-/** Your fortress handles like a vehicle, not a building: it turns quickly and stops when you let go. */
+/**
+ * Titan Crawler handling: a 200 m building on eight crawlers. It builds speed slowly, takes a long time to stop and
+ * turns in wide differential arcs (a slow pivot only when nearly stopped, on firm ground). Heavy, but readable:
+ * the HUD shows the throttle, both crawler sides and the predicted path.
+ */
+export const TITAN = { accel: 0.55, brake: 1.1, reverseBrake: 1.6, yaw: 0.11, pivot: 0.045, cap: 9 } as const;
+
 export function handling(t: Tank): { turn: number; accel: number; brake: number } {
-  if (t.kind !== 'main') {
+  if (!t.fortress) {
     const accel = Math.max(4, t.stats.topSpeed * 1.6);
     return { turn: t.stats.turnRate, accel, brake: accel * 1.5 };
   }
-  const top = Math.max(3, t.stats.topSpeed);
-  return { turn: Math.max(2.3, t.stats.turnRate * 1.9) * t.handling, accel: top * 2.4, brake: top * 3.4 };
+  return { turn: TITAN.yaw * t.handling, accel: TITAN.accel * Math.sqrt(t.handling), brake: TITAN.brake };
+}
+
+/** Yaw rate a fortress can manage at `speed`: a slow pivot when stopped, up to the full rate once moving. */
+export function titanYaw(t: Tank, speed: number, firm: boolean): number {
+  const k = Math.min(1, Math.abs(speed) / 2.5);
+  const pivot = firm ? TITAN.pivot : 0.01;
+  return (pivot + (TITAN.yaw - pivot) * k) * t.handling;
 }
 
 export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: ManualDrive): void {
@@ -253,12 +301,18 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   const raw = traction(g, t);
   t.trac = t.trac <= 0 ? raw : t.trac + (raw - t.trac) * (1 - Math.exp(-dt * 6));
   const trac = t.trac;
-  const top = t.stats.topSpeed * trac * speedMult;
+  const top = Math.min(t.fortress ? TITAN.cap : 99, t.stats.topSpeed) * trac * speedMult;
   const target = top * throttle;
   const hd = handling(t);
-  if (t.speed < target) t.speed = Math.min(target, t.speed + hd.accel * dt);
-  else t.speed = Math.max(target, t.speed - hd.brake * dt);
-  if (!stunned) {
+  const rev = t.fortress && Math.sign(target) !== Math.sign(t.speed) && Math.abs(t.speed) > 0.05 && target !== 0;
+  if (t.speed < target) t.speed = Math.min(target, t.speed + (t.speed < 0 ? hd.brake : hd.accel) * dt * (rev ? TITAN.reverseBrake / TITAN.brake : 1));
+  else t.speed = Math.max(target, t.speed - (t.speed > 0 ? hd.brake : hd.accel) * dt * (rev ? TITAN.reverseBrake / TITAN.brake : 1));
+  const rot0 = t.rot;
+  if (!stunned && t.fortress) {
+    const yaw = titanYaw(t, t.speed, trac > 0.7) * (speedMult > 1 ? 1.3 : 1);
+    if (turnDir) t.rot = wrapAngle(t.rot + turnDir * yaw * (t.speed < -0.05 ? -1 : 1) * dt);
+    else t.rot = turnToward(t.rot, wantRot, yaw * dt);
+  } else if (!stunned) {
     const turn = hd.turn * (t.kind === 'main' ? 0.8 + 0.2 * Math.min(1, trac) : 0.55 + 0.45 * Math.min(1, trac)) * (speedMult > 1 ? 1.3 : 1);
     if (turnDir) t.rot = wrapAngle(t.rot + turnDir * turn * dt);
     else t.rot = turnToward(t.rot, wantRot, turn * dt);
@@ -272,11 +326,20 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   if (resolveTank(g, t)) t.speed *= 0.9;
   // Flatten whatever is under the hull: every frame while moving, a few times a second while parked
   // (it may have been towed, blinked or loaded on top of rubble).
-  if (t.crush && (Math.abs(t.speed) > 0.05 || Math.abs(t.pushX) + Math.abs(t.pushY) > 0.05 || (t.crushT -= dt) <= 0)) {
-    t.crushT = 0.25;
-    crushUnder(g, t);
+  const moving = Math.abs(t.speed) > 0.05 || Math.abs(t.pushX) + Math.abs(t.pushY) > 0.05;
+  if (t.crush && (moving || (t.crushT -= dt) <= 0)) {
+    const full = !moving || (t.crushT -= dt) <= 0;
+    if (full) t.crushT = t.fortress ? 1 : 0.25;
+    crushUnder(g, t, full);
   }
   t.treadPhase += t.speed * dt;
+  // Each side's crawlers (left, right): the inside of a turn runs slower than the outside (rot grows clockwise).
+  t.yawRate = dt > 0 ? wrapAngle(t.rot - rot0) / dt : 0;
+  const halfW = t.stats.width / 2;
+  t.sideSpeed[0] = t.speed + t.yawRate * halfW;
+  t.sideSpeed[1] = t.speed - t.yawRate * halfW;
+  t.sidePhase[0] += t.sideSpeed[0] * dt;
+  t.sidePhase[1] += t.sideSpeed[1] * dt;
 }
 
 /** Keeps tanks from overlapping each other, nodes and the rune altars. */

@@ -247,7 +247,8 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
     }
     case 'blink': {
       const need = Math.max(0.8, p.stats.radius * 0.85);
-      const spot = nearestClear(g.map, Math.floor(x), Math.floor(y), need, tankNav(p), 12);
+      // A go-anywhere hull lands on whatever is there (and crushes it); others need clear ground.
+      const spot = p.crush ? (g.map.inside(Math.floor(x), Math.floor(y)) ? [Math.floor(x), Math.floor(y)] : null) : nearestClear(g.map, Math.floor(x), Math.floor(y), need, tankNav(p), 12);
       if (!spot) return false;
       g.fx.push({ t: 'teleport', x: p.x, y: p.y });
       p.x = spot[0] + 0.5;

@@ -28,16 +28,19 @@ export function newWeapon(key: string, rarity: WeaponItem['rarity'] = 0, rng: ()
  * Entries are [building, x, y, deck].
  */
 export const STARTER_LAYOUT: [string, number, number, number][] = [
-  ['bridge', 4, 8, 0],
-  ['nest_rifle', 1, 12, 0],
-  ['quarters', 2, 6, 1],
-  ['quarters', 8, 6, 1],
-  ['cargo', 5, 9, 1],
-  ['hydroponics', 2, 12, 1],
-  ['quarters', 8, 12, 1],
-  ['reactor', 2, 13, 2],
-  ['engine', 4, 16, 2],
-  ['engine', 6, 16, 2],
+  ['bridge', 7, 16, 1],
+  ['nest_rifle', 2, 12, 0],
+  ['nest_rifle', 14, 12, 0],
+  ['nest_rifle', 2, 26, 0],
+  ['nest_rifle', 14, 26, 0],
+  ['quarters', 2, 16, 3],
+  ['quarters', 12, 16, 3],
+  ['quarters', 7, 20, 3],
+  ['hydroponics', 7, 16, 4],
+  ['cargo', 7, 16, 6],
+  ['reactor', 6, 16, 7],
+  ['engine', 4, 24, 7],
+  ['engine', 12, 24, 7],
 ];
 
 /** What the built-in weapons start with: the main battery, and an autocannon on every corner pad. */
@@ -57,7 +60,11 @@ export function buildStarterTank(x: number, y: number, klass: HullClass = 'jugge
   t.x = x;
   t.y = y;
   t.rot = -Math.PI / 2;
-  for (const [key, cx, cy, deck] of STARTER_LAYOUT) t.addModule(key, cx, cy, null, deck);
+  for (const [key, cx, cy, deck] of STARTER_LAYOUT) {
+    if (t.addModule(key, cx, cy, null, deck)) continue;
+    const s = t.findSpot(key, deck);
+    if (s) t.addModule(key, s[0], s[1], null, s[2]);
+  }
   t.ensureFixed();
   armFixed(t);
   // What the class brings along.

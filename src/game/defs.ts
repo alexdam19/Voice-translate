@@ -101,7 +101,7 @@ const add = (d: ModuleDef): void => {
 };
 
 /* Command */
-add(M({ key: 'bridge', name: 'Command Tower', w: 4, h: 4, cat: 'command', cost: {}, height: 1.2, unique: true, required: true, maxLevel: 6, crew: 2, bunks: 6, vision: 26, power: 4, thrust: 3, deck: 'roof', desc: 'The bridge on top of your fortress and the heart of the whole facility. Upgrade it to grow the hull and raise every building\'s max level.' }));
+add(M({ key: 'bridge', name: 'Command Bridge', w: 4, h: 4, cat: 'command', cost: {}, height: 1.2, unique: true, required: true, maxLevel: 6, crew: 2, bunks: 6, vision: 26, power: 4, thrust: 3, desc: 'The bridge on top of your fortress and the heart of the whole facility. Upgrade it to grow the hull and raise every building\'s max level.' }));
 
 /* Built into the hull */
 add(M({ key: 'main_gun', name: 'Main Battery Turret', w: 4, h: 4, cat: 'weapon', cost: {}, height: 0.9, fixed: true, hardpoint: 'heavy', hp: 150, armor: 0.01, deck: 'roof', desc: "The fortress's great twin-barrelled turret. Takes a heavy weapon. A second one rises on the rear deck at Command Center level 4. Each level adds +15% damage." }));
@@ -191,17 +191,43 @@ export function deckAllows(d: ModuleDef, deck: number, stories: number): boolean
   return k === 'any' || (k === 'roof' ? deck === ROOF : deck >= 1);
 }
 
+/**
+ * The Titan Crawler's decks, top to bottom (index 1..7 under the roof), with what belongs on each.
+ */
+export const TITAN_DECK_INFO: { name: string; level: string; color: string; desc: string }[] = [
+  { name: 'Roof', level: 'Roof', color: '#90a4ae', desc: 'Guns, soldier nests, sensors and the defenses.' },
+  { name: 'Command', level: '+3', color: '#4dd0e1', desc: 'The bridge, navigation, tactical command, communications and sensors.' },
+  { name: 'Recreation', level: '+2', color: '#9ccc65', desc: 'Gym, recreation, lounges and observation.' },
+  { name: 'Residential', level: '+1', color: '#fff176', desc: 'Rooms, bunks, showers, laundry.' },
+  { name: 'Main Deck', level: '0', color: '#ffb74d', desc: 'The public deck: the Spine, dining hall, medical, workshops, classrooms.' },
+  { name: 'Hangar', level: '-1', color: '#b0bec5', desc: 'Vehicle bays, drones, mini tanks, the rear ramp.' },
+  { name: 'Logistics', level: '-2', color: '#b39ddb', desc: 'Warehouses, ammunition, food and water storage, spare parts.' },
+  { name: 'Engineering', level: '-3', color: '#ef5350', desc: 'Power, propulsion, hydraulics, cooling: the loudest place aboard.' },
+];
+
+/** Which deck each kind of building belongs on (by theme). */
+const DECK_OF: Record<string, number> = {
+  bridge: 1, science_lab: 1, radar: 0,
+  training_grounds: 2, arcane_sanctum: 2,
+  quarters: 3, barracks: 3,
+  mess_hall: 4, medbay: 4, workshop: 4, forge: 4, hydroponics: 4, repair_bay: 4, ammo_depot: 4,
+  garage: 5, drone_bay: 5, jet_hangar: 5, mech_bay: 5, tank_bay: 5,
+  cargo: 6, vault: 6, refinery: 6, drill_mk2: 6, drill_mk3: 6,
+  reactor: 7, fission: 7, engine: 7, ion_engine: 7, rad_baffles: 7, thermal: 7, sealant: 7,
+};
+
 /** Where a building goes by default. */
 export function defaultDeck(d: ModuleDef): number {
-  return deckKind(d) === 'interior' ? 1 : ROOF;
+  const k = deckKind(d);
+  if (k !== 'interior') return ROOF;
+  return DECK_OF[d.key] ?? 4;
 }
 
-/** The name of a deck for a hull with `stories` stories below the roof. */
+/** The name of a deck ("Deck +3 Command"). Small hulls just have a roof and a hold. */
 export function deckName(deck: number, stories: number): string {
   if (deck === ROOF) return 'Roof';
-  if (deck === stories) return stories === 1 ? 'Main Deck' : 'Lower Hold';
-  if (deck === 1) return 'Upper Deck';
-  return `Deck ${deck}`;
+  if (stories === 7) return `${TITAN_DECK_INFO[deck].level} ${TITAN_DECK_INFO[deck].name}`;
+  return stories === 1 ? 'Hold' : `Deck ${deck}`;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -255,11 +281,13 @@ export function fixedSpots(cc: number, cols: number, rows: number, twinBattery =
     const cy = Math.max(2, Math.min(rows - 4, Math.round(rows * f) - 1));
     out.push({ key: 'pad', cx: 0, cy }, { key: 'pad', cx: cols - 2, cy });
   };
-  if (cc >= 2) side(0.5);
+  // A 200 m hull carries a pad amidships on each side from the start, and more with every refit.
+  if (cc >= (rows >= 30 ? 1 : 2)) side(0.5);
+  if (rows >= 30 && cc >= 2) side(0.28);
   // The Bastion gets its rear battery right away; everyone else at Command Center level 4.
   if (cc >= (twinBattery ? 1 : 4)) out.push({ key: 'main_gun', cx: Math.floor(cols / 2) - 2, cy: rows - 6 });
-  if (cc >= 5) side(0.28);
-  if (cc >= 6) side(0.72);
+  if (cc >= 5) side(rows >= 30 ? 0.72 : 0.28);
+  if (cc >= 6) side(rows >= 30 ? 0.86 : 0.72);
   return out;
 }
 
@@ -332,13 +360,17 @@ export interface ChassisDef {
   hidden?: boolean;
 }
 
+/**
+ * The Titan Crawler: 200 m long, 90 m wide, 42 m tall, on eight crawler assemblies. The hull never changes size;
+ * every Command Center level is a refit of the same machine: more armor, more decks opened up, more gun mounts.
+ */
 export const CHASSIS: ChassisDef[] = [
-  { key: 'crawler', name: 'Landkreuzer', cols: 12, rows: 20, hp: 1600, mass: 44, armor: 0.05, desc: 'A land cruiser the size of a warship.' },
-  { key: 'assault', name: 'Assault Landkreuzer', cols: 14, rows: 23, hp: 2300, mass: 55, armor: 0.07, desc: 'Room for a real army.' },
-  { key: 'siege', name: 'Siege Citadel', cols: 16, rows: 26, hp: 3200, mass: 68, armor: 0.09, desc: 'A rolling fortress.' },
-  { key: 'dread', name: 'Land Dreadnought', cols: 18, rows: 29, hp: 4300, mass: 82, armor: 0.11, desc: 'A town on treads.' },
-  { key: 'colossus', name: 'Colossus', cols: 20, rows: 33, hp: 5600, mass: 98, armor: 0.13, desc: 'The largest thing that moves in the wasteland.' },
-  { key: 'citadel', name: 'Moving Citadel', cols: 22, rows: 37, hp: 7200, mass: 116, armor: 0.15, desc: 'A city that rolls.' },
+  { key: 'crawler', name: 'Titan Crawler Mk I', cols: 18, rows: 38, hp: 1600, mass: 44, armor: 0.05, desc: 'A 200-metre armored city on eight crawlers. Three decks open.' },
+  { key: 'assault', name: 'Titan Crawler Mk II', cols: 18, rows: 38, hp: 2300, mass: 55, armor: 0.07, desc: 'Residential deck opened, more mounts.' },
+  { key: 'siege', name: 'Titan Crawler Mk III', cols: 18, rows: 38, hp: 3200, mass: 68, armor: 0.09, desc: 'The hangar deck opens.' },
+  { key: 'dread', name: 'Titan Crawler Mk IV', cols: 18, rows: 38, hp: 4300, mass: 82, armor: 0.11, desc: 'Logistics deck and a rear battery.' },
+  { key: 'colossus', name: 'Titan Crawler Mk V', cols: 18, rows: 38, hp: 5600, mass: 98, armor: 0.13, desc: 'The recreation deck opens.' },
+  { key: 'citadel', name: 'Titan Crawler Mk VI', cols: 18, rows: 38, hp: 7200, mass: 116, armor: 0.15, desc: 'Every deck, every mount: a city that rolls.' },
   { key: 'scout', name: 'Raider Buggy-Tank', cols: 5, rows: 7, hp: 260, mass: 16, armor: 0.02, desc: '', hidden: true },
   { key: 'outrider', name: 'Outrider', cols: 4, rows: 6, hp: 420, mass: 12, armor: 0.05, desc: 'Mini tank crewed by side crew.', hidden: true },
   { key: 'outpost', name: 'Outpost', cols: 12, rows: 12, hp: 2400, mass: 999, armor: 0.1, desc: '', hidden: true },

@@ -221,7 +221,14 @@ export const latchCap = (t: Tank): number => Math.max(6, Math.floor((t.stats.len
 
 /** Pile height (world units) along each 2.5-unit stretch of a hull's perimeter, rebuilt every step. */
 const piles = new Map<number, Float32Array>();
-const PILE_SEG = 2.5;
+const PILE_SEG = 5;
+/** Metres of pile each body adds to its stretch of hull. */
+const PILE_BODY = 0.8;
+/**
+ * How high the pile must get before they climb the rest of the way: the first 12 m (the crawler housings and the
+ * lower hull) need bodies to stand on; above that there are ladders, pipes and armour seams to claw up.
+ */
+const CLIMB_H = 12;
 
 function perimeterPos(t: Tank, x: number, y: number): number {
   const l = t.toLocal(x, y);
@@ -249,7 +256,7 @@ function buildPiles(g: Game, list: Enemy[]): void {
     for (const e of g.grid.near(t.x, t.y, R, [])) {
       if (e.hp <= 0 || e.latch || e.flying || e.titan || e.r > 0.6) continue;
       if (t.edgeDist(e.x, e.y) > 0.9) continue;
-      a[Math.floor(perimeterPos(t, e.x, e.y) / PILE_SEG)] += 0.34;
+      a[Math.floor(perimeterPos(t, e.x, e.y) / PILE_SEG)] += PILE_BODY;
     }
   }
   void list;
@@ -514,7 +521,7 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
       const pile = pileAt(tank, e.x, e.y);
       const roof = deckY(tank);
       e.z = Math.min(roof, pile * (0.25 + 0.75 * (((e.id * 37) % 100) / 100)));
-      if (!full && pile >= roof * 0.85 && Math.random() < dt * 2) {
+      if (!full && pile >= Math.min(roof * 0.85, CLIMB_H) && Math.random() < dt * 2) {
         const l = tank.toLocal(e.x, e.y);
         latchOn(e, tank, l.lx, l.lz);
         latched.set(tank.id, (latched.get(tank.id) ?? 0) + 1);

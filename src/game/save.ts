@@ -18,7 +18,7 @@ import { newCrewLife, type CrewLife } from './systems/crewlife';
 export const SAVE_KEY = 'ironcrawl3d-save-v1';
 
 export interface SaveData {
-  v: 3 | 4 | 5 | 6 | 7;
+  v: 3 | 4 | 5 | 6 | 7 | 8;
   seed: number;
   time: number;
   tank: TankSave;
@@ -69,7 +69,7 @@ export function serialize(g: Game): SaveData {
   for (const [k, s] of Object.entries(g.squads)) if (s) squads[k as SquadType] = { order: s.order, gx: s.gx, gy: s.gy };
   const tr = g.tracked;
   return {
-    v: 7, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
+    v: 8, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
     armory: g.armory, tech: [...g.tech], stats: g.stats, explored: '', fog: g.fog.serialize(),
     ...featureState(g),
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
@@ -158,7 +158,7 @@ export function deserialize(d: SaveData): Game {
   const tr = d.tracked;
   const track: Track | null = !tr ? null : tr.kind === 'upgrade' ? (at(tr.mod) ? { kind: 'upgrade', modId: at(tr.mod) } : null) : tr;
   g.tracked = track;
-  g.tankControls = !!d.tankControls;
+  g.tankControls = (d.v ?? 0) >= 8 ? !!d.tankControls : true;
   g.drivesOwned = new Set<DriveKey>(['wheels', g.player.drive, ...(d.drives ?? []).filter((k) => k in TRACTION)]);
   g.autoDrive = d.autoDrive ?? true;
   g.wave.n = Math.max(0, Math.round(d.wave ?? 0));

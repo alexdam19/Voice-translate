@@ -8,41 +8,42 @@ import { stepWorld } from '../src/game/systems/step';
 import { ccTo, game, levelTo, rich } from './helpers';
 
 describe('the fortress is a full facility', () => {
-  it('starts as a 12x20 Landkreuzer with weapon pads, a main battery, bunks and room to build', () => {
+  it('starts as a 200 x 90 m Titan Crawler with seven decks, weapon pads, a main battery, bunks and room to build', () => {
     const g = game();
     const p = g.player;
     expect(p.chassis).toBe('crawler');
-    expect(p.cols * p.rows).toBe(240);
-    expect(p.cell).toBe(1);
-    expect(p.stats.width).toBeGreaterThan(13);
-    expect(p.stats.length).toBeGreaterThan(20);
+    expect(p.cols * p.rows).toBe(18 * 38);
+    expect(p.cell).toBe(5);
+    expect(p.stats.width).toBe(90);
+    expect(p.stats.length).toBe(200);
     // A pad on every corner and the main battery up front, all armed.
     const pads = p.modules.filter((m) => m.key === 'pad');
-    expect(pads.map((m) => `${m.cx},${m.cy}`).sort()).toEqual(['0,0', '0,18', '10,0', '10,18']);
+    expect(pads.map((m) => `${m.cx},${m.cy}`).sort()).toEqual(['0,0', '0,18', '0,36', '16,0', '16,18', '16,36']);
     const main = p.modules.find((m) => m.key === 'main_gun')!;
     expect(main.cy).toBe(1);
     expect(main.weapon?.key).toBe('main_battery');
-    expect(p.weapons().length).toBe(5);
+    expect(p.weapons().length).toBe(7);
     expect(p.stats.powerRatio).toBe(1);
     expect(p.stats.cc).toBe(1);
     expect(g.crewCap()).toBe(11);
     expect(g.mainCrew().length).toBe(4);
-    // Two stories under the roof: guns and the tower up top, bunks and cargo on the upper deck, engines below.
-    expect(p.stories).toBe(2);
-    expect(p.modules.find((m) => m.key === 'bridge')!.deck).toBe(0);
-    expect(p.modules.filter((m) => m.key === 'quarters').every((m) => m.deck === 1)).toBe(true);
-    expect(p.modules.filter((m) => m.key === 'engine').every((m) => m.deck === 2)).toBe(true);
+    // Seven decks under the roof: the bridge on +3 Command, bunks on +1 Residential, engines down in -3 Engineering.
+    expect(p.stories).toBe(7);
+    expect(p.modules.find((m) => m.key === 'bridge')!.deck).toBe(1);
+    expect(p.modules.filter((m) => m.key === 'quarters').every((m) => m.deck === 3)).toBe(true);
+    expect(p.modules.filter((m) => m.key === 'engine').every((m) => m.deck === 7)).toBe(true);
     expect(p.modules.filter((m) => MODULES[m.key].hardpoint).every((m) => m.deck === 0)).toBe(true);
     // Every gun and the rifle nest are manned, with troops to spare.
     expect(p.troops).toBe(p.stats.bunks);
     expect(p.stats.crewManned).toBe(p.stats.crewWanted);
     expect(p.stats.bunks).toBeGreaterThan(p.stats.crewWanted);
-    for (const deck of [0, 1, 2]) {
+    for (let deck = 0; deck <= 7; deck++) {
       const used = p.modules.filter((m) => m.deck === deck).reduce((s, m) => s + MODULES[m.key].w * MODULES[m.key].h, 0);
-      expect(used).toBeLessThan(120);
+      expect(used).toBeLessThan(18 * 38 * 0.5);
     }
-    // Enemy rigs are much smaller.
-    expect(p.stats.topSpeed).toBeGreaterThan(3);
+    // About 25 km/h flat out.
+    expect(p.stats.topSpeed * 3.6).toBeGreaterThan(18);
+    expect(p.stats.topSpeed * 3.6).toBeLessThan(33);
   });
 
   it('builders put up new buildings over time, one job each', () => {
@@ -96,7 +97,7 @@ describe('the fortress is a full facility', () => {
     expect(upgradeBuilding(g, q.id).ok).toBe(false);
   });
 
-  it('upgrading the Command Center grows the whole fortress', () => {
+  it('upgrading the Command Center refits the Titan with more mounts and armour (same 200 m hull)', () => {
     const g = game();
     rich(g);
     const cc = g.player.modules.find((m) => m.key === 'bridge')!;
@@ -105,6 +106,7 @@ describe('the fortress is a full facility', () => {
     levelTo(g, CC_COMMANDER_LEVEL[1]);
     const n = g.player.modules.length;
     const width = g.player.stats.width;
+    const hp = g.player.stats.maxHp;
     expect(upgradeBuilding(g, cc.id).ok).toBe(true);
     finishNow(g, cc.id);
     expect(cc.lvl).toBe(2);
@@ -112,10 +114,11 @@ describe('the fortress is a full facility', () => {
     // The bigger hull adds a pad on each side, already armed; the corners keep theirs.
     expect(g.player.modules.length).toBe(n + 2);
     const pads = g.player.modules.filter((m) => m.key === 'pad');
-    expect(pads.length).toBe(6);
+    expect(pads.length).toBe(8);
     expect(pads.every((m) => m.weapon)).toBe(true);
     expect(pads.some((m) => m.cx === g.player.cols - 2 && m.cy === g.player.rows - 2)).toBe(true);
-    expect(g.player.stats.width).toBeGreaterThan(width);
+    expect(g.player.stats.width).toBe(width);
+    expect(g.player.stats.maxHp).toBeGreaterThan(hp);
     // Now quarters can go to level 2.
     const q = g.player.modules.find((m) => m.key === 'quarters')!;
     expect(upgradeBuilding(g, q.id).ok).toBe(true);
@@ -152,8 +155,8 @@ describe('the fortress is a full facility', () => {
     for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) g.map.set(x, y, { obs: OBS.ROCK, oh: 3 });
     const startY = p.y;
     g.driveInput = { x: 0, y: -1, active: true };
-    for (let i = 0; i < 60 * 6; i++) stepWorld(g, 1 / 60);
-    expect(p.y).toBeLessThan(startY - 14);
+    for (let i = 0; i < 30 * 20; i++) stepWorld(g, 1 / 30);
+    expect(p.y).toBeLessThan(startY - 40);
     let left = 0;
     for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) if (g.map.getObs(x, y)) left++;
     expect(left).toBeLessThan(6);

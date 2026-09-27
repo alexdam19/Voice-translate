@@ -255,8 +255,8 @@ describe('driving', () => {
     for (let i = 0; i < 30; i++) stepWorld(g, 1 / 60);
     expect(g.harvestId).toBe(n.id);
     const x0 = p.x, y0 = p.y;
-    expect(orderMove(g, p.x + 30, p.y)).toBe(true);
-    for (let i = 0; i < 60 * 3; i++) stepWorld(g, 1 / 60);
+    expect(orderMove(g, p.x + 300, p.y)).toBe(true);
+    for (let i = 0; i < 30 * 12; i++) stepWorld(g, 1 / 30);
     expect(Math.hypot(p.x - x0, p.y - y0)).toBeGreaterThan(5);
   });
 });

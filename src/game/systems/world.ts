@@ -31,7 +31,8 @@ function autoHarvest(g: Game): void {
   for (const n of g.gen.nodes) {
     if (n.respawnAt > 0 || NODE_INFO[n.type].tier > p.stats.drill) continue;
     if (Math.abs(n.x - p.x) > p.stats.length || Math.abs(n.y - p.y) > p.stats.length) continue;
-    const d = p.edgeDist(n.x, n.y);
+    // Under a 200 m hull several nodes can be at the edge at once: prefer the one nearest the middle.
+    const d = p.edgeDist(n.x, n.y) + Math.hypot(n.x - p.x, n.y - p.y) * 0.001;
     if (d < bd) {
       bd = d;
       best = n.id;

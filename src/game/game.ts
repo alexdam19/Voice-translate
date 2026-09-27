@@ -177,7 +177,7 @@ export class Game {
   /** WASD drive input (screen-relative unit vector, or tank-style throttle/turn). */
   driveInput = { x: 0, y: 0, active: false };
   /** Tank-style controls: W/S throttle, A/D turn. Off = screen-relative. */
-  tankControls = false;
+  tankControls = true;
   /**
    * Horde waves (World War Z style): calm, a warning with the direction, then a surge that pours in from there.
    * `n` is the wave number (it only goes up), `total`/`spawned` count this wave's horde.

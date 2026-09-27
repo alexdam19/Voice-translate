@@ -13,11 +13,24 @@ export type FireMode = 'auto' | 'manual';
 export const BASE_CARGO = 12;
 
 /**
+ * Guns on a 200 m Titan Crawler are ship's guns: they reach much further and their shells fly faster than the same
+ * gun on a buggy. Outposts and raiders sit in between.
+ */
+export const WEAPON_SCALE: Record<TankKind, { range: number; speed: number; radius: number }> = {
+  main: { range: 4, speed: 2.5, radius: 2 }, rival: { range: 4, speed: 2.5, radius: 2 }, remote: { range: 4, speed: 2.5, radius: 2 },
+  outpost: { range: 2.5, speed: 1.8, radius: 1.5 }, raider: { range: 1.5, speed: 1.3, radius: 1.2 }, outrider: { range: 1.5, speed: 1.3, radius: 1.2 },
+};
+
+/**
  * Hull geometry in model units (the model is built at 0.5 units per deck cell, then scaled by cell / 0.5).
  * A fortress stands on its tracks with a hull base, then one story per deck up to the roof.
  */
-export const HULL_BASE = 0.75;
-export const STORY_H = 0.7;
+export const HULL_BASE = 0.3;
+export const STORY_H = 0.5;
+/** A fortress-class hull (the Titan Crawler) has seven decks under its roof, Deck +3 down to Deck -3. */
+export const TITAN_DECKS = 7;
+/** Metres per deck cell on a fortress-class hull. */
+export const TITAN_CELL = 5;
 export const SMALL_DECK = 0.78;
 
 export interface ModuleInst {
@@ -131,7 +144,7 @@ export class Tank {
   cols: number;
   rows: number;
   /** Stories below the roof (the Mothership can add more). */
-  stories = 2;
+  stories = TITAN_DECKS;
   /** Hull class and its Mothership mark (I-III). */
   klass: HullClass = 'juggernaut';
   classMk = 1;
@@ -160,6 +173,10 @@ export class Tank {
   hitFlash = 0;
   threat = 1;
   treadPhase = 0;
+  /** Turn rate (rad/s), each side's crawler speed (m/s, left/right) and how far each side's tracks have run. */
+  yawRate = 0;
+  sideSpeed: [number, number] = [0, 0];
+  sidePhase: [number, number] = [0, 0];
   lastHitAt = -99;
   /** Research and crew applied on recalc (player-side). */
   tech: Set<string> = new Set();
@@ -195,7 +212,8 @@ export class Tank {
     this.team = team;
     this.kind = kind;
     this.name = name;
-    this.cell = kind === 'main' || kind === 'remote' || kind === 'rival' ? 1 : kind === 'outrider' ? 0.5 : kind === 'raider' ? 0.6 : 0.75;
+    // One unit is one metre. The Titan Crawler is 200 m long; enemy rigs are the size of real tanks and forts.
+    this.cell = kind === 'main' || kind === 'remote' || kind === 'rival' ? TITAN_CELL : kind === 'outrider' ? 1.2 : kind === 'raider' ? 1.4 : 3;
     this.crush = kind === 'main' || kind === 'rival';
     this.chassis = chassis;
     const c = chassisDef(chassis);
@@ -349,7 +367,7 @@ export class Tank {
 
   /** Adds (or removes) stories below the roof. New stories go at the bottom; buildings keep their decks. */
   setStories(n: number): boolean {
-    n = Math.max(1, Math.min(4, Math.round(n)));
+    n = Math.max(1, Math.min(TITAN_DECKS, Math.round(n)));
     if (n < this.stories && this.modules.some((m) => m.deck > n)) return false;
     this.stories = n;
     this.grid = new Int32Array(this.cols * this.rows * this.decks).fill(-1);
@@ -506,6 +524,7 @@ export class Tank {
         continue;
       }
       const fam = WEAPONS[m.weapon.key].family;
+      const sc = WEAPON_SCALE[this.kind];
       const base: WeaponMods = this.team === 'player' ? weaponMods(this.tech, fam) : { ...BASE_WEAPON_MODS };
       const depotF = fam === 'ballistic' || fam === 'artillery' || fam === 'missile' ? Math.min(0.4, depot) : 0;
       const sanctumF = fam === 'arcane' && sanctum ? 0.1 * sanctum : 0;
@@ -513,7 +532,9 @@ export class Tank {
         ...base,
         dmg: base.dmg * (1 + crew.dmg) * (1 + sanctumF) * (1 + 0.15 * (m.lvl - 1)) * this.dmgScale * cm.dmg * (m.key === 'main_gun' ? cm.mainDmg : 1),
         rate: base.rate * (1 + crew.rate) * (1 + depotF) * (0.55 + 0.45 * eff),
-        range: base.range * (1 + crew.range) * cm.range * (0.88 + 0.12 * cmdK),
+        range: base.range * (1 + crew.range) * cm.range * (0.88 + 0.12 * cmdK) * sc.range,
+        speed: base.speed * sc.speed,
+        radius: base.radius * sc.radius,
         crit: base.crit + crew.crit,
       };
       m.stats = weaponStats(m.weapon, mods);
@@ -521,12 +542,12 @@ export class Tank {
     }
     power *= 1 + crew.power;
     const powerRatio = use <= 0 ? 1 : Math.min(1, power / use);
-    const width = this.cols * this.cell + this.cell * 2;
+    const width = this.cols * this.cell + (this.fortress ? 0 : this.cell * 2);
     // Fortress-class hulls carry a wedge nose and an afterburner tail past the deck.
     const dread = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
-    const length = this.rows * this.cell + (dread ? 2.8 : 0.6) * this.cell;
+    const length = this.rows * this.cell + (dread ? 2 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
-    const topSpeed = this.anchored ? 0 : (2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed) * cm.speed;
+    const topSpeed = this.anchored ? 0 : (this.fortress ? 5.2 + 1.8 * Math.min(1, ratio * 3) : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed) * cm.speed;
     this.handling = cm.turn;
     this.ram = cm.ram;
     this.nitroMult = cm.nitro;
@@ -715,7 +736,8 @@ export class Tank {
     const t = new Tank(team, kind, s.chassis, name);
     if (s.klass) t.klass = s.klass;
     t.classMk = s.classMk ?? 1;
-    if (s.stories && s.stories !== t.stories) t.setStories(s.stories);
+    // Saves from before the Titan Crawler had two or three stories: every building goes to its deck on the new hull.
+    const oldHull = (s.stories ?? 0) < TITAN_DECKS && t.fortress;
     t.troops = s.troops ?? 0;
     t.drive = s.drive;
     t.x = s.x;
@@ -728,8 +750,13 @@ export class Tank {
     for (const m of s.modules) {
       if (!MODULES[m.key]) continue;
       // Saves from before the fortress had stories: guns and the tower go on the roof, the rest on the upper deck.
-      const deck = m.d ?? defaultDeck(MODULES[m.key]);
-      const inst = t.addModule(m.key, m.cx + ox, m.cy + oy, m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null, deck) ?? t.addModule(m.key, m.cx + ox, m.cy + oy, m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null, deck === ROOF ? ROOF : 1);
+      const deck = m.d === undefined || (oldHull && m.d > 0) ? defaultDeck(MODULES[m.key]) : m.d;
+      const w = m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null;
+      let inst = t.addModule(m.key, m.cx + ox, m.cy + oy, w, deck);
+      if (!inst) {
+        const spot = t.findSpot(m.key);
+        if (spot) inst = t.addModule(m.key, spot[0], spot[1], w, spot[2]);
+      }
       if (inst) {
         inst.mode = 'auto';
         inst.aim = t.rot;

@@ -41,7 +41,7 @@ describe('horde waves', () => {
       expect(Math.abs(Math.atan2(Math.sin(a - dir), Math.cos(a - dir)))).toBeLessThan(1.2);
     }
     const xp = g.commander.xp + g.commander.level * 1e6;
-    for (let i = 0; i < 60 * 90 && g.wave.phase !== 'calm'; i++) stepWorld(g, 1 / 60);
+    for (let i = 0; i < 60 * 150 && g.wave.phase !== 'calm'; i++) stepWorld(g, 1 / 60);
     expect(g.wave.phase).toBe('calm');
     expect(g.stats.hordes).toBe(1);
     expect(g.commander.xp + g.commander.level * 1e6).toBeGreaterThan(xp);
@@ -62,7 +62,10 @@ describe('horde waves', () => {
     p.recalc();
     for (let i = 0; i < 30; i++) {
       const a = (i / 30) * Math.PI * 2;
-      const e = g.spawnEnemy('swarmer', p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 18, 1);
+      // Spread all round the hull, a few metres out.
+      const hl = p.stats.length / 2 + 4, hw = p.stats.width / 2 + 4;
+      const w = p.toWorld(Math.cos(a) * hl, Math.sin(a) * hw);
+      const e = g.spawnEnemy('swarmer', w.x, w.y, 1);
       e.horde = true;
     }
     run(g, 8);
@@ -76,9 +79,9 @@ describe('horde waves', () => {
     p.troops = 0;
     p.recalc();
     for (let i = 0; i < 160; i++) {
-      const a = (Math.random() - 0.5) * 0.8;
-      const d = 16 + Math.random() * 10;
-      const e = g.spawnEnemy('swarmer', p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, 1);
+      // A wall of them along one 60 m stretch of the side.
+      const w = p.toWorld((Math.random() - 0.5) * 60, p.stats.width / 2 + 4 + Math.random() * 10);
+      const e = g.spawnEnemy('swarmer', w.x, w.y, 1);
       e.horde = true;
     }
     const hp = p.hp;
@@ -86,7 +89,7 @@ describe('horde waves', () => {
     const on = g.enemies.filter((e) => e.latch);
     expect(on.length).toBeGreaterThan(5);
     // The ones still on the ground are stacked up the side.
-    expect(Math.max(...g.enemies.filter((e) => !e.latch && p.edgeDist(e.x, e.y) < 1).map((e) => e.z))).toBeGreaterThan(1.5);
+    expect(Math.max(...g.enemies.filter((e) => !e.latch && p.edgeDist(e.x, e.y) < 1).map((e) => e.z))).toBeGreaterThan(4);
     expect(on.length).toBeLessThanOrEqual(latchCap(p));
     // Riding on the deck, not on the ground.
     for (const e of on) expect(p.hits(e.x, e.y, 0.1) && e.z > 1).toBe(true);
@@ -179,18 +182,20 @@ describe('the land cruiser', () => {
       ],
       cargo: [],
     });
-    expect(t.cols).toBe(12);
-    expect(t.moduleAtCell(4, 8)?.key).toBe('bridge');
+    // Onto the Titan Crawler's 18 x 38 deck plan, the bridge moved inside to +3 Command.
+    expect(t.cols).toBe(18);
+    expect(t.rows).toBe(38);
+    expect(t.modules.find((m) => m.key === 'bridge')?.deck).toBe(1);
     const lost = t.ensureFixed();
     expect(lost).toEqual([]);
-    expect(t.modules.filter((m) => m.key === 'pad').length).toBe(4);
+    expect(t.modules.filter((m) => m.key === 'pad').length).toBe(6);
     expect(t.modules.filter((m) => m.key === 'main_gun').length).toBe(1);
     // Everything else is still aboard, nothing overlaps.
     expect(t.modules.some((m) => m.key === 'hp_heavy') && t.modules.some((m) => m.key === 'reactor')).toBe(true);
     const cells = new Set<string>();
     for (const m of t.modules) for (let y = m.cy; y < m.cy + MODULES[m.key].h; y++) for (let x = m.cx; x < m.cx + MODULES[m.key].w; x++) {
-      expect(cells.has(`${x},${y}`)).toBe(false);
-      cells.add(`${x},${y}`);
+      expect(cells.has(`${m.deck}:${x},${y}`)).toBe(false);
+      cells.add(`${m.deck}:${x},${y}`);
     }
   });
 
@@ -229,7 +234,7 @@ describe('rival dreadnoughts', () => {
     const t = spawnRival(g)!;
     expect(t).not.toBeNull();
     expect(t.kind).toBe('rival');
-    expect(t.cell).toBe(1);
+    expect(t.cell).toBe(5);
     expect(t.stats.cc).toBe(g.player.stats.cc);
     expect(t.modules.filter((m) => m.key === 'pad').every((m) => m.weapon)).toBe(true);
     onTankDestroyed(g, t);
