@@ -87,7 +87,8 @@ function hitSomething(g: Game, p: Projectile): boolean {
     for (const t of tanks) {
       if (!t || !t.hits(p.x, p.y, p.size)) continue;
       if (p.splash > 0) return true;
-      damageTank(g, t, p.dmg, opts);
+      // Where it came from picks the armour it hits (a lobbed shot comes down on the roof).
+      damageTank(g, t, p.dmg, { ...opts, ...(p.arc ? { zone: 'roof' as const } : { at: { x: p.x - p.vx * 0.3, y: p.y - p.vy * 0.3 } }) });
       g.fx.push({ t: 'spark', x: p.x, y: p.y, color: '#ffab40', n: 3 });
       return true;
     }

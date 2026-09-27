@@ -1,4 +1,5 @@
 import { troopCasualty } from './troops';
+import { titanHit, type ArmorZone } from './titan';
 import { onBossKilled } from '../campaign';
 import { ENEMIES } from '../enemyDefs';
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
@@ -27,6 +28,9 @@ export interface HitOpts {
   acid?: boolean;
   /** Fired by a gun that isn't a mounted weapon (soldiers, Tesla Coils, ramming): counts as a weapon hit. */
   weapon?: boolean;
+  /** Where the hit came from (picks a Titan's armour zone), or the zone itself. */
+  at?: { x: number; y: number };
+  zone?: ArmorZone;
 }
 
 /** On-hit effects of a shot against a creature. Returns the adjusted damage. */
@@ -197,6 +201,8 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
   if (t.hasBuff('armorUp')) armor += t.buff('armorUp')!.v;
   if (t === g.player && t.speed > 1 && t.hasBuff('evasive')) armor += 0.1;
   if (!o.acid) d *= 1 - Math.min(0.75, armor);
+  // A Titan's armour zones, crawlers and subsystems take their share (a worn-down zone lets more through).
+  if (t === g.player && t.titan) d *= titanHit(g, t, d, o.at, o.zone);
   t.shieldDelay = 4;
   t.lastHitAt = g.time;
   if (o.burn && t.team === 'enemy') t.addBuff('burn', 3, o.burn);
@@ -273,7 +279,7 @@ export function explode(g: Game, x: number, y: number, r: number, dmg: number, t
     for (const f of g.friendlies()) {
       const d = g.friendlyEdgeDist(f.id, x, y);
       if (d > r) continue;
-      damageFriendly(g, f.id, dmg * (1 - 0.5 * d / r), o);
+      damageFriendly(g, f.id, dmg * (1 - 0.5 * d / r), { at: { x, y }, ...o });
     }
   }
 }

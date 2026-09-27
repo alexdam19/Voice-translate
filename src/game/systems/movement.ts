@@ -386,9 +386,11 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   else t.speed = Math.max(target, t.speed - (t.speed > 0 ? hd.brake : hd.accel) * dt * (rev ? TITAN.reverseBrake / TITAN.brake : 1));
   const rot0 = t.rot;
   if (!stunned && t.fortress) {
-    const yaw = titanYaw(t, t.speed, trac > 0.7) * (speedMult > 1 ? 1.3 : 1);
+    const yaw = titanYaw(t, t.speed, trac > 0.7) * (speedMult > 1 ? 1.3 : 1) * (0.35 + 0.65 * t.titanMods.steering);
     if (turnDir) t.rot = wrapAngle(t.rot + turnDir * yaw * (t.speed < -0.05 ? -1 : 1) * dt);
     else t.rot = turnToward(t.rot, wantRot, yaw * dt);
+    // Lost crawlers on one side drag the hull round that way.
+    t.rot = wrapAngle(t.rot + t.titanMods.pull * Math.min(1, Math.abs(t.speed) / 3) * dt);
   } else if (!stunned) {
     const turn = hd.turn * (t.kind === 'main' ? 0.8 + 0.2 * Math.min(1, trac) : 0.55 + 0.45 * Math.min(1, trac)) * (speedMult > 1 ? 1.3 : 1);
     if (turnDir) t.rot = wrapAngle(t.rot + turnDir * turn * dt);

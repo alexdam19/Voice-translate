@@ -17,6 +17,7 @@ import { renderCards } from './cardsPanel';
 import { renderProgress } from './progressPanel';
 import { renderBlueprint } from './blueprintPanel';
 import { renderShipyard } from './shipyardPanel';
+import { renderBridge } from './bridgePanel';
 
 const SWITCH: [string, string, string][] = [
   ['cards', 'CARDS (C)', ''], ['arsenal', 'ARSENAL (V)', 'arsenal'], ['crew', 'CREW (K)', 'crew'], ['progress', 'LEVEL ROAD (L)', ''],
@@ -81,6 +82,10 @@ export class Panels {
       shipyard: {
         title: 'MOTHERSHIP SHIPYARD', sub: 'Install the parts from the strongholds, rebuild your fortress, trade and hire.',
         tabs: [['parts', 'Parts'], ['refit', 'Rebuild'], ['trade', 'Trade'], ['hire', 'Hire']], render: renderShipyard, wide: true, cls: 'shipyard',
+      },
+      bridge: {
+        title: 'BRIDGE STATUS', sub: 'The Titan Crawler at a glance: hull and armour, crawlers, systems, supplies, fires and flooding, and who is aboard.',
+        render: renderBridge, wide: true, cls: 'bridge',
       },
       drive: { title: 'DRIVE TRAIN', sub: 'Different treads for different ground. Craft them at a Workshop (CARGO > Workshop).', render: (c) => this.renderDrive(c), wide: true },
       cargo: { title: 'CARGO', sub: 'Your hold, and the Refinery and Workshop where ore becomes parts.', tabs: [['hold', 'Hold'], ['workshop', 'Refine & Craft']], render: renderCargo, wide: true },

@@ -32,7 +32,7 @@ const soul = (t: Tank): number => (t.buff('soul')?.v ?? 0) + (t.kind === 'main' 
 
 /** Effective fire-rate multiplier from buffs and power. */
 function rateMult(g: Game, t: Tank): number {
-  let m = 0.35 + 0.65 * t.stats.powerRatio;
+  let m = (0.35 + 0.65 * t.stats.powerRatio) * t.titanMods.weapons;
   const b = t.buff('barrage');
   if (b) m *= 1 + b.v;
   const mm = t.buff('meltdown');

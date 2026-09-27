@@ -22,6 +22,7 @@ import { newCampaign, type Campaign } from './campaign';
 import { newCrewLife, type CrewLife } from './systems/crewlife';
 import { newStorm, type Storm } from './systems/weather';
 import { newDeploy, type Deploy } from './systems/camp';
+import { newTitanState, type TitanState } from './systems/titan';
 import { Tank } from './tank';
 import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates';
 
@@ -196,6 +197,8 @@ export class Game {
   campaign: Campaign = newCampaign();
   /** Life aboard: fatigue, hunger. */
   life: CrewLife = newCrewLife();
+  /** The Titan Crawler's armour zones, crawlers, subsystems, fires, flooding and supplies. */
+  titan: TitanState = newTitanState();
   /** The weather (storms). */
   weather: Storm = newStorm();
   /** Setting up camp. */

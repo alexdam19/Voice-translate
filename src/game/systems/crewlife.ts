@@ -1,4 +1,5 @@
 import type { Game } from '../game';
+import { comfort } from './titan';
 
 /**
  * Life aboard. Everyone eats; everyone on duty needs a shift off. Keep a third of the people on duty resting at any
@@ -84,7 +85,8 @@ export function updateCrewLife(g: Game, dt: number): void {
       g.hooks.toast('A starving crewman walked off into the wasteland. Get rations: Hydroponics, trades, or biomass.', '#ff8a80');
     }
   } else l.desertT = 0;
-  const eff = efficiency(l);
+  // Stale air, no water or a freezing (or baking) hull wear them down too.
+  const eff = efficiency(l) * comfort(g);
   if (Math.abs(eff - p.efficiency) > 0.02) {
     p.efficiency = eff;
     p.recalc();

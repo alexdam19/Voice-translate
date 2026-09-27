@@ -131,7 +131,7 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
       e.y = r.y;
       for (const f of g.friendlies()) {
         if (g.friendlyEdgeDist(f.id, e.x, e.y) < e.r && !chargeHits.get(e.id)?.has(f.id)) {
-          damageFriendly(g, f.id, e.dmg * 1.6);
+          damageFriendly(g, f.id, e.dmg * 1.6, { at: { x: e.x, y: e.y } });
           if (!chargeHits.has(e.id)) chargeHits.set(e.id, new Set());
           chargeHits.get(e.id)!.add(f.id);
           g.fx.push({ t: 'shake', amt: 0.9 });
@@ -185,7 +185,7 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
   e.atkCd -= dt;
   if (dist < e.r + tgt.r + 1 && e.atkCd <= 0) {
     e.atkCd = 1.6;
-    damageFriendly(g, tgt.id, e.dmg * 0.6);
+    damageFriendly(g, tgt.id, e.dmg * 0.6, { at: { x: e.x, y: e.y } });
     g.fx.push({ t: 'shake', amt: 0.5 });
   }
 }
@@ -304,7 +304,7 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
   e.z = deckY(t);
   e.face = l.lz >= 0 ? -1 : 1;
   // On a Titan they're chewing at armour plate and hatches, not a thin deck.
-  damageTank(g, t, e.dmg * (t.fortress ? 0.22 : 0.55) * dt * (e.elite ? 1.5 : 1), { silent: true });
+  damageTank(g, t, e.dmg * (t.fortress ? 0.22 : 0.55) * dt * (e.elite ? 1.5 : 1), { silent: true, zone: 'roof' });
   // Boarders on the roof go for the soldiers standing there.
   if (t === g.player && Math.random() < dt * 0.012 * (e.elite ? 3 : 1)) troopCasualty(g, 'soldier', 'Boarders killed a soldier on the roof.');
   if (Math.random() < dt * 0.6) {
@@ -449,7 +449,7 @@ function bossAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
         for (const f of g.friendlies()) {
           const t = (f.x - x0) * Math.cos(a) + (f.y - y0) * Math.sin(a);
           if (t < 0 || t > len) continue;
-          if (g.friendlyEdgeDist(f.id, x0 + Math.cos(a) * t, y0 + Math.sin(a) * t) < 1.2) damageFriendly(g, f.id, dmg * 1.6);
+          if (g.friendlyEdgeDist(f.id, x0 + Math.cos(a) * t, y0 + Math.sin(a) * t) < 1.2) damageFriendly(g, f.id, dmg * 1.6, { at: { x: x0, y: y0 } });
         }
       });
       break;
@@ -460,7 +460,7 @@ function bossAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
   }
   // Charging bosses trample what they hit.
   if (e.state === 'charge' && edge < 1.5) {
-    damageFriendly(g, tgt.id, dmg * dt * 2);
+    damageFriendly(g, tgt.id, dmg * dt * 2, { at: { x: e.x, y: e.y } });
     g.fx.push({ t: 'shake', amt: 0.3 });
   }
 }
@@ -539,7 +539,7 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
       return;
     }
     // Against a hull they mostly claw for a grip to climb; the damage is done once they're aboard. Flyers dive in.
-    damageFriendly(g, tgt.id, tank ? e.dmg * (e.flying ? 0.3 : 0.08) : e.dmg, { silent: true });
+    damageFriendly(g, tgt.id, tank ? e.dmg * (e.flying ? 0.3 : 0.08) : e.dmg, { silent: true, ...(e.flying ? { zone: 'roof' as const } : { at: { x: e.x, y: e.y } }) });
     if (Math.random() < 0.3) g.fx.push({ t: 'spark', x: e.x + dx * e.r, y: e.y + dy * e.r, color: '#ffab40', n: 2 });
   }
   // Run at it, shoulder to shoulder, climbing over whatever is in the way.
@@ -727,7 +727,7 @@ export function updateEnemies(g: Game, dt: number): void {
         } else if (e.kind === 'guardian' || e.kind === 'brute' || d.slam) {
           telegraph(g, e.x + (dx / len) * 1.2, e.y + (dy / len) * 1.2, e.kind === 'guardian' ? 3 : 2.2, 0.7, e.dmg, '#ff1744');
         } else {
-          damageFriendly(g, tgt.id, e.dmg);
+          damageFriendly(g, tgt.id, e.dmg, { at: { x: e.x, y: e.y } });
           g.fx.push({ t: 'spark', x: e.x + dx / len * e.r, y: e.y + dy / len * e.r, color: '#ffab40', n: 3 });
           g.hooks.sound('bite', e.x, e.y, 0.3);
         }

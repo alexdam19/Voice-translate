@@ -667,7 +667,7 @@ export class View {
       }
       for (const r of m.radars) r.rotation.y = this.time * 2;
       if (m.treadMat.map) m.treadMat.map.offset.x = -((t.treadPhase * 2) % 1);
-      if (m.treadMats && m.body) this.animateCrawlers(t, m);
+      if (m.treadMats && m.body) this.animateCrawlers(t, m, t === g.player && t.titan ? g : null);
       // Afterburners: a flicker when idling, a flame trail when moving (hotter on Nitro).
       if (!t.dead && visible && m.exhaust.length && this.near(t.x, t.y, this.groundR * 1.2)) {
         const hot = t.hasBuff('nitro');
@@ -740,14 +740,21 @@ export class View {
   }
 
   /** Tracks run at each side's speed, road wheels turn, crawlers ride their suspension and the hull pitches and rolls. */
-  private animateCrawlers(t: Tank, m: TankModel): void {
+  private animateCrawlers(t: Tank, m: TankModel, g: Game | null): void {
     const k = m.scale;
     for (const [i, mat] of m.treadMats!.entries()) if (mat.map) mat.map.offset.x = -((t.sidePhase[i] / (0.5 * k)) % 1);
     let front = 0, back = 0, left = 0, right = 0;
     m.crawlers.forEach((c, i) => {
       // Model crawlers are built left bank first (front to back), matching the game's crawler numbering.
-      const lift = t.susp[i] ?? 0;
+      // A disabled crawler sags on its broken suspension.
+      const health = g ? g.titan.crawlers[i] : 1;
+      const lift = (t.susp[i] ?? 0) - (health <= 0.1 ? 1.2 : 0);
       c.obj.position.y = lift / k;
+      if (g && health < 0.35 && Math.random() < 0.08 && this.near(t.x, t.y, this.groundR)) {
+        const w = t.toWorld(c.lx, (i < 4 ? -1 : 1) * (t.stats.width / 2 - 5));
+        this.normP.emit(w.x, w.y, 6, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2, 2.5, 4, new Color(health <= 0.1 ? '#1e1e20' : '#4a4a4c'), 0.1, 0.8, 1);
+        if (health <= 0.1 && Math.random() < 0.3) this.addP.emit(w.x, w.y, 4, 0, 0, 3, 0.4, 1.5, new Color('#ffab40'), -2, 0.9, 0);
+      }
       for (const w of c.wheels) w.obj.rotation.z = -t.sidePhase[c.side] / (w.r * k);
       if (i % 4 < 2) front += lift;
       else back += lift;
@@ -755,6 +762,19 @@ export class View {
       else right += lift;
     });
     const L = t.rows * t.cell, W = t.cols * t.cell;
+    // Burning compartments: flames and smoke pour out of the hull where they are.
+    if (g && this.near(t.x, t.y, this.groundR)) {
+      g.titan.fire.forEach((f, ci) => {
+        if (f <= 0 || Math.random() > f * 0.5) return;
+        const deck = Math.floor(ci / 3) + 1, sec = ci % 3;
+        const lx = (0.33 - sec * 0.33) * L + (Math.random() - 0.5) * L * 0.3;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const w = t.toWorld(lx, side * (W / 2 + 0.5));
+        const y = t.deckY(deck) + 2;
+        this.addP.emit(w.x, w.y, y, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 4, 0.6, 2.5 + f * 2, new Color(Math.random() < 0.5 ? '#ff6d00' : '#ffab40'), -1, 0.9, -0.5);
+        this.normP.emit(w.x, w.y, y + 3, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 5, 3.5, 5 + f * 4, new Color('#222224'), 0.1, 0.85, 1.5);
+      });
+    }
     const b = m.body!;
     b.position.y = ((front + back) / 8) * 0.5 / k;
     // Front up = nose up (rotate about the width axis); right side up = roll.

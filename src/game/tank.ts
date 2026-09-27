@@ -188,6 +188,8 @@ export class Tank {
   bumps: { c: number; at: number; h: number }[] = [];
   /** Metres driven since the last track mark. */
   markD = 0;
+  /** What the Titan's damage, fuel and flooding do to it (set by the Titan systems; all 1 when intact). */
+  titanMods = { power: 1, speed: 1, steering: 1, weapons: 1, sensors: 1, pull: 0 };
   lastHitAt = -99;
   /** Research and crew applied on recalc (player-side). */
   tech: Set<string> = new Set();
@@ -553,14 +555,14 @@ export class Tank {
       m.stats = weaponStats(m.weapon, mods);
       use += m.stats.power;
     }
-    power *= 1 + crew.power;
+    power *= (1 + crew.power) * this.titanMods.power;
     const powerRatio = use <= 0 ? 1 : Math.min(1, power / use);
     const width = this.cols * this.cell + (this.fortress ? 0 : this.cell * 2);
     // Fortress-class hulls carry a wedge nose and an afterburner tail past the deck.
     const dread = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
     const length = this.rows * this.cell + (dread ? 2 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
-    const topSpeed = this.anchored ? 0 : (this.fortress ? 5.2 + 1.8 * Math.min(1, ratio * 3) : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed) * cm.speed;
+    const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? 5.2 + 1.8 * Math.min(1, ratio * 3) : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed) * cm.speed;
     this.handling = cm.turn;
     this.ram = cm.ram;
     this.nitroMult = cm.nitro;
@@ -583,7 +585,7 @@ export class Tank {
       bunks: bunkTotal, crewWanted: manning.wanted, crewManned: manning.manned, depts: manning.depts,
     };
     // From 40 m up, a Titan's lookouts and sensors see five times as far.
-    if (this.fortress) this.stats.vision = Math.max(120, this.stats.vision * 5);
+    if (this.fortress) this.stats.vision = Math.max(120, this.stats.vision * 5) * (0.4 + 0.6 * this.titanMods.sensors);
     // A bridge without its officers fights half blind.
     if (this.kind === 'main') {
       this.stats.vision *= 0.6 + 0.4 * cmdK;

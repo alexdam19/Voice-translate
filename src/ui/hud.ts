@@ -1,4 +1,5 @@
 import { DRIVE_ITEM, getItem } from '../shared/items';
+import { titanAlerts } from '../game/systems/titan';
 import { RUNE_INFO, TIER_NAMES, threatAt, threatTier } from '../shared/mapgen';
 import { RARITIES } from '../shared/rarity';
 import { treePoints, WEAPONS } from '../shared/weapons';
@@ -72,6 +73,7 @@ function setHTML(el: HTMLElement, s: string): void {
 const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls?: string }[] = [
   { key: 'base', label: 'BASE', sub: 'B', cls: 'big base' },
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
+  { key: 'bridge', label: 'BRIDGE', sub: 'Y', cls: 'bridge' },
   { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
   { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
   { key: 'shipyard', label: 'SHIPYARD', sub: 'U', cls: 'shipyard' },
@@ -107,6 +109,8 @@ export class Hud {
   private tankInfo = h('div', 'tank-info');
   /** A Titan's drive readout: speed, the throttle you're asking for, and each crawler bank's speed. */
   private gauge = h('div', 'drive-gauge');
+  /** Fires, flooding, lost crawlers and failing systems (tap for the bridge status display). */
+  private alerts = h('div', 'titan-alerts');
   private kitBtn = h('div', 'kit-btn');
   private driveChip = h('div', 'drive-chip');
   private drivePop = h('div', 'drive-pop');
@@ -203,7 +207,11 @@ export class Hud {
       act.useKit();
     });
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
-    this.hpBox.append(this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
+    this.hpBox.append(this.alerts, this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
+    this.alerts.addEventListener('click', (e) => {
+      e.stopPropagation();
+      act.openPanel('bridge');
+    });
     this.driveChip.addEventListener('click', (e) => {
       e.stopPropagation();
       this.drivePop.classList.toggle('open');
@@ -480,6 +488,7 @@ export class Hud {
       b.style.display = !f || c.level >= f.level || (m.key === 'arsenal' && g.armory.length > 0) ? '' : 'none';
       b.classList.toggle('on', (m.key === 'base' && village) || (m.key === 'camp' && g.deploy.state !== 'mobile'));
       if (m.key === 'shipyard') b.style.display = g.mode === 'world' && isDocked(g) ? '' : 'none';
+      if (m.key === 'bridge') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
       if (m.key === 'camp') {
         b.style.display = g.mode === 'world' ? '' : 'none';
         setHTML(b.querySelector('b')!, g.deploy.state === 'up' ? 'PACK UP' : g.deploy.state === 'deploying' ? 'DEPLOYING' : g.deploy.state === 'packing' ? 'PACKING' : 'CAMP');
@@ -545,6 +554,9 @@ export class Hud {
     } else this.hazard.style.display = 'none';
     // Fortress
     const ch = chassisForCC(p.stats.cc);
+    const al = g.mode === 'world' && !p.dead ? titanAlerts(g) : [];
+    this.alerts.style.display = al.length ? '' : 'none';
+    setHTML(this.alerts, al.map((a) => `<span style="color:${a.color};border-color:${a.color}">${esc(a.text)}</span>`).join(''));
     this.gauge.style.display = p.fortress && !p.dead ? '' : 'none';
     if (p.fortress && !p.dead) {
       const top = Math.max(1, Math.min(9, p.stats.topSpeed));

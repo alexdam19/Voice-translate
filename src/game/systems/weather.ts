@@ -82,7 +82,7 @@ export function updateWeather(g: Game, dt: number): void {
   const def = STORMS[k];
   const safe = def.protect ? p.stats.protects.has(def.protect as never) : false;
   if (k === 'acid' || k === 'fire') {
-    if (!safe) damageTank(g, p, p.stats.maxHp * (k === 'acid' ? 0.004 : 0.003) * dt, { silent: true, acid: k === 'acid' });
+    if (!safe) damageTank(g, p, p.stats.maxHp * (k === 'acid' ? 0.004 : 0.003) * dt, { silent: true, acid: k === 'acid', zone: 'roof' });
     // It hits them too.
     for (const e of g.enemiesNear(p.x, p.y, 40)) {
       if (e.titan) continue;
@@ -102,7 +102,7 @@ export function updateWeather(g: Game, dt: number): void {
           g.fx.push({ t: 'strike', x, y, color: '#b388ff' });
           g.hooks.sound('tesla', x, y, 0.6);
           for (const e of g.enemiesNear(x, y, 3.5)) if (Math.hypot(e.x - x, e.y - y) < 3 + e.r) damageEnemy(g, e, 90, {});
-          if (p.edgeDist(x, y) < 3) damageTank(g, p, p.stats.maxHp * 0.02, {});
+          if (p.edgeDist(x, y) < 3) damageTank(g, p, p.stats.maxHp * 0.02, { at: { x, y } });
         },
       });
     }

@@ -637,7 +637,7 @@ export class App {
     if (i.consume('KeyT')) this.toggleCamp();
     if (i.consume('KeyU') && this.game && isDocked(this.game)) this.panels.toggle('shipyard');
     const panelKeys: [string, string][] = [
-      ['KeyC', 'cards'], ['KeyV', 'arsenal'], ['KeyK', 'crew'], ['KeyL', 'progress'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'], ['KeyN', 'blueprint'],
+      ['KeyC', 'cards'], ['KeyV', 'arsenal'], ['KeyK', 'crew'], ['KeyL', 'progress'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'], ['KeyN', 'blueprint'], ['KeyY', 'bridge'],
     ];
     for (const [k, p] of panelKeys) if (i.consume(k)) this.panels.toggle(p);
     if (this.panels.isOpen) return;

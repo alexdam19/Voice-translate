@@ -14,6 +14,7 @@ import { bumpUid, peekUid } from './templates';
 import { applyOutriderCrew, launchOutrider } from './systems/outrider';
 import { newCampaign, type Campaign } from './campaign';
 import { newCrewLife, type CrewLife } from './systems/crewlife';
+import { loadTitanState, type TitanState } from './systems/titan';
 
 export const SAVE_KEY = 'ironcrawl3d-save-v1';
 
@@ -60,6 +61,7 @@ export interface SaveData {
   fog?: [number, string][];
   campaign?: Campaign;
   life?: CrewLife;
+  titan?: Partial<TitanState>;
   home?: { x: number; y: number } | null;
 }
 
@@ -78,7 +80,7 @@ export function serialize(g: Game): SaveData {
     builds: g.builds.map(({ modId, ...b }) => ({ ...b, mod: idx(modId) })).filter((b) => b.mod >= 0),
     squads,
     tracked: !tr ? null : tr.kind === 'upgrade' ? { kind: 'upgrade', mod: idx(tr.modId) } : tr,
-    drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n, campaign: g.campaign, life: g.life, home: g.deploy.home,
+    drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n, campaign: g.campaign, life: g.life, titan: g.titan, home: g.deploy.home,
   };
 }
 
@@ -213,6 +215,7 @@ export function deserialize(d: SaveData): Game {
   }
   if (d.campaign) g.campaign = { ...newCampaign(), ...d.campaign, finale: d.campaign.finale === 'won' ? 'won' : 'none' };
   if (d.life) g.life = { ...newCrewLife(), ...d.life };
+  g.titan = loadTitanState(d.titan);
   if (d.home && d.v >= 7) g.deploy.home = d.home;
   g.gen.focus(g.player.x, g.player.y);
   return g;

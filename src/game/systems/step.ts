@@ -21,6 +21,7 @@ import { updateTesla } from './tesla';
 import { updateSoldiers } from './soldiers';
 import { updateTroops } from './troops';
 import { updateCrewLife } from './crewlife';
+import { FUEL_MAX, newTitanState, updateTitan, WATER_MAX } from './titan';
 import { updateCamp } from './camp';
 import { stormSpeed, updateWeather } from './weather';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
@@ -54,7 +55,13 @@ function respawn(g: Game): void {
   p.y = home.y;
   p.rot = -Math.PI / 2;
   p.anchored = false;
-  // Every respawn comes back at full health.
+  // Every respawn comes back at full health, repaired and fires out (with at least a third of a tank of fuel and water).
+  const t = newTitanState();
+  t.fuel = Math.max(g.titan.fuel, FUEL_MAX / 3);
+  t.water = Math.max(g.titan.water, WATER_MAX / 3);
+  g.titan = t;
+  p.titanMods = { power: 1, speed: 1, steering: 1, weapons: 1, sensors: 1, pull: 0 };
+  p.recalc();
   p.hp = p.stats.maxHp;
   p.shield = p.stats.shield;
   p.buffs.clear();
@@ -146,6 +153,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateAutoDrive(g, dt);
       updateTroops(g, dt);
       updateCrewLife(g, dt);
+      updateTitan(g, dt);
     }
     updateCamp(g, dt);
     updateWeather(g, dt);
