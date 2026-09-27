@@ -16,11 +16,11 @@ import { makeRecruit } from './crew';
 export type Part = 'city' | 'military' | 'zombie' | 'cyborg' | 'necro' | 'monster';
 
 export const PARTS: { key: Part; item: string; region: RegionKind; boss: string; reward: string }[] = [
-  { key: 'city', item: 'core_city', region: 'city', boss: 'boss_warlord', reward: 'Powers the shipyard: hull expansions to Command Center 3.' },
-  { key: 'military', item: 'core_military', region: 'military', boss: 'boss_goliath', reward: 'Another story for your fortress (with a second part).' },
-  { key: 'zombie', item: 'core_zombie', region: 'zombie', boss: 'boss_abomination', reward: 'Class Mark II and bigger hulls.' },
-  { key: 'cyborg', item: 'core_cyborg', region: 'cyborg', boss: 'boss_overmind', reward: 'Bigger hulls and Class Mark III.' },
-  { key: 'necro', item: 'core_necro', region: 'necro', boss: 'boss_lich', reward: 'A fourth story and the biggest hulls.' },
+  { key: 'city', item: 'core_city', region: 'city', boss: 'boss_warlord', reward: 'Powers the shipyard: the Titan Mk III refit (the Recreation deck opens).' },
+  { key: 'military', item: 'core_military', region: 'military', boss: 'boss_goliath', reward: 'Heavy plating: with a second part, the Mk IV refit and its rear battery.' },
+  { key: 'zombie', item: 'core_zombie', region: 'zombie', boss: 'boss_abomination', reward: 'Class Mark II; with a third part, the Mk V refit.' },
+  { key: 'cyborg', item: 'core_cyborg', region: 'cyborg', boss: 'boss_overmind', reward: 'Class Mark III; with a fourth part, the Mk VI refit.' },
+  { key: 'necro', item: 'core_necro', region: 'necro', boss: 'boss_lich', reward: 'Every refit and mark within reach, and one step from waking the ship.' },
   { key: 'monster', item: 'core_monster', region: 'monster', boss: 'boss_queen', reward: 'Wakes the Mothership.' },
 ];
 

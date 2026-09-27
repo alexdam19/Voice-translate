@@ -254,12 +254,18 @@ export class Panels {
     <h3>THE BASICS</h3>
     <ul>
       ${isTouch()
-        ? '<li><b>Push the stick</b> (bottom left) to drive. It rolls straight over rocks, ruins and wrecks. <b>Tap the ground</b> to drive there, <b>hold a finger</b> down to keep steering, tap an enemy to focus fire, tap a node to drill it. <b>Pinch</b> to zoom.</li>'
-        : '<li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive your fortress. It rolls straight over rocks, ruins and wrecks. Right-click also drives, attacks, harvests.</li>'}
+        ? '<li>You command a <b>Titan Crawler</b>: 200 m of armoured city on eight crawlers. <b>Stick up/down</b> is the throttle, <b>left/right</b> steers. It builds speed slowly (top speed about 25 km/h), takes seconds to stop and turns wide; the dashed lane shows where it is going. <b>Tap the ground</b> to drive there. <b>Pinch</b> to zoom.</li>'
+        : '<li>You command a <b>Titan Crawler</b>: 200 m of armoured city on eight crawlers. <kbd>W</kbd>/<kbd>S</kbd> is the throttle, <kbd>A</kbd>/<kbd>D</kbd> steers. It builds speed slowly (top speed about 25 km/h), takes seconds to stop and turns wide; the dashed lane ahead shows where it is going. Right-click drives there. Mouse wheel zooms.</li>'}
       <li>Your guns <b>aim and fire on their own</b>: a pad on every corner and the main battery up front, with more as the Command Center grows.</li>
       <li><b>Nothing stops you</b>: you crush rubble, climb cliffs and wade through lava. The right <b>drive train</b> makes it fast (and lava safe); tap the drive chip by your hull bar, or leave it on AUTO.</li>
       <li><b>Park on a resource node</b> to drill it.</li>
       <li>If your fortress goes down, it's towed to camp and comes back <b>fully repaired</b>.</li>
+    </ul>
+    <h3>BRIDGE STATUS <kbd>Y</kbd></h3>
+    <ul>
+      <li>Hits wear down the <b>armour zone</b> they land on (bow, stern, flanks, roof); a worn zone lets more through. Flank hits damage the <b>crawlers</b>: each one lost costs speed, and losing more on one side pulls the hull that way.</li>
+      <li>Six <b>systems</b> (power, propulsion, steering, fire control, sensors, life support) go <b>Operational → Damaged → Degraded → Critical → Disabled</b>. Big hits start <b class="bad">fires</b>; a breached hull in mud or acid <b style="color:#40c4ff">floods</b> the lowest decks.</li>
+      <li>Keep up <b>fuel</b> (a Refinery turns scrap into it), <b>water</b> (drive over snow, ice or mud, or camp), air and temperature. The Mothership tops you up. The Works crew repair everything for scrap, faster in camp.</li>
     </ul>
     <h3>CARDS <kbd>C</kbd></h3>
     <ul>
@@ -272,8 +278,9 @@ export class Panels {
     <h3>YOUR BASE <kbd>B</kbd></h3>
     <ul>
       <li>Your fortress is a whole facility, run like a village. Tap a building to see it and <b>upgrade</b> it; tap <b>SHOP</b> to place new ones.</li>
+      <li>Seven <b>decks</b> under the roof, <b>+3 Command</b> down to <b>-3 Engineering</b>; switch with the elevator panel. The <b>Spine</b> (a 10 m corridor) and <b>Lifts A-C</b> run through every deck and stay clear. The Hangar opens at Titan Mk II, Recreation at Mk III.</li>
       <li><b>Builders</b> each work on one job at a time, in real time, while you play.</li>
-      <li>The <b>Command Center</b> sets how big your fortress is, how many of each building you can have and how high they can go.</li>
+      <li>The <b>Command Center</b> is the Titan's mark: it sets how many mounts and decks you have, how many of each building and how high they can go.</li>
       <li>Can't afford something? Press <b>TRACK</b>: a box shows what you need and a <b class="y">yellow marker</b> points to where to get it.</li>
     </ul>
   </div>

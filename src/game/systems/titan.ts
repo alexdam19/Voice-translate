@@ -249,8 +249,9 @@ export function updateTitan(g: Game, dt: number): void {
     const f = s.fire[i];
     if (f <= 0) continue;
     burning++;
-    const fight = 0.012 + 0.02 * life + 0.006 * crews;
-    s.fire[i] = Math.max(0, Math.min(1, f + (0.035 * f - fight) * dt));
+    // A fire always grows (faster the bigger it is); each damage-control crew and the sprinklers knock it back.
+    const fight = 0.008 * crews + 0.022 * life;
+    s.fire[i] = Math.max(0, Math.min(1, f + (0.02 + 0.025 * f - fight) * dt));
     if (s.fire[i] <= 0) {
       g.hooks.toast(`Fire out: ${compName(i)}.`, '#b0bec5');
       continue;

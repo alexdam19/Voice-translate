@@ -1,6 +1,6 @@
 # IRONCRAWL
 
-An overhead 3D, pixel-art wasteland game about commanding a **land cruiser the size of a warship**, part P1000 Ratte, part Batmobile: triple tracks, a wedge nose, afterburners, weapon pads on every corner and a twin-barrelled main battery. It plays with mouse and keyboard or on a **phone** (touch stick, taps, drag-and-drop cards). Drive it with **WASD** or the stick, anywhere: it crushes rubble, climbs cliffs and wades through lava, and its guns aim and fire on their own. **Hordes** of hundreds come at you in waves, World War Z style, and climb your hull. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
+An overhead 3D, pixel-art wasteland game about commanding a **Titan Crawler**: a building that learned how to move. It is 200 m long, 90 m wide and 42 m tall, rides on **eight independent crawlers** and has **seven decks** inside, from the Command deck down to Engineering. It plays with mouse and keyboard or on a **phone** (touch stick, taps, drag-and-drop cards). It is heavy but readable to drive: it builds speed slowly to about 25 km/h, takes seconds to stop and turns in wide differential arcs, while a HUD gauge and a predicted-path lane show what it will do. It goes anywhere, crushing buildings, climbing cliffs and wading through lava, and its guns aim and fire on their own. **Hordes** of hundreds come at you in waves, World War Z style, and climb your hull. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
 
 The pieces:
 - **Battle cards**, in the spirit of Magic: The Gathering. There are 42 cards in five schools (Iron, Volt, Rust, Void, Aegis) and six rarities, plus 12 permanent **relics**. You hold 4 cards from a deck of 8 and spend energy to play them: artillery, rocket salvos, drop squads, EMP, lightning storms, a dragon, a mech, a nuke. **Card packs** drop from elites, raider tanks, outposts, runes and titans. Duplicates level your cards up.
@@ -8,7 +8,9 @@ The pieces:
 - **Rival dreadnoughts.** From commander level 6, enemy fortresses built like yours and as strong as yours hunt you across the map.
 - **Go anywhere.** Nothing blocks the fortress. The right **drive train** (unlocked on the Level Road, swapped automatically on AUTO) makes each ground fast, and makes lava and acid safe.
 - **Blueprint.** A technical drawing of your whole fortress with its firepower on each side, speed on each ground, and an assessment of its weak spots.
-- **Your base is huge.** It starts as a 12×20 land cruiser and grows to 22×37 as you upgrade the **Command Center**, gaining weapon pads along the sides and a second main battery. Inside, **builders** put up and upgrade buildings in real time. The Command Center caps how many of each building you can have and how high they go.
+- **Your base is a moving city.** The Titan Crawler's deck plan is 18×38 cells of 5 m on each of seven decks plus the roof: +3 Command, +2 Recreation, +1 Residential, 0 Main Deck, -1 Hangar, -2 Logistics and -3 Engineering. **The Spine**, a 10 m corridor, runs down the middle of every deck, with three lifts beside it. Each **Command Center** refit (Titan Mk I-VI) adds mounts and opens decks. Inside, **builders** put up and upgrade buildings in real time, and you can watch the crew at work, asleep and walking the Spine.
+- **It breaks like a building.** Five **armour zones** take hits separately. The **crawlers** can be lost, which costs speed and pulls the hull round. Six **subsystems** go Operational → Damaged → Degraded → Critical → Disabled. **Fires** and **flooding** spread compartment by compartment. You have to keep up **fuel, water, air and temperature**, and the Works crew keep it all running for scrap. The **bridge status display** (`Y`) shows everything.
+- **A huge world.** It is 10 km across, 20-30 minutes of driving, streamed around you. There are faction strongholds (a ruined city, a military base, cyborgs, the dead, a necropolis and a monster nest), storms that drive the roof soldiers inside, and **the Mothership** at the world's edge, always under siege, where you install the parts you take from the strongholds, trade, hire and refit.
 - **Two kinds of progress.** Materials and weapons come from combat and scavenging. **Commander XP** comes only from fighting (kills, loot areas, outposts, raider tanks, runes, titans). Each level adds hull and damage, gives a card pack, and unlocks buildings, weapons and features on the **Level Road**.
 - **Squads.** Army buildings train sub-units: marines, scout buggies, guard drones, a fighter wing and a walker mech. They follow you, **guard a spot** (drag their badge onto the map), or **scavenge ahead** (collect loot drops and drill nodes, then drive the haul home).
 - **Tracking.** Can't afford an upgrade? Press **TRACK**. A box lists what you still need, and a marker and beam of light point at the nearest place to get the first missing thing.
@@ -52,7 +54,7 @@ Everything works with the mouse. The camera always follows your fortress.
 
 | Input | Action |
 |---|---|
-| **W A S D** / arrows | Drive. Screen-relative by default; switch to tank-style (W/S throttle, A/D turn) in the menu. |
+| **W A S D** / arrows | Drive: **W/S throttle, A/D steer** (tank-style, the default). Screen-relative steering is in the menu. |
 | **Drag a card** onto the battlefield | Play it there. Or tap a card (or press **1-4**), then tap the ground. Self cards play on a tap. |
 | **Right-click** | Drive there. On an enemy: focus fire. On a resource node: drill it. On a rune, loot area or the gate: go and use it. |
 | **Drag a squad badge** onto the map | That squad guards the spot. ⌂ calls it back; SCAVENGE sends marines or buggies out. |
@@ -60,8 +62,10 @@ Everything works with the mouse. The camera always follows your fortress.
 | **C** / **V** / **K** / **L** | Cards · Arsenal · Crew · Level Road |
 | **I** / **M** / **H** / **Esc** | Cargo, Refinery & Workshop · World map · Help · Menu |
 | **N** | Blueprint: the whole fortress drawn out, with an analysis |
+| **Y** | Bridge status: hull, armour zones, crawlers, systems, supplies, fires and flooding, population |
+| **T** / **U** | Set up or pack up camp · Mothership shipyard (while docked) |
 | **5** | Repair kit |
-| **Wheel** | Zoom |
+| **Wheel** | Zoom (120-700 m around a Titan) |
 | **J** | Send the Outrider to the node or loot area under the cursor |
 
 Menu buttons only appear once their feature unlocks, so there's never much to learn at once.
@@ -104,6 +108,13 @@ The first touch switches the game to touch controls (phones and tablets start in
 
 **Relics** are permanent cards you slot for always-on bonuses (faster energy, lifesteal, a lethal-hit save, +2 max energy, every card costs 1 less...). You get relic slots at commander levels 6, 14 and 22.
 
+### The Titan Crawler
+
+- **Driving.** It accelerates at about 0.55 m/s² to about 25 km/h, brakes over several seconds, and turns in wide differential arcs, where the inside crawlers run slower than the outside. It can only pivot slowly, and only when stopped on firm ground. The HUD gauge shows km/h, the throttle, each crawler bank's speed and what it's doing, and a dashed lane on the ground shows where the hull will sweep over the next 25 seconds.
+- **Terrain.** Each crawler rides its own suspension over rubble, cliffs and dunes, and the hull pitches and rolls with them. It leaves persistent track marks and ploughs through buildings, which collapse around it.
+- **Decks.** The roof carries the guns, the soldier nests, the Spine's skylight and the command tower. Below it are seven decks, each with its own purpose (Command, Recreation, Residential, the public Main Deck, Hangar, Logistics, Engineering). The elevator panel in the base view switches between them. The Spine and Lifts A-C are fixed structure. Mk I opens the roof and five decks; the Hangar opens at Mk II and Recreation at Mk III.
+- **Damage and upkeep.** Hits land on the armour zone they come from; a worn zone lets up to 40% more through. Flank hits damage crawlers, and hits pass on to the systems behind that armour. Big hits start fires that grow and spread (the magazine can cook off); damage control and the sprinklers fight them. A breached hull in mud or acid floods the lowest decks until the pumps catch up. Fuel burns as you drive (Refineries turn scrap into fuel); the crew drink water (recycled by life support and condensed from snow, ice and mud); life support keeps the air and temperature right. Everything wears, and the Works crew repair the worst damage first for scrap, three times as fast in camp.
+
 ### Level up (commander XP)
 
 - XP comes from **killing enemies** (tougher enemies give more), clearing **loot areas**, destroying **outposts** and **raider tanks**, claiming **runes** and felling **titans**.
@@ -115,16 +126,16 @@ The first touch switches the game to touch controls (phones and tablets start in
 - The camera swings in and turns so the front of your fortress points up. **Tap a building** to see it and upgrade it, move it or remove it, or jump to what it does (mount a weapon, refine ore, craft, forge, hire crew, command its squad, change the drive train).
 - **SHOP:** every building by category, with its footprint, build time, cost and how many you have of the Command Center's limit. Pick one, then tap a green spot on the deck.
 - **Builders:** 2 at the start (3 at level 10, 4 at level 20). Each works on one job at a time, in real time, while you drive and fight. Buildings keep working while they're being upgraded.
-- **Command Center:** its level (1-6) sets the fortress size and the cap on everything else. Upgrading it needs commander levels 3, 7, 12, 18 and 24.
+- **Command Center:** its level (1-6) is the Titan's mark, and it sets the mounts, the open decks and the cap on everything else. Upgrading it needs commander levels 3, 7, 12, 18 and 24.
 
-  | Command Center | Fortress | Deck | Built-in weapons |
+  | Command Center | Refit | Decks open | Built-in weapons |
   |---|---|---|---|
-  | 1 | Landkreuzer | 12×20 | 4 corner pads, main battery |
-  | 2 | Assault Landkreuzer | 14×23 | +2 side pads |
-  | 3 | Siege Citadel | 16×26 | |
-  | 4 | Land Dreadnought | 18×29 | +rear main battery |
-  | 5 | Colossus | 20×33 | +2 side pads |
-  | 6 | Moving Citadel | 22×37 | +2 side pads |
+  | 1 | Titan Crawler Mk I | Roof, +3, +1, 0, -2, -3 | 4 corner pads, 2 side pads, main battery |
+  | 2 | Titan Crawler Mk II | + Hangar (-1) | +2 side pads |
+  | 3 | Titan Crawler Mk III | + Recreation (+2) | |
+  | 4 | Titan Crawler Mk IV | | +rear main battery |
+  | 5 | Titan Crawler Mk V | | +2 side pads |
+  | 6 | Titan Crawler Mk VI | | +2 side pads |
 
   Pads take a light or medium weapon; main batteries take a heavy one. New mounts arrive armed. On top of these you can build as many turret mounts as the Command Center allows.
 
@@ -163,7 +174,7 @@ The building's level sets the squad's size and strength. Fallen units are replac
 
 ### The wasteland
 
-The world is 640×640 tiles in six zones. Danger rises with distance from camp, in tiers I–V. Every tile is drivable; the gear below makes it fast or safe:
+The world is 10,240 m across (one tile is one metre), streamed in chunks around you, in six zones with faction regions and roads between them. Danger rises with distance from camp, in tiers I–V, and with how long you've survived. Every tile is drivable; the gear below makes it fast or safe:
 
 | Zone | Direction | What you need |
 |---|---|---|
@@ -183,10 +194,10 @@ Drive into the gate north-east of camp. Loot crates and supply drops, fight othe
 - **TypeScript + Vite**, **three.js** for rendering, **ws** for the server, **Vitest** for tests. No image or audio files: every texture, sprite, portrait, card illustration, icon and sound is generated at startup.
 - **8-bit look:** the scene renders at 1/2–1/4 resolution into a render target (on phones, about 300 lines on the short side, each game pixel a whole number of device pixels). A post pass draws 1-pixel depth outlines and posterizes with ordered dithering, and the result is upscaled with nearest-neighbour filtering.
 - **Simulation:** fixed 60 Hz steps.
-  - Your fortress is one world unit per deck cell (enemy rigs are smaller). Nothing blocks it: A* weighs terrain by the drive train's traction and makes cliffs cost more, and it flattens obstacles and props under its hull. The terrain chunks it touches are rebuilt in the same frame.
+  - One world unit is one metre; a Titan's deck cell is 5 m (enemy rigs use smaller cells), and its guns reach four times as far as the same gun on a buggy. Nothing blocks it: A* weighs terrain by the drive train's traction and makes cliffs cost more, and it flattens obstacles and props under its hull. The terrain chunks it touches are rebuilt in the same frame.
   - Hordes of 300+ run on a uniform enemy grid (neighbours, hits and blasts look up nearby cells instead of every enemy) and render as two batched point-sprite draws from a sprite atlas.
   - Squads and summons are `Ally` entities with anchors: follow the fortress, guard a point, or scavenge a target.
-- **Save:** localStorage (`ironcrawl3d-save-v1`, format v6), autosaved every 30 s. Older saves move onto the bigger hull automatically and get their pads and main battery.
+- **Save:** localStorage (`ironcrawl3d-save-v1`, format v8), autosaved every 30 s. Older saves move onto the Titan's decks automatically and get their pads and main battery.
 
 ```
 src/shared/   map (with crush nav), world + arena generation, collision & A*, items, weapons, rarity, loot, protocol, Dead Zone server sim

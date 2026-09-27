@@ -3,7 +3,7 @@ import {
   STORY_COST, trade, TRADES, TROOP_COST,
 } from '../game/campaign';
 import { CLASS_LIST, CLASSES } from '../game/classes';
-import { CC_COMMANDER_LEVEL, chassisForCC } from '../game/defs';
+import { CC_COMMANDER_LEVEL, chassisForCC, DECK_OPEN_CC, TITAN_DECK_INFO } from '../game/defs';
 import { getItem } from '../shared/items';
 import { itemIcon } from '../render/icons';
 import { button, costHTML, esc, h } from './dom';
@@ -13,7 +13,7 @@ type Res = { ok: true; msg?: string } | { ok: false; msg: string };
 
 /**
  * The Mothership's shipyard: install the parts you took from the strongholds, rebuild your fortress (bigger hulls,
- * more stories, class marks and refits), trade, and hire people. Only while docked.
+ * Titan refits, class marks and class changes), trade, and hire people. Only while docked.
  */
 export function renderShipyard(ctx: PanelCtx): void {
   const g = ctx.app.game;
@@ -56,16 +56,22 @@ export function renderShipyard(ctx: PanelCtx): void {
     const box = h('div', 'yard-grid');
     // Hull expansion.
     const next = b.lvl < 6 ? chassisForCC(b.lvl + 1) : null;
-    const hull = h('div', 'yard-card', `<div class="yc-t">HULL EXPANSION</div><div class="yc-d">Now: <b>${esc(chassisForCC(b.lvl).name)}</b> (${p.cols}×${p.rows}). ${next ? `Next: <b>${esc(next.name)}</b> (${next.cols}×${next.rows}), built on the spot.` : 'As big as they come.'}</div>`);
+    const hull = p.titan
+      ? h('div', 'yard-card', `<div class="yc-t">TITAN REFIT</div><div class="yc-d">Now: <b>${esc(chassisForCC(b.lvl).name)}</b>. ${next ? `Next: <b>${esc(next.name)}</b>: ${esc(next.desc)}` : 'Fully refitted: every deck, every mount.'}</div>`)
+      : h('div', 'yard-card', `<div class="yc-t">HULL EXPANSION</div><div class="yc-d">Now: <b>${esc(chassisForCC(b.lvl).name)}</b> (${p.cols}×${p.rows}). ${next ? `Next: <b>${esc(next.name)}</b> (${next.cols}×${next.rows}), built on the spot.` : 'As big as they come.'}</div>`);
     if (next) {
       const parts = partsForCC(b.lvl + 1), lvl = CC_COMMANDER_LEVEL[b.lvl];
       hull.appendChild(h('div', 'yc-req', `Needs commander level ${lvl} ${g.commander.level >= lvl ? '✔' : '✖'} · ${parts} part${parts === 1 ? '' : 's'} installed ${c.installed.length >= parts ? '✔' : '✖'}<br>${costHTML(hullCost(b.lvl), [p.cargo])}`));
-      hull.appendChild(button('EXPAND THE HULL', () => run(() => expandHull(g), 'levelup'), 'primary'));
+      hull.appendChild(button(p.titan ? `REFIT TO ${esc(next.name.replace('Titan Crawler ', '').toUpperCase())}` : 'EXPAND THE HULL', () => run(() => expandHull(g), 'levelup'), 'primary'));
     }
     box.appendChild(hull);
-    // Stories.
-    const story = h('div', 'yard-card', `<div class="yc-t">ANOTHER STORY</div><div class="yc-d">Your fortress is <b>${p.stories}</b> stories tall (plus the roof). Every story is another whole deck to build on, and more hull.</div>`);
-    if (p.stories < 4) {
+    // Stories (a Titan has all seven decks; refits open them).
+    const story = p.titan
+      ? h('div', 'yard-card', `<div class="yc-t">DECKS</div><div class="yc-d">${TITAN_DECK_INFO.slice(1).map((d, i) => `<span class="${p.deckOpen(i + 1) ? 'good' : 'bad'}">${esc(d.level)} ${esc(d.name)}${p.deckOpen(i + 1) ? '' : ` (Mk ${['I', 'II', 'III', 'IV', 'V', 'VI'][DECK_OPEN_CC[i + 1] - 1]})`}</span>`).join(' · ')}</div>`)
+      : h('div', 'yard-card', `<div class="yc-t">ANOTHER STORY</div><div class="yc-d">Your fortress is <b>${p.stories}</b> stories tall (plus the roof). Every story is another whole deck to build on, and more hull.</div>`);
+    if (p.titan) {
+      // Nothing to add: the refit opens decks.
+    } else if (p.stories < 4) {
       const cap = maxStories(c.installed.length);
       story.appendChild(h('div', 'yc-req', `Needs ${p.stories === 2 ? 2 : 5} parts installed ${cap > p.stories ? '✔' : '✖'}<br>${costHTML(STORY_COST[p.stories], [p.cargo])}`));
       story.appendChild(button(`RAISE STORY ${p.stories + 1}`, () => run(() => addStory(g), 'levelup'), 'primary'));
@@ -94,7 +100,7 @@ export function renderShipyard(ctx: PanelCtx): void {
     return;
   }
   // Parts.
-  ctx.body.appendChild(h('div', 'hint', `Each faction's stronghold boss guards a part. Installed: <b>${c.installed.length}/6</b>. Parts unlock bigger hulls, more stories and class marks here; all six wake the ship.`));
+  ctx.body.appendChild(h('div', 'hint', `Each faction's stronghold boss guards a part. Installed: <b>${c.installed.length}/6</b>. Parts unlock the Titan's refits (Mk III to Mk VI) and class marks here; all six wake the ship.`));
   const grid = h('div', 'yard-grid');
   for (const part of PARTS) {
     const has = p.cargo.count(part.item) > 0;

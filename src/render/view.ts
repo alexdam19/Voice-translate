@@ -351,7 +351,12 @@ export class View {
       sc.far = (120 + ext * 2) * Math.max(1, sf * 0.6);
       sc.updateProjectionMatrix();
     }
-    this.camera.far = Math.max(400, D * 6);
+    // The far plane follows the zoom (and the projection has to be rebuilt when it moves).
+    const far = Math.max(400, Math.ceil((D * 6) / 50) * 50);
+    if (far !== this.camera.far) {
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   /** Screen (CSS px) -> point on the horizontal plane at height h. */
