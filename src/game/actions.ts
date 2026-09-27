@@ -6,7 +6,7 @@ import { canTakeNode, treeNode, WEAPONS, type WeaponItem } from '../shared/weapo
 import { nextRarity, scrapValue, STAR_TIME, starBlock, starCost } from './arsenal';
 import { CARDS, DECK_SIZE, MAX_CARD_LEVEL, rollPack, shardsNeeded, upgradeCost, type PackKind } from './cards';
 import { hireCost, pickPerk } from './crew';
-import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
+import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, deckAllows, deckKind, defaultDeck, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
 import type { Reward } from './entities';
 import type { Game } from './game';
 import { techLevel } from './progress';
@@ -47,13 +47,14 @@ export function buildBlock(g: Game, key: string): string | null {
 }
 
 /** Buys a building and places it; a builder puts it together over time. */
-export function placeBuilding(g: Game, key: string, cx: number, cy: number): Result {
+export function placeBuilding(g: Game, key: string, cx: number, cy: number, deck = defaultDeck(MODULES[key] ?? MODULES.armor)): Result {
   const block = buildBlock(g, key);
   if (block) return NO(block);
   const d = MODULES[key];
-  if (!g.player.canPlace(key, cx, cy)) return NO("Doesn't fit there.");
+  if (!deckAllows(d, deck, g.player.stories)) return NO(deckKind(d) === 'roof' ? 'That goes on the roof.' : 'That goes inside, on one of the decks below the roof.');
+  if (!g.player.canPlace(key, cx, cy, -1, deck)) return NO("Doesn't fit there.");
   if (!g.pay(d.cost)) return NO('Not enough materials. Tap TRACK to see where to find them.');
-  const m = g.player.addModule(key, cx, cy);
+  const m = g.player.addModule(key, cx, cy, null, deck);
   if (!m) return NO("Doesn't fit there.");
   m.built = false;
   m.aim = g.player.rot;
@@ -137,6 +138,10 @@ export function removeModule(g: Game, id: number): Result {
     if (g.mainCrew().length > capAfter) return NO('Your crew would have nowhere to sleep. Move or dismiss crew first.');
   }
   if (d.garage && g.outrider) return NO('The Outrider is using the Garage.');
+  if (d.bunks) {
+    const lost = Math.max(0, p.troops - (p.stats.bunks - Math.round(d.bunks * (1 + 0.5 * (m.lvl - 1)))));
+    if (lost > 0) g.hooks.toast(`${lost} troop${lost > 1 ? 's' : ''} lost their bunk and left.`, '#ffab40');
+  }
   p.removeModule(id);
   if (m.weapon) g.armory.push(m.weapon);
   const refund = scaleCost(d.cost, 0.5);
@@ -145,8 +150,8 @@ export function removeModule(g: Game, id: number): Result {
   return OK(`${d.name} removed (half the materials refunded).`);
 }
 
-export function moveModule(g: Game, id: number, cx: number, cy: number): Result {
-  if (!g.player.moveModule(id, cx, cy)) return NO("Doesn't fit there.");
+export function moveModule(g: Game, id: number, cx: number, cy: number, deck?: number): Result {
+  if (!g.player.moveModule(id, cx, cy, deck)) return NO("Doesn't fit there.");
   return OK();
 }
 

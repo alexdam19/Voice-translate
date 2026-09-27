@@ -17,6 +17,8 @@ import { updateTankWeapons } from './weapons';
 import { updateAutoDrive } from './drives';
 import { updateWaves } from './waves';
 import { updateTesla } from './tesla';
+import { updateSoldiers } from './soldiers';
+import { updateTroops } from './troops';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
 
 export const RESPAWN_TIME = 6;
@@ -106,9 +108,14 @@ export function stepWorld(g: Game, dt: number): void {
   if (!p.dead) {
     updateTankWeapons(g, p, dt);
     updateTesla(g, p, dt);
+    updateSoldiers(g, p, dt);
   }
   if (g.outrider && !g.outrider.dead) updateTankWeapons(g, g.outrider, dt);
-  for (const t of g.tanks) if (!t.dead && t.kind !== 'remote') updateTankWeapons(g, t, dt);
+  for (const t of g.tanks) {
+    if (t.dead || t.kind === 'remote') continue;
+    updateTankWeapons(g, t, dt);
+    if (t.kind === 'rival') updateSoldiers(g, t, dt);
+  }
   updateProjectiles(g, dt);
   updateZones(g, dt);
   updateArsenal(g, dt);
@@ -129,6 +136,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateRunes(g, dt);
       updateHazards(g, dt);
       updateAutoDrive(g, dt);
+      updateTroops(g, dt);
     }
     updateOutposts(g);
     updatePickups(g, dt);

@@ -16,6 +16,7 @@ import { EnemyGrid } from './systems/grid';
 import { builderCount, levelBonus, levelRoad, MAX_COMMANDER_LEVEL, relicSlots, techsForLevel, xpToNext, type LevelReward } from './progress';
 import type { SquadState, SquadType } from './squads';
 import { crewFx, emptyCrewFx, type CrewFx } from './tech';
+import type { HullClass } from './classes';
 import { Tank } from './tank';
 import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates';
 
@@ -81,6 +82,9 @@ export interface GameStats {
   time: number;
   hordes?: number;
   rivals?: number;
+  /** Troops killed. */
+  lost?: number;
+  bosses?: number;
 }
 
 export type OutriderOrder = { mode: 'follow' } | { mode: 'hold'; x: number; y: number } | { mode: 'expedition'; kind: 'node' | 'site'; id: number; phase: 'going' | 'working' | 'returning'; t: number };
@@ -140,7 +144,7 @@ export class Game {
   aim = { x: 0, y: 0 };
   respawnIn = 0;
   deadZoneMode = false;
-  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0, drive: 0, rival: 150 };
+  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0, drive: 0, rival: 150, troop: 0 };
   hazardWarn: string | null = null;
   hooks: GameHooks = { toast: () => {}, sound: () => {}, chest: () => {}, levelUp: () => {}, died: () => {}, enterDeadZone: () => {} };
   revealAll = false;
@@ -214,11 +218,11 @@ export class Game {
   navDirty = false;
   private propIndex: Map<number, Prop[]> | null = null;
 
-  constructor(seed: number, gen?: WorldGen) {
+  constructor(seed: number, gen?: WorldGen, klass: HullClass = 'juggernaut') {
     this.gen = gen ?? generateWorld(seed);
     this.map = this.gen.map;
     this.rng = new RNG(seed ^ 0x9e3779b9);
-    this.player = buildStarterTank(this.gen.spawn.x, this.gen.spawn.y);
+    this.player = buildStarterTank(this.gen.spawn.x, this.gen.spawn.y, klass);
     this.crew = starterCrew();
     this.tech = new Set(techsForLevel(1));
     for (const id of STARTER_DECK) this.cards[id] = { level: 1, shards: 0 };

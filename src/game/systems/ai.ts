@@ -6,6 +6,7 @@ import type { Game, Target } from '../game';
 import type { Tank } from '../tank';
 import { damageEnemy, damageFriendly, damageTank, explode } from './damage';
 import { driveTank, moveSmall, planPath } from './movement';
+import { troopCasualty } from './troops';
 
 function nearestFriendly(g: Game, e: Enemy, range: number, friends: Target[]): Target | null {
   let best: Target | null = null;
@@ -212,7 +213,7 @@ function shootAt(g: Game, e: Enemy, tx: number, ty: number, kind: 'spit' | 'bull
 /* ---------------------------------------------------------------------- */
 
 /** World height of a fortress deck (matches the model). */
-const deckY = (t: Tank): number => 1.56 * t.cell;
+const deckY = (t: Tank): number => t.deckY(0);
 
 /** How many creatures fit on a hull at once. */
 export const latchCap = (t: Tank): number => Math.max(6, Math.floor((t.stats.length * t.stats.width) / 14));
@@ -250,6 +251,8 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
   e.z = deckY(t);
   e.face = l.lz >= 0 ? -1 : 1;
   damageTank(g, t, e.dmg * 0.8 * dt * (e.elite ? 1.5 : 1), { silent: true });
+  // Boarders on the roof go for the soldiers standing there.
+  if (t === g.player && Math.random() < dt * 0.012 * (e.elite ? 3 : 1)) troopCasualty(g, 'soldier', 'Boarders killed a soldier on the roof.');
   if (Math.random() < dt * 0.6) {
     g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffab40', n: 2 });
     g.hooks.sound('bite', e.x, e.y, 0.15);
@@ -569,7 +572,7 @@ function crushAndPush(g: Game, e: Enemy, dt: number): void {
     e.y = p.y;
     if (t.team === 'player' && Math.abs(t.speed) > 1.5 && !e.titan) {
       const nitro = t.hasBuff('nitro') ? 3 : 1;
-      damageEnemy(g, e, Math.abs(t.speed) * 7 * t.stats.crush * nitro * dt * 4, { silent: true, srcTank: t.id });
+      damageEnemy(g, e, Math.abs(t.speed) * 7 * t.stats.crush * t.ram * nitro * dt * 4, { silent: true, srcTank: t.id });
       if (Math.random() < dt * 5) g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffab40', n: 2 });
     }
   }

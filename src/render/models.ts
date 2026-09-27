@@ -14,8 +14,8 @@ import { getAtlas, treadTexture } from './textures';
 
 const DECK = 0.78;
 
-/** World height of a tank's deck surface. */
-export const deckHeight = (t: Tank): number => DECK * (t.cell / 0.5);
+/** World height of a tank's deck surface (the roof, or an interior deck's floor). */
+export const deckHeight = (t: Tank, deck = 0): number => t.deckY(deck);
 
 export interface TankModel {
   root: Group;

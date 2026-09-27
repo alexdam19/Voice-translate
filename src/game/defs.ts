@@ -79,7 +79,19 @@ export interface ModuleDef {
   /** Tesla Coil: zaps creatures on or against the hull. */
   tesla?: boolean;
   mess?: boolean;
+  /**
+   * Which deck it goes on. The fortress is several stories tall: the roof is the battle deck (guns, nests, the
+   * command tower), the stories below hold everything else. Default: interior.
+   */
+  deck?: 'roof' | 'interior' | 'any';
+  /** Troop bunks: troops man the guns and the roof nests. */
+  bunks?: number;
+  /** A soldier nest on the roof: how many soldiers it holds and what they fight with. */
+  nest?: NestKind;
+  soldiers?: number;
 }
+
+export type NestKind = 'rifle' | 'grenade' | 'rocket' | 'flame';
 
 const M = (d: ModuleDef): ModuleDef => d;
 
@@ -89,37 +101,43 @@ const add = (d: ModuleDef): void => {
 };
 
 /* Command */
-add(M({ key: 'bridge', name: 'Command Center', w: 4, h: 4, cat: 'command', cost: {}, height: 1.2, unique: true, required: true, maxLevel: 6, crew: 2, vision: 26, power: 4, thrust: 3, desc: 'The heart of your facility. Upgrade it to grow the whole fortress and raise every building\'s max level.' }));
+add(M({ key: 'bridge', name: 'Command Tower', w: 4, h: 4, cat: 'command', cost: {}, height: 1.2, unique: true, required: true, maxLevel: 6, crew: 2, bunks: 4, vision: 26, power: 4, thrust: 3, deck: 'roof', desc: 'The bridge on top of your fortress and the heart of the whole facility. Upgrade it to grow the hull and raise every building\'s max level.' }));
 
 /* Built into the hull */
-add(M({ key: 'main_gun', name: 'Main Battery Turret', w: 4, h: 4, cat: 'weapon', cost: {}, height: 0.9, fixed: true, hardpoint: 'heavy', hp: 150, armor: 0.01, desc: "The fortress's great twin-barrelled turret. Takes a heavy weapon. A second one rises on the rear deck at Command Center level 4. Each level adds +15% damage." }));
-add(M({ key: 'pad', name: 'Weapon Pad', w: 2, h: 2, cat: 'weapon', cost: {}, height: 0.5, fixed: true, hardpoint: 'medium', mounts: ['light', 'medium'], hp: 40, desc: 'An armored weapon pad built into the hull. Takes a light or medium weapon. Every corner has one, and more appear along the sides as the Command Center grows. Each level adds +15% damage.' }));
+add(M({ key: 'main_gun', name: 'Main Battery Turret', w: 4, h: 4, cat: 'weapon', cost: {}, height: 0.9, fixed: true, hardpoint: 'heavy', hp: 150, armor: 0.01, deck: 'roof', desc: "The fortress's great twin-barrelled turret. Takes a heavy weapon. A second one rises on the rear deck at Command Center level 4. Each level adds +15% damage." }));
+add(M({ key: 'pad', name: 'Weapon Pad', w: 2, h: 2, cat: 'weapon', cost: {}, height: 0.5, fixed: true, hardpoint: 'medium', mounts: ['light', 'medium'], hp: 40, deck: 'roof', desc: 'An armored weapon pad built into the hull. Takes a light or medium weapon. Every corner has one, and more appear along the sides as the Command Center grows. Each level adds +15% damage.' }));
 
 /* Turrets */
-add(M({ key: 'hp_light', name: 'Light Turret Mount', w: 1, h: 1, cat: 'weapon', cost: { scrap: 15, iron_plate: 3 }, height: 0.5, hardpoint: 'light', limit: [3, 4, 5, 6, 8, 10], desc: 'Mounts one light weapon. Each level adds +15% damage.' }));
-add(M({ key: 'hp_medium', name: 'Medium Turret Mount', w: 2, h: 2, cat: 'weapon', unlock: 4, cost: { iron_plate: 12, circuit: 2 }, height: 0.6, hardpoint: 'medium', limit: [1, 2, 2, 3, 4, 5], desc: 'Mounts one medium weapon. Each level adds +15% damage.' }));
-add(M({ key: 'hp_heavy', name: 'Heavy Turret Mount', w: 3, h: 3, cat: 'weapon', cost: { iron_plate: 30, circuit: 4 }, height: 0.7, hardpoint: 'heavy', limit: [1, 1, 2, 2, 3, 4], desc: 'Mounts one heavy weapon. Each level adds +15% damage.' }));
+add(M({ key: 'hp_light', name: 'Light Turret Mount', w: 1, h: 1, cat: 'weapon', cost: { scrap: 15, iron_plate: 3 }, height: 0.5, hardpoint: 'light', limit: [3, 4, 5, 6, 8, 10], deck: 'roof', desc: 'Mounts one light weapon. Each level adds +15% damage.' }));
+add(M({ key: 'hp_medium', name: 'Medium Turret Mount', w: 2, h: 2, cat: 'weapon', unlock: 4, cost: { iron_plate: 12, circuit: 2 }, height: 0.6, hardpoint: 'medium', limit: [1, 2, 2, 3, 4, 5], deck: 'roof', desc: 'Mounts one medium weapon. Each level adds +15% damage.' }));
+add(M({ key: 'hp_heavy', name: 'Heavy Turret Mount', w: 3, h: 3, cat: 'weapon', cost: { iron_plate: 30, circuit: 4 }, height: 0.7, hardpoint: 'heavy', limit: [1, 1, 2, 2, 3, 4], deck: 'roof', desc: 'Mounts one heavy weapon. Each level adds +15% damage.' }));
 
 /* Defense */
-add(M({ key: 'armor', name: 'Armor Plate', w: 1, h: 1, cat: 'defense', cost: { iron_plate: 4 }, height: 0.4, hp: 80, armor: 0.008, limit: [8, 12, 16, 22, 28, 36], desc: '+80 hull, +0.8% armor.' }));
-add(M({ key: 'heavy_armor', name: 'Heavy Armor Plate', w: 1, h: 2, cat: 'defense', unlock: 10, cost: { titanium_alloy: 4, iron_plate: 4, explosive: 2 }, height: 0.5, hp: 220, armor: 0.02, limit: [0, 4, 6, 8, 12, 16], desc: '+220 hull, +2% armor.' }));
+add(M({ key: 'armor', name: 'Armor Plate', w: 1, h: 1, cat: 'defense', cost: { iron_plate: 4 }, height: 0.4, hp: 80, armor: 0.008, limit: [8, 12, 16, 22, 28, 36], deck: 'any', desc: '+80 hull, +0.8% armor.' }));
+add(M({ key: 'heavy_armor', name: 'Heavy Armor Plate', w: 1, h: 2, cat: 'defense', unlock: 10, cost: { titanium_alloy: 4, iron_plate: 4, explosive: 2 }, height: 0.5, hp: 220, armor: 0.02, limit: [0, 4, 6, 8, 12, 16], deck: 'any', desc: '+220 hull, +2% armor.' }));
 add(M({ key: 'repair_bay', name: 'Repair Bay', w: 2, h: 2, cat: 'defense', unlock: 3, cost: { iron_plate: 12, circuit: 3 }, height: 0.8, repair: 4, use: 1, limit: [1, 1, 2, 2, 3, 3], desc: 'Repairs 4 hull per second.' }));
-add(M({ key: 'shield', name: 'Shield Generator', w: 2, h: 2, cat: 'defense', unlock: 13, cost: { titanium_alloy: 8, uranium_rod: 2, circuit: 6 }, height: 1, shield: 320, shieldRegen: 20, use: 4, limit: [0, 1, 2, 2, 3, 3], desc: '+320 shield that recharges out of combat.' }));
-add(M({ key: 'tesla', name: 'Tesla Coil', w: 1, h: 1, cat: 'defense', unlock: 3, cost: { copper_wire: 10, circuit: 2, iron_plate: 4 }, height: 1.1, tesla: true, use: 1, limit: [2, 3, 4, 5, 6, 8], desc: 'Arcs lightning into creatures climbing onto the hull or crowding against it: 3 at a time (+1 per level), about once a second. The answer to hordes.' }));
-add(M({ key: 'radar', name: 'Radar Mast', w: 1, h: 1, cat: 'defense', unique: true, unlock: 5, cost: { copper_wire: 8, circuit: 2 }, height: 1.6, vision: 8, radar: 50, use: 1, desc: '+8 vision. Shows enemies within 50 units on the minimap.' }));
+add(M({ key: 'shield', name: 'Shield Generator', w: 2, h: 2, cat: 'defense', unlock: 13, cost: { titanium_alloy: 8, uranium_rod: 2, circuit: 6 }, height: 1, shield: 320, shieldRegen: 20, use: 4, limit: [0, 1, 2, 2, 3, 3], deck: 'roof', desc: '+320 shield that recharges out of combat.' }));
+add(M({ key: 'tesla', name: 'Tesla Coil', w: 1, h: 1, cat: 'defense', unlock: 3, cost: { copper_wire: 10, circuit: 2, iron_plate: 4 }, height: 1.1, tesla: true, use: 1, limit: [2, 3, 4, 5, 6, 8], deck: 'roof', desc: 'Arcs lightning into creatures climbing onto the hull or crowding against it: 3 at a time (+1 per level), about once a second. The answer to hordes.' }));
+/* Soldier nests on the roof */
+add(M({ key: 'nest_rifle', name: 'Rifle Nest', w: 2, h: 2, cat: 'army', cost: { scrap: 20, iron_plate: 4 }, height: 0.35, deck: 'roof', nest: 'rifle', soldiers: 2, limit: [2, 3, 4, 5, 6, 8], desc: 'A sandbagged firing step on the roof for 2 riflemen. They pick off anything climbing the hull or charging it. Each level: +20% damage.' }));
+add(M({ key: 'nest_grenade', name: 'Grenadier Nest', w: 2, h: 2, cat: 'army', unlock: 2, cost: { scrap: 25, iron_plate: 6, explosive: 2 }, height: 0.35, deck: 'roof', nest: 'grenade', soldiers: 2, limit: [1, 2, 3, 4, 5, 6], desc: '2 grenadiers who lob explosives into the thick of a horde. Each level: +20% damage.' }));
+add(M({ key: 'nest_rocket', name: 'Rocket Nest', w: 2, h: 2, cat: 'army', unlock: 6, cost: { iron_plate: 12, explosive: 6, circuit: 2 }, height: 0.35, deck: 'roof', nest: 'rocket', soldiers: 2, limit: [0, 1, 2, 3, 4, 5], desc: '2 rocketeers for big targets: bosses, brutes and enemy tanks. Each level: +20% damage.' }));
+add(M({ key: 'nest_flame', name: 'Flamer Nest', w: 2, h: 2, cat: 'army', unlock: 9, cost: { iron_plate: 10, sulfur: 10, copper_wire: 6 }, height: 0.35, deck: 'roof', nest: 'flame', soldiers: 2, limit: [0, 1, 2, 3, 4, 5], desc: '2 flamers who hose the hull edges clean: anything climbing aboard burns. Each level: +20% damage.' }));
+
+add(M({ key: 'radar', name: 'Radar Mast', w: 1, h: 1, cat: 'defense', unique: true, unlock: 5, cost: { copper_wire: 8, circuit: 2 }, height: 1.6, vision: 8, radar: 50, use: 1, deck: 'roof', desc: '+8 vision. Shows enemies within 50 units on the minimap.' }));
 
 /* Army & squads */
-add(M({ key: 'barracks', name: 'Barracks', w: 3, h: 4, cat: 'army', unlock: 3, cost: { scrap: 40, iron_plate: 10 }, height: 0.9, crew: 5, squad: 'marines', limit: [1, 1, 2, 2, 2, 3], desc: 'Bunks 5 crew and trains a Marine squad that fights beside you. Upgrade it to upgrade the squad.' }));
+add(M({ key: 'barracks', name: 'Barracks', w: 3, h: 4, cat: 'army', unlock: 3, cost: { scrap: 40, iron_plate: 10 }, height: 0.9, crew: 5, squad: 'marines', limit: [1, 1, 2, 2, 2, 3], bunks: 8, desc: 'Bunks 5 officers and 8 troops (+4 per level), and trains a Marine squad that fights beside you. Upgrade it to upgrade the squad.' }));
 add(M({ key: 'garage', name: 'Garage', w: 4, h: 4, cat: 'army', unique: true, unlock: 5, garage: true, squad: 'buggies', cost: { iron_plate: 30, circuit: 6, scrap: 60 }, height: 1.1, desc: 'Builds Scout Buggies that scavenge ahead and bring loot back, and the Outrider mini tank. Upgrade it to upgrade the buggies.' }));
-add(M({ key: 'drone_bay', name: 'Drone Bay', w: 3, h: 3, cat: 'army', unique: true, unlock: 9, squad: 'drones', cost: { circuit: 10, copper_wire: 16, iron_plate: 10 }, height: 0.7, use: 1, desc: 'Launches Guard Drones: fast laser flyers, great at guarding an area.' }));
-add(M({ key: 'jet_hangar', name: 'Jet Hangar', w: 3, h: 4, cat: 'army', unique: true, unlock: 14, squad: 'fighters', cost: { titanium_alloy: 12, circuit: 10, iron_plate: 16 }, height: 0.7, use: 1, desc: 'Keeps a wing of mini fighter jets in the air that strafe and bomb anything near you.' }));
+add(M({ key: 'drone_bay', name: 'Drone Bay', w: 3, h: 3, cat: 'army', unique: true, unlock: 9, squad: 'drones', cost: { circuit: 10, copper_wire: 16, iron_plate: 10 }, height: 0.7, use: 1, deck: 'roof', desc: 'Launches Guard Drones: fast laser flyers, great at guarding an area.' }));
+add(M({ key: 'jet_hangar', name: 'Jet Hangar', w: 3, h: 4, cat: 'army', unique: true, unlock: 14, squad: 'fighters', cost: { titanium_alloy: 12, circuit: 10, iron_plate: 16 }, height: 0.7, use: 1, deck: 'roof', desc: 'Keeps a wing of mini fighter jets in the air that strafe and bomb anything near you.' }));
 add(M({ key: 'mech_bay', name: 'Mech Bay', w: 4, h: 4, cat: 'army', unique: true, unlock: 18, squad: 'walker', cost: { titanium_alloy: 30, uranium_rod: 6, circuit: 16 }, height: 1.2, desc: 'Builds a Walker Mech: a slow giant with a cannon and missile racks.' }));
 
 /* Crew */
-add(M({ key: 'quarters', name: 'Living Quarters', w: 2, h: 2, cat: 'crew', cost: { scrap: 25, iron_plate: 4 }, height: 0.9, crew: 3, limit: [2, 3, 3, 4, 4, 5], desc: 'Bunks for 3 crew (+1 per level). Injured crew recover faster.' }));
+add(M({ key: 'quarters', name: 'Living Quarters', w: 2, h: 2, cat: 'crew', cost: { scrap: 25, iron_plate: 4 }, height: 0.9, crew: 3, limit: [2, 3, 3, 4, 4, 5], bunks: 4, desc: 'Bunks for 3 officers (+1 per level) and 4 troops (+2 per level). Injured crew recover faster.' }));
 add(M({ key: 'medbay', name: 'Medbay', w: 2, h: 2, cat: 'crew', unlock: 4, cost: { iron_plate: 8, circuit: 3, biomass: 6 }, height: 0.8, medbay: true, use: 1, limit: [1, 1, 1, 2, 2, 2], desc: 'Injured crew recover 3x faster.' }));
 add(M({ key: 'hydroponics', name: 'Hydroponics', w: 2, h: 2, cat: 'crew', unlock: 3, cost: { scrap: 20, iron_plate: 4, biomass: 8 }, height: 0.6, food: 1, use: 1, limit: [1, 2, 2, 3, 3, 4], desc: 'Grows a ration every 25 seconds (faster per level).' }));
-add(M({ key: 'mess_hall', name: 'Mess Hall', w: 3, h: 3, cat: 'crew', unique: true, unlock: 8, cost: { scrap: 30, iron_plate: 8, biomass: 6 }, height: 0.8, mess: true, food: 1, crew: 1, desc: 'Injured crew recover 50% faster. Cooks rations and bunks 1.' }));
+add(M({ key: 'mess_hall', name: 'Mess Hall', w: 3, h: 3, cat: 'crew', unique: true, unlock: 8, cost: { scrap: 30, iron_plate: 8, biomass: 6 }, height: 0.8, mess: true, food: 1, crew: 1, bunks: 3, desc: 'Injured crew recover 50% faster. Cooks rations and bunks 1.' }));
 add(M({ key: 'training_grounds', name: 'Training Grounds', w: 3, h: 4, cat: 'crew', unique: true, unlock: 10, cost: { iron_plate: 16, scrap: 40 }, height: 0.35, training: 1.2, desc: 'Every crew member aboard earns experience over time.' }));
 
 /* Resources */
@@ -158,11 +176,43 @@ export function canMount(d: ModuleDef, size: WeaponSize): boolean {
 /** Buildings you can buy in the shop (not the Command Center or anything built into the hull). */
 export const isShopBuilding = (d: ModuleDef): boolean => !d.required && !d.fixed;
 
+/** Deck 0 is the roof; decks 1..stories are the stories below it, top to bottom. */
+export const ROOF = 0;
+
+export function deckKind(d: ModuleDef): 'roof' | 'interior' | 'any' {
+  return d.deck ?? 'interior';
+}
+
+/** Can this building go on that deck? */
+export function deckAllows(d: ModuleDef, deck: number, stories: number): boolean {
+  if (deck < 0 || deck > stories) return false;
+  const k = deckKind(d);
+  return k === 'any' || (k === 'roof' ? deck === ROOF : deck >= 1);
+}
+
+/** Where a building goes by default. */
+export function defaultDeck(d: ModuleDef): number {
+  return deckKind(d) === 'interior' ? 1 : ROOF;
+}
+
+/** The name of a deck for a hull with `stories` stories below the roof. */
+export function deckName(deck: number, stories: number): string {
+  if (deck === ROOF) return 'Roof';
+  if (deck === stories) return stories === 1 ? 'Main Deck' : 'Lower Hold';
+  if (deck === 1) return 'Upper Deck';
+  return `Deck ${deck}`;
+}
+
+/** Troops it takes to man a weapon of this size: one each, two for the heavies. */
+export function crewNeed(size: WeaponSize): number {
+  return size === 'heavy' ? 2 : 1;
+}
+
 /**
  * Where the hull's built-in weapons sit for a Command Center level: a pad on every corner, the main battery at
  * the front, then more pads along the sides and a second battery on the rear deck as the fortress grows.
  */
-export function fixedSpots(cc: number, cols: number, rows: number): { key: 'pad' | 'main_gun'; cx: number; cy: number }[] {
+export function fixedSpots(cc: number, cols: number, rows: number, twinBattery = false): { key: 'pad' | 'main_gun'; cx: number; cy: number }[] {
   const out: { key: 'pad' | 'main_gun'; cx: number; cy: number }[] = [
     { key: 'main_gun', cx: Math.floor(cols / 2) - 2, cy: 1 },
     { key: 'pad', cx: 0, cy: 0 },
@@ -175,7 +225,8 @@ export function fixedSpots(cc: number, cols: number, rows: number): { key: 'pad'
     out.push({ key: 'pad', cx: 0, cy }, { key: 'pad', cx: cols - 2, cy });
   };
   if (cc >= 2) side(0.5);
-  if (cc >= 4) out.push({ key: 'main_gun', cx: Math.floor(cols / 2) - 2, cy: rows - 6 });
+  // The Bastion gets its rear battery right away; everyone else at Command Center level 4.
+  if (cc >= (twinBattery ? 1 : 4)) out.push({ key: 'main_gun', cx: Math.floor(cols / 2) - 2, cy: rows - 6 });
   if (cc >= 5) side(0.28);
   if (cc >= 6) side(0.72);
   return out;

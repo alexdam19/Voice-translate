@@ -1,6 +1,7 @@
 import { RNG } from '../shared/rng';
 import { rollDropRarity, rollWeaponKey } from '../shared/loot';
 import { makeWeapon, WEAPONS, type WeaponItem, type WeaponSize } from '../shared/weapons';
+import { CLASS_LIST, classDef, type HullClass } from './classes';
 import { makeCrew, type CrewMember } from './crew';
 import { chassisForCC } from './defs';
 import { Tank } from './tank';
@@ -21,17 +22,20 @@ export function newWeapon(key: string, rarity: WeaponItem['rarity'] = 0, rng: ()
 }
 
 /**
- * The Landkreuzer every run starts with. The hull brings its own weapons: a pad on each corner and the main
- * battery up front (placed by `ensureFixed`). Inside: the Command Center, bunks, a cargo hold, a reactor and two
- * engines, and plenty of open deck to build on. Row 0 is the front of the fortress.
+ * The Landkreuzer every run starts with: two stories and a roof. The hull brings its own weapons (a pad on each
+ * corner and the main battery up front, placed by `ensureFixed`). On the roof: the Command Tower and a rifle nest.
+ * Upper deck: bunks and a cargo hold. Lower hold: the reactor and two engines. Row 0 is the front.
+ * Entries are [building, x, y, deck].
  */
-export const STARTER_LAYOUT: [string, number, number, string?][] = [
-  ['bridge', 4, 8],
-  ['quarters', 2, 8],
-  ['cargo', 8, 8],
-  ['reactor', 2, 13],
-  ['engine', 4, 16],
-  ['engine', 6, 16],
+export const STARTER_LAYOUT: [string, number, number, number][] = [
+  ['bridge', 4, 8, 0],
+  ['nest_rifle', 1, 12, 0],
+  ['quarters', 2, 6, 1],
+  ['quarters', 8, 6, 1],
+  ['cargo', 5, 9, 1],
+  ['reactor', 2, 13, 2],
+  ['engine', 4, 16, 2],
+  ['engine', 6, 16, 2],
 ];
 
 /** What the built-in weapons start with: the main battery, and an autocannon on every corner pad. */
@@ -45,15 +49,26 @@ export function armFixed(t: Tank, weapon: (key: string) => WeaponItem = (k) => n
   t.recalc();
 }
 
-export function buildStarterTank(x: number, y: number): Tank {
+export function buildStarterTank(x: number, y: number, klass: HullClass = 'juggernaut'): Tank {
   const t = new Tank('player', 'main', 'crawler', 'Fortress');
+  t.klass = klass;
   t.x = x;
   t.y = y;
   t.rot = -Math.PI / 2;
-  for (const [key, cx, cy, w] of STARTER_LAYOUT) t.addModule(key, cx, cy, w ? newWeapon(w) : null);
+  for (const [key, cx, cy, deck] of STARTER_LAYOUT) t.addModule(key, cx, cy, null, deck);
   t.ensureFixed();
   armFixed(t);
+  // What the class brings along.
+  for (const [key, deck] of classDef(klass).starter) {
+    const s = t.findSpot(key, deck);
+    if (!s) continue;
+    const w = key === 'hp_light' ? newWeapon('autocannon') : null;
+    t.addModule(key, s[0], s[1], w, s[2]);
+  }
   for (const m of t.modules) m.aim = t.rot;
+  t.recalc();
+  // Every bunk filled.
+  t.troops = t.stats.bunks;
   t.recalc();
   t.hp = t.stats.maxHp;
   t.cargo.add('scrap', 120);
@@ -61,6 +76,7 @@ export function buildStarterTank(x: number, y: number): Tank {
   t.cargo.add('copper_wire', 6);
   t.cargo.add('repair_kit', 2);
   t.cargo.add('rations', 8);
+  if (klass === 'ark') t.cargo.add('explosive', 6);
   return t;
 }
 
@@ -116,10 +132,12 @@ export const RIVAL_NAMES = [
  * A rival dreadnought: an enemy fortress built like yours (same hull class, weapon pads, main battery)
  * and scaled to your commander level, so the fight is between equals.
  */
-export function buildRival(level: number, cc: number, seed: number, name: string, kit: { tech?: Set<string>; stars?: number } = {}): Tank {
+export function buildRival(level: number, cc: number, seed: number, name: string, kit: { tech?: Set<string>; stars?: number; klass?: HullClass } = {}): Tank {
   const rng = new RNG(seed);
   const r = (): number => rng.next();
   const t = new Tank('enemy', 'rival', chassisForCC(cc).key, name);
+  // Rivals come in every class too.
+  t.klass = kit.klass ?? CLASS_LIST[Math.floor(r() * CLASS_LIST.length)].key;
   t.threat = 1 + level / 5;
   // Enemy guns fire at base stats times this; yours get the Level Road, crew and forge on top.
   t.dmgScale = 0.34 + 0.016 * level;
@@ -144,6 +162,8 @@ export function buildRival(level: number, cc: number, seed: number, name: string
   if (cc >= 2) t.autoAdd('repair_bay');
   if (cc >= 3) t.autoAdd('shield');
   t.autoAdd('barracks');
+  // Soldiers on its roof, like yours.
+  for (let i = 0; i < 1 + Math.floor(cc / 2); i++) t.autoAdd(i % 2 ? 'nest_grenade' : 'nest_rifle');
   t.recalc();
   t.stats.maxHp = Math.round(t.stats.maxHp * (0.62 + 0.012 * level));
   t.hp = t.stats.maxHp;

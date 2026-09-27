@@ -25,10 +25,22 @@ describe('the fortress is a full facility', () => {
     expect(p.weapons().length).toBe(5);
     expect(p.stats.powerRatio).toBe(1);
     expect(p.stats.cc).toBe(1);
-    expect(g.crewCap()).toBe(5);
+    expect(g.crewCap()).toBe(8);
     expect(g.mainCrew().length).toBe(4);
-    const used = p.modules.reduce((s, m) => s + MODULES[m.key].w * MODULES[m.key].h, 0);
-    expect(used).toBeLessThan(120);
+    // Two stories under the roof: guns and the tower up top, bunks and cargo on the upper deck, engines below.
+    expect(p.stories).toBe(2);
+    expect(p.modules.find((m) => m.key === 'bridge')!.deck).toBe(0);
+    expect(p.modules.filter((m) => m.key === 'quarters').every((m) => m.deck === 1)).toBe(true);
+    expect(p.modules.filter((m) => m.key === 'engine').every((m) => m.deck === 2)).toBe(true);
+    expect(p.modules.filter((m) => MODULES[m.key].hardpoint).every((m) => m.deck === 0)).toBe(true);
+    // Every gun and the rifle nest are manned, with troops to spare.
+    expect(p.troops).toBe(p.stats.bunks);
+    expect(p.stats.crewManned).toBe(p.stats.crewWanted);
+    expect(p.stats.bunks).toBeGreaterThan(p.stats.crewWanted);
+    for (const deck of [0, 1, 2]) {
+      const used = p.modules.filter((m) => m.deck === deck).reduce((s, m) => s + MODULES[m.key].w * MODULES[m.key].h, 0);
+      expect(used).toBeLessThan(120);
+    }
     // Enemy rigs are much smaller.
     expect(p.stats.topSpeed).toBeGreaterThan(3);
   });

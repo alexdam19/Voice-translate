@@ -51,8 +51,16 @@ export function updateTankWeapons(g: Game, t: Tank, dt: number): void {
     if (!m.weapon || !m.stats) continue;
     const d = WEAPONS[m.weapon.key];
     const s = m.stats;
-    m.cd -= dt * rm;
-    m.cd2 -= dt * rm;
+    // Your guns need people on them: none and it sits idle, half a crew on a heavy and it fires at half rate.
+    const need = t.kind === 'main' ? t.crewNeeded(m) : 0;
+    if (need > 0 && m.crew <= 0) {
+      m.aim = turnToward(m.aim, t.rot, s.turn * dt * 0.5);
+      m.recoil = Math.max(0, m.recoil - dt * 4);
+      continue;
+    }
+    const manned = need > 0 && m.crew < need ? 0.5 : 1;
+    m.cd -= dt * rm * manned;
+    m.cd2 -= dt * rm * manned;
     m.recoil = Math.max(0, m.recoil - dt * 4);
     if (m.cd < -0.8) m.ramp = 0;
     const pos = t.moduleWorld(m);
@@ -216,7 +224,7 @@ export function fire(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponSta
       p.vx = (p.tx - mx) / flight;
       p.vy = (p.ty - my) / flight;
       p.vz = (9.8 * flight) / 2;
-      p.z = 1.2;
+      p.z = t.fortress ? t.deckY(0) + 0.3 : 1.2;
     }
     if (s.homing > 0 && s.pellets > 1) {
       // Volleys fan out and curve in.
@@ -239,6 +247,13 @@ export function launch(
     color, homing, targetId: target?.id ?? 0, arc: false, tx: 0, ty: 0, burn, crit: false, lifesteal: 0,
     srcTank: t?.id ?? g.player.id, hit: [], flyer: 0, interceptable: LOBBED.has(kind), hp: 1, size, wkey, wr, fx,
   };
+  // Shots from a tall hull start on the roof and come down onto their target.
+  if (t?.fortress) {
+    p.z = t.deckY(0) + 0.35;
+    const zt = target?.flying ? 1.6 : 0.5;
+    const dist = target ? Math.hypot(target.x - x, target.y - y) : range;
+    p.vz = -(p.z - zt) / Math.max(0.12, dist / Math.max(1, speed));
+  }
   g.projectiles.push(p);
   return p;
 }

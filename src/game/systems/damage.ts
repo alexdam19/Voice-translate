@@ -1,3 +1,4 @@
+import { troopCasualty } from './troops';
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
 import { NODE_INFO } from '../../shared/mapgen';
 import { eid, type Enemy, type ShotFx } from '../entities';
@@ -196,6 +197,8 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
   lifesteal(g, o.srcTank, dealt, o.lifesteal);
   if (!o.silent && (t.team === 'enemy' || d >= 1)) g.float(t.x, t.y + 0.4, String(Math.round(d)), t.team === 'player' ? '#ff5252' : o.crit ? '#ffea00' : '#ffffff', !!o.crit);
   if (t === g.player && d > t.stats.maxHp * 0.07 && Math.random() < 0.35 * (1 - g.crewFx.injuryResist)) injureRandomCrew(g, 20 + Math.random() * 15);
+  // A big hit can kill a gunner.
+  if (t === g.player && d > t.stats.maxHp * 0.045 && Math.random() < 0.3) troopCasualty(g, 'gunner', 'A heavy hit killed a gunner.');
   if (t.hp <= 0 && t === g.player && t.crew.phoenix > 0 && g.phoenixCd <= 0) {
     // Phoenix Feather: rise from the ashes once every 3 minutes.
     g.phoenixCd = 180;

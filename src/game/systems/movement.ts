@@ -42,7 +42,7 @@ export function crushUnder(g: Game, t: Tank): void {
   }
   if (n > 0) {
     g.navDirty = true;
-    t.speed *= Math.pow(0.985, Math.min(n, 12));
+    t.speed *= Math.pow(t.kind === 'main' ? 0.994 : 0.985, Math.min(n, 12));
     if (Math.random() < 0.5) g.hooks.sound('crunch', t.x, t.y, Math.min(1, 0.3 + n * 0.1));
     if (n >= 4) g.fx.push({ t: 'shake', amt: 0.15 });
   }
@@ -130,8 +130,27 @@ export function manualDrive(t: Tank, ix: number, iy: number, tankStyle: boolean)
   if (tankStyle) return { throttle: iy < 0 ? Math.min(1, -iy) : iy > 0 ? -0.5 * Math.min(1, iy) : 0, wantRot: t.rot, turn: Math.max(-1, Math.min(1, ix)) };
   const mag = Math.min(1, Math.hypot(ix, iy));
   const want = Math.atan2(iy, ix);
-  const diff = Math.abs(wrapAngle(want - t.rot));
-  return { throttle: (diff > 1.1 ? 0.08 : Math.cos(diff) ** 2) * mag, wantRot: want };
+  return { throttle: arcThrottle(Math.abs(wrapAngle(want - t.rot))) * mag, wantRot: want };
+}
+
+/**
+ * How much throttle to keep while turning `diff` radians: full ahead on gentle bends, a tight arc on a right angle,
+ * and a slow pivot only when turning right around. Keeping way on through turns is what makes it feel responsive.
+ */
+export function arcThrottle(diff: number): number {
+  if (diff < 0.5) return 1;
+  if (diff < 1.7) return 1 - ((diff - 0.5) / 1.2) * 0.55;
+  return Math.max(0.2, 0.45 - (diff - 1.7) * 0.2);
+}
+
+/** Your fortress handles like a vehicle, not a building: it turns quickly and stops when you let go. */
+export function handling(t: Tank): { turn: number; accel: number; brake: number } {
+  if (t.kind !== 'main') {
+    const accel = Math.max(4, t.stats.topSpeed * 1.6);
+    return { turn: t.stats.turnRate, accel, brake: accel * 1.5 };
+  }
+  const top = Math.max(3, t.stats.topSpeed);
+  return { turn: Math.max(2.3, t.stats.turnRate * 1.9) * t.handling, accel: top * 2.4, brake: top * 3.4 };
 }
 
 export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: ManualDrive): void {
@@ -159,19 +178,22 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
     }
     wantRot = Math.atan2(wp.y - t.y, wp.x - t.x);
     const diff = Math.abs(wrapAngle(wantRot - t.rot));
-    throttle = diff > 1.1 ? 0.08 : Math.cos(diff) ** 2;
+    throttle = t.kind === 'main' ? arcThrottle(diff) : diff > 1.1 ? 0.08 : Math.cos(diff) ** 2;
     if (last && d < 3) throttle *= Math.max(0.3, d / 3);
     break;
   }
   if (stunned) throttle = 0;
-  const trac = traction(g, t);
+  // Ground changes ease in over a few tenths of a second instead of jolting the speed.
+  const raw = traction(g, t);
+  t.trac = t.trac <= 0 ? raw : t.trac + (raw - t.trac) * (1 - Math.exp(-dt * 6));
+  const trac = t.trac;
   const top = t.stats.topSpeed * trac * speedMult;
   const target = top * throttle;
-  const accel = Math.max(4, t.stats.topSpeed * 1.6);
-  if (t.speed < target) t.speed = Math.min(target, t.speed + accel * dt);
-  else t.speed = Math.max(target, t.speed - accel * 1.5 * dt);
+  const hd = handling(t);
+  if (t.speed < target) t.speed = Math.min(target, t.speed + hd.accel * dt);
+  else t.speed = Math.max(target, t.speed - hd.brake * dt);
   if (!stunned) {
-    const turn = t.stats.turnRate * (0.55 + 0.45 * Math.min(1, trac)) * (speedMult > 1 ? 1.3 : 1);
+    const turn = hd.turn * (t.kind === 'main' ? 0.8 + 0.2 * Math.min(1, trac) : 0.55 + 0.45 * Math.min(1, trac)) * (speedMult > 1 ? 1.3 : 1);
     if (turnDir) t.rot = wrapAngle(t.rot + turnDir * turn * dt);
     else t.rot = turnToward(t.rot, wantRot, turn * dt);
   }

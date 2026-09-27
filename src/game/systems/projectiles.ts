@@ -124,6 +124,7 @@ export function updateProjectiles(g: Game, dt: number): void {
         dead = true;
       }
     } else {
+      if (p.vz) p.z = Math.max(0.35, p.z + p.vz * dt);
       if (p.homing > 0) {
         const tgt = p.team === 'player' ? g.hostileTarget(p.targetId) : g.friendlyTarget(p.targetId);
         if (tgt) {

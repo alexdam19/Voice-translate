@@ -270,7 +270,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       g.fx.push({ t: 'shake', amt: 1 });
       break;
     case 'nitro':
-      p.addBuff('nitro', 4, 0.7 * P);
+      p.addBuff('nitro', 4 * p.nitroMult, 0.7 * P);
       break;
 
     /* ---------------- Rust ---------------- */

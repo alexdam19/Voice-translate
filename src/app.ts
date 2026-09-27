@@ -18,6 +18,7 @@ import { installHandlers, stepWorld } from './game/systems/step';
 import { trackInfo } from './game/systems/tracking';
 import { Minimap } from './render/minimap';
 import { deckHeight } from './render/models';
+import type { HullClass } from './game/classes';
 import { Overlay, type VillageState } from './render/overlay';
 import { View } from './render/view';
 import { ChestUI } from './ui/chest';
@@ -57,6 +58,8 @@ export class App {
   paused = false;
   /** Wheel zoom on top of the automatic zoom. */
   private zoomMul = 1;
+  /** Camera look-ahead in the driving direction. */
+  private camLead = { x: 0, y: 0 };
   private villageZoomMul = 1;
   private vstate: VillageState = { hover: null, selected: 0, ghost: null };
   private trackT = 0;
@@ -116,8 +119,8 @@ export class App {
   /* Lifecycle                                                         */
   /* ---------------------------------------------------------------- */
 
-  newGame(seed = Math.floor(Math.random() * 1e9)): void {
-    this.start(new Game(seed));
+  newGame(klass: HullClass = 'juggernaut', seed = Math.floor(Math.random() * 1e9)): void {
+    this.start(new Game(seed, undefined, klass));
     this.hud.toast(`Welcome, Commander. ${this.touch ? 'Drive with the stick (bottom left) or tap the ground' : 'Drive with WASD'}. Your guns fire on their own. Drag a card onto the battlefield to play it.`, '#ffd740');
   }
 
@@ -493,6 +496,14 @@ export class App {
     const p = g.player;
     const k = 1 - Math.pow(0.002, dt);
     let tx = p.x, ty = p.y;
+    // Look a little ahead of where you're driving, so you see what you're about to hit.
+    const lead = Math.max(-2, Math.min(6, p.speed * 0.9));
+    this.camLead.x += (Math.cos(p.rot) * lead - this.camLead.x) * (1 - Math.pow(0.05, dt));
+    this.camLead.y += (Math.sin(p.rot) * lead - this.camLead.y) * (1 - Math.pow(0.05, dt));
+    if (!this.village) {
+      tx += this.camLead.x;
+      ty += this.camLead.y;
+    }
     if (this.village) {
       // Nudge the view so the building card at the bottom doesn't cover the fortress.
       const back = p.toWorld(-p.stats.length * 0.07, 0);

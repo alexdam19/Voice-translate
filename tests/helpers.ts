@@ -40,7 +40,7 @@ export function build(g: Game, key: string): number {
   rich(g);
   const s = g.player.findSpot(key);
   if (!s) throw new Error(`no room for ${key}`);
-  const r = placeBuilding(g, key, s[0], s[1]);
+  const r = placeBuilding(g, key, s[0], s[1], s[2]);
   if (!r.ok) throw new Error(r.msg);
   const m = g.player.modules[g.player.modules.length - 1];
   finishNow(g, m.id);

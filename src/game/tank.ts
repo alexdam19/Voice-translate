@@ -2,7 +2,8 @@ import { Inventory, type Slot } from '../shared/inventory';
 import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
 import { emptyBonus, type CrewBonus } from './crew';
-import { chassisDef, fixedSpots, LEGACY_DIMS, levelMult, MODULES, type ModuleDef } from './defs';
+import { classMods, type HullClass } from './classes';
+import { chassisDef, crewNeed, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
 
 export type Team = 'player' | 'enemy';
@@ -10,6 +11,14 @@ export type TankKind = 'main' | 'outrider' | 'raider' | 'outpost' | 'remote' | '
 export type FireMode = 'auto' | 'manual';
 
 export const BASE_CARGO = 12;
+
+/**
+ * Hull geometry in model units (the model is built at 0.5 units per deck cell, then scaled by cell / 0.5).
+ * A fortress stands on its tracks with a hull base, then one story per deck up to the roof.
+ */
+export const HULL_BASE = 0.75;
+export const STORY_H = 0.7;
+export const SMALL_DECK = 0.78;
 
 export interface ModuleInst {
   id: number;
@@ -39,6 +48,10 @@ export interface ModuleInst {
   cd2: number;
   /** False while builders are still putting it together. */
   built: boolean;
+  /** Which deck it stands on (0 = the roof, 1.. = the stories below, top to bottom). */
+  deck: number;
+  /** Troops manning it right now (guns need 1-2, nests hold their soldiers). */
+  crew: number;
 }
 
 export interface TankStats {
@@ -82,6 +95,11 @@ export interface TankStats {
   mess: boolean;
   /** Command Center level. */
   cc: number;
+  /** Troop bunks (troops man the guns and the roof nests). */
+  bunks: number;
+  /** Troops the guns and nests want, and how many are manned. */
+  crewWanted: number;
+  crewManned: number;
 }
 
 export interface Buff {
@@ -110,8 +128,16 @@ export class Tank {
   chassis: string;
   cols: number;
   rows: number;
+  /** Stories below the roof (the Mothership can add more). */
+  stories = 2;
+  /** Hull class and its Mothership mark (I-III). */
+  klass: HullClass = 'juggernaut';
+  classMk = 1;
+  /** Troops aboard: they man the guns and the roof nests. Enemy hulls are always fully crewed. */
+  troops = 0;
   drive: DriveKey = 'wheels';
   modules: ModuleInst[] = [];
+  /** One layer of cols x rows cells per deck. */
   private grid: Int32Array;
   private nextModId = 1;
   hp = 1;
@@ -145,6 +171,14 @@ export class Tank {
   readonly crush: boolean;
   /** Seconds until a parked fortress checks for rubble under its hull again. */
   crushT = 0;
+  /** Smoothed traction (0 = not sampled yet). */
+  trac = 0;
+  /** Turn-rate multiplier from the hull class. */
+  handling = 1;
+  /** Ramming damage and Nitro multipliers, and roof soldiers' damage, from the hull class. */
+  ram = 1;
+  nitroMult = 1;
+  soldierDmg = 1;
 
   constructor(team: Team, kind: TankKind, chassis: string, name = 'Fortress') {
     this.team = team;
@@ -156,7 +190,8 @@ export class Tank {
     const c = chassisDef(chassis);
     this.cols = c.cols;
     this.rows = c.rows;
-    this.grid = new Int32Array(this.cols * this.rows).fill(-1);
+    if (kind !== 'main' && kind !== 'rival' && kind !== 'remote') this.stories = 1;
+    this.grid = new Int32Array(this.cols * this.rows * (this.stories + 1)).fill(-1);
     this.cargo = new Inventory(BASE_CARGO);
     this.recalc();
     this.hp = this.stats.maxHp;
@@ -164,27 +199,45 @@ export class Tank {
 
   /* ---------------- layout ---------------- */
 
-  cellAt(cx: number, cy: number): number {
-    if (cx < 0 || cy < 0 || cx >= this.cols || cy >= this.rows) return -2;
-    return this.grid[cy * this.cols + cx];
+  /** Roof plus the stories below it. */
+  get decks(): number {
+    return this.stories + 1;
+  }
+
+  private gi(cx: number, cy: number, deck: number): number {
+    return (deck * this.rows + cy) * this.cols + cx;
+  }
+
+  private stamp(m: ModuleInst): void {
+    const d = MODULES[m.key];
+    for (let y = m.cy; y < m.cy + d.h; y++) for (let x = m.cx; x < m.cx + d.w; x++) this.grid[this.gi(x, y, m.deck)] = m.id;
+  }
+
+  private unstamp(id: number): void {
+    for (let k = 0; k < this.grid.length; k++) if (this.grid[k] === id) this.grid[k] = -1;
+  }
+
+  cellAt(cx: number, cy: number, deck = ROOF): number {
+    if (cx < 0 || cy < 0 || cx >= this.cols || cy >= this.rows || deck < 0 || deck > this.stories) return -2;
+    return this.grid[this.gi(cx, cy, deck)];
   }
 
   moduleById(id: number): ModuleInst | undefined {
     return this.modules.find((m) => m.id === id);
   }
 
-  moduleAtCell(cx: number, cy: number): ModuleInst | undefined {
-    const id = this.cellAt(cx, cy);
+  moduleAtCell(cx: number, cy: number, deck = ROOF): ModuleInst | undefined {
+    const id = this.cellAt(cx, cy, deck);
     return id >= 0 ? this.moduleById(id) : undefined;
   }
 
-  canPlace(key: string, cx: number, cy: number, ignoreId = -1): boolean {
+  canPlace(key: string, cx: number, cy: number, ignoreId = -1, deck = defaultDeck(MODULES[key] ?? MODULES.armor)): boolean {
     const d = MODULES[key];
-    if (!d) return false;
+    if (!d || !deckAllows(d, deck, this.stories)) return false;
     if (cx < 0 || cy < 0 || cx + d.w > this.cols || cy + d.h > this.rows) return false;
     for (let y = cy; y < cy + d.h; y++) {
       for (let x = cx; x < cx + d.w; x++) {
-        const c = this.grid[y * this.cols + x];
+        const c = this.grid[this.gi(x, y, deck)];
         if (c !== -1 && c !== ignoreId) return false;
       }
     }
@@ -192,15 +245,19 @@ export class Tank {
     return true;
   }
 
-  addModule(key: string, cx: number, cy: number, weapon: WeaponItem | null = null): ModuleInst | null {
-    if (!this.canPlace(key, cx, cy)) return null;
+  private newInst(key: string, cx: number, cy: number, deck: number, weapon: WeaponItem | null): ModuleInst {
     const d = MODULES[key];
-    const m: ModuleInst = {
+    return {
       id: this.nextModId++, key, cx, cy, weapon, mode: 'auto', aim: this.rot, cd: d.hardpoint ? Math.random() * 0.5 : 0, recoil: 0, targetId: 0, stats: null, burst: 0,
-      lvl: 1, shots: 0, ramp: 0, rampTarget: 0, cd2: 0, built: true,
+      lvl: 1, shots: 0, ramp: 0, rampTarget: 0, cd2: 0, built: true, deck, crew: 0,
     };
+  }
+
+  addModule(key: string, cx: number, cy: number, weapon: WeaponItem | null = null, deck = defaultDeck(MODULES[key] ?? MODULES.armor)): ModuleInst | null {
+    if (!this.canPlace(key, cx, cy, -1, deck)) return null;
+    const m = this.newInst(key, cx, cy, deck, weapon);
     this.modules.push(m);
-    for (let y = cy; y < cy + d.h; y++) for (let x = cx; x < cx + d.w; x++) this.grid[y * this.cols + x] = m.id;
+    this.stamp(m);
     this.version++;
     this.recalc();
     return m;
@@ -212,33 +269,46 @@ export class Tank {
     const m = this.modules[i];
     if (MODULES[m.key].required || MODULES[m.key].fixed) return null;
     this.modules.splice(i, 1);
-    for (let k = 0; k < this.grid.length; k++) if (this.grid[k] === id) this.grid[k] = -1;
+    this.unstamp(id);
     this.version++;
     this.recalc();
     return m;
   }
 
-  moveModule(id: number, cx: number, cy: number): boolean {
+  moveModule(id: number, cx: number, cy: number, deck?: number): boolean {
     const m = this.moduleById(id);
-    if (!m || MODULES[m.key].fixed || !this.canPlace(m.key, cx, cy, id)) return false;
-    for (let k = 0; k < this.grid.length; k++) if (this.grid[k] === id) this.grid[k] = -1;
-    const d = MODULES[m.key];
+    const to = deck ?? m?.deck ?? ROOF;
+    if (!m || MODULES[m.key].fixed || !this.canPlace(m.key, cx, cy, id, to)) return false;
+    this.unstamp(id);
     m.cx = cx;
     m.cy = cy;
-    for (let y = cy; y < cy + d.h; y++) for (let x = cx; x < cx + d.w; x++) this.grid[y * this.cols + x] = m.id;
+    m.deck = to;
+    this.stamp(m);
     this.version++;
     return true;
   }
 
-  /** First free spot for a module, scanning from the front. */
-  findSpot(key: string): [number, number] | null {
-    for (let cy = 0; cy < this.rows; cy++) for (let cx = 0; cx < this.cols; cx++) if (this.canPlace(key, cx, cy)) return [cx, cy];
+  /** Decks a building may go on, its default first. */
+  decksFor(key: string): number[] {
+    const d = MODULES[key];
+    if (!d) return [];
+    const first = defaultDeck(d);
+    const out = [first];
+    for (let k = 0; k <= this.stories; k++) if (k !== first && deckAllows(d, k, this.stories)) out.push(k);
+    return out;
+  }
+
+  /** First free spot for a module: on its default deck first, scanning from the front. */
+  findSpot(key: string, onDeck?: number): [number, number, number] | null {
+    for (const deck of onDeck === undefined ? this.decksFor(key) : [onDeck]) {
+      for (let cy = 0; cy < this.rows; cy++) for (let cx = 0; cx < this.cols; cx++) if (this.canPlace(key, cx, cy, -1, deck)) return [cx, cy, deck];
+    }
     return null;
   }
 
   autoAdd(key: string, weapon: WeaponItem | null = null): ModuleInst | null {
     const s = this.findSpot(key);
-    return s ? this.addModule(key, s[0], s[1], weapon) : null;
+    return s ? this.addModule(key, s[0], s[1], weapon, s[2]) : null;
   }
 
   /** Changes chassis, keeping the layout anchored at the top-left and centring it if the hull is wider. */
@@ -250,15 +320,29 @@ export class Tank {
     this.chassis = key;
     this.cols = c.cols;
     this.rows = c.rows;
-    this.grid = new Int32Array(this.cols * this.rows).fill(-1);
+    this.grid = new Int32Array(this.cols * this.rows * this.decks).fill(-1);
     for (const m of this.modules) {
       const d = MODULES[m.key];
       if (ox >= 0 && oy >= 0 && m.cx + ox + d.w <= this.cols && m.cy + oy + d.h <= this.rows) {
         m.cx += ox;
         m.cy += oy;
       }
-      for (let y = m.cy; y < m.cy + d.h; y++) for (let x = m.cx; x < m.cx + d.w; x++) this.grid[y * this.cols + x] = m.id;
+      this.stamp(m);
     }
+    this.version++;
+    const frac = this.hp / Math.max(1, this.stats.maxHp);
+    this.recalc();
+    this.hp = Math.max(1, this.stats.maxHp * frac);
+    return true;
+  }
+
+  /** Adds (or removes) stories below the roof. New stories go at the bottom; buildings keep their decks. */
+  setStories(n: number): boolean {
+    n = Math.max(1, Math.min(4, Math.round(n)));
+    if (n < this.stories && this.modules.some((m) => m.deck > n)) return false;
+    this.stories = n;
+    this.grid = new Int32Array(this.cols * this.rows * this.decks).fill(-1);
+    for (const m of this.modules) this.stamp(m);
     this.version++;
     const frac = this.hp / Math.max(1, this.stats.maxHp);
     this.recalc();
@@ -272,27 +356,22 @@ export class Tank {
    */
   ensureFixed(): ModuleInst[] {
     const cc = this.modules.find((m) => MODULES[m.key].required)?.lvl ?? 1;
-    const spots = fixedSpots(cc, this.cols, this.rows);
+    const spots = fixedSpots(cc, this.cols, this.rows, this.klass === 'bastion');
     const have = { pad: this.modules.filter((m) => m.key === 'pad').sort((a, b) => a.id - b.id), main_gun: this.modules.filter((m) => m.key === 'main_gun').sort((a, b) => a.id - b.id) };
     const used = { pad: 0, main_gun: 0 };
     this.grid.fill(-1);
-    const stamp = (m: ModuleInst): void => {
-      const d = MODULES[m.key];
-      for (let y = m.cy; y < m.cy + d.h; y++) for (let x = m.cx; x < m.cx + d.w; x++) this.grid[y * this.cols + x] = m.id;
-    };
     const keep = new Set<ModuleInst>();
     for (const sp of spots) {
       let m = have[sp.key][used[sp.key]++];
       if (!m) {
-        m = {
-          id: this.nextModId++, key: sp.key, cx: sp.cx, cy: sp.cy, weapon: null, mode: 'auto', aim: this.rot, cd: Math.random() * 0.5, recoil: 0, targetId: 0, stats: null,
-          burst: 0, lvl: 1, shots: 0, ramp: 0, rampTarget: 0, cd2: 0, built: true,
-        };
+        m = this.newInst(sp.key, sp.cx, sp.cy, ROOF, null);
+        m.cd = Math.random() * 0.5;
         this.modules.push(m);
       }
       m.cx = sp.cx;
       m.cy = sp.cy;
-      stamp(m);
+      m.deck = ROOF;
+      this.stamp(m);
       keep.add(m);
     }
     // Fixed weapons beyond this level's spots (shouldn't happen) are dropped with the rest below.
@@ -303,7 +382,7 @@ export class Tank {
         evicted.push(m);
         continue;
       }
-      if (this.canPlace(m.key, m.cx, m.cy, m.id) || this.moveToFree(m)) stamp(m);
+      if (this.canPlace(m.key, m.cx, m.cy, m.id, m.deck) || this.moveToFree(m)) this.stamp(m);
       else evicted.push(m);
     }
     if (evicted.length) this.modules = this.modules.filter((m) => !evicted.includes(m));
@@ -312,23 +391,26 @@ export class Tank {
     return evicted;
   }
 
-  /** Moves a module (not yet on the grid) to the free spot nearest its current one. */
+  /** Moves a module (not yet on the grid) to the free spot nearest its current one, on any deck it may use. */
   private moveToFree(m: ModuleInst): boolean {
     const d = MODULES[m.key];
-    let best: [number, number] | null = null;
+    let best: [number, number, number] | null = null;
     let bd = Infinity;
-    for (let cy = 0; cy + d.h <= this.rows; cy++) {
-      for (let cx = 0; cx + d.w <= this.cols; cx++) {
-        const dd = Math.abs(cx - m.cx) + Math.abs(cy - m.cy);
-        if (dd < bd && this.canPlace(m.key, cx, cy, m.id)) {
-          bd = dd;
-          best = [cx, cy];
+    for (const deck of this.decksFor(m.key)) {
+      for (let cy = 0; cy + d.h <= this.rows; cy++) {
+        for (let cx = 0; cx + d.w <= this.cols; cx++) {
+          const dd = Math.abs(cx - m.cx) + Math.abs(cy - m.cy) + (deck === m.deck ? 0 : 1000);
+          if (dd < bd && this.canPlace(m.key, cx, cy, m.id, deck)) {
+            bd = dd;
+            best = [cx, cy, deck];
+          }
         }
       }
     }
     if (!best) return false;
     m.cx = best[0];
     m.cy = best[1];
+    m.deck = best[2];
     return true;
   }
 
@@ -349,9 +431,16 @@ export class Tank {
     let hp = ch.hp, armor = ch.armor, power = 0, use = 0, thrust = 0, mass = ch.mass, cargo = BASE_CARGO, crewCap = 0;
     let vision = 0, drill = 1, harvest = 1, repair = 0, vault = 0, food = 0, radar = 0, shield = 0, shieldRegen = 0;
     let refinery = false, workshop = false, garage = false, medbay = false, mess = false;
-    let cards = 0, forge = 0, training = 0, sanctum = 0, depot = 0;
+    let cards = 0, forge = 0, training = 0, sanctum = 0, depot = 0, bunks = 0;
     const protects = new Set<Hazard>();
     let cc = 1;
+    const fortress = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
+    const cm = classMods(fortress ? this.klass : 'juggernaut', fortress ? this.classMk : 0);
+    if (!fortress) Object.assign(cm, { hp: 1, armor: 0, speed: 1, turn: 1, range: 1, dmg: 1, mainDmg: 1, bunks: 1, soldierDmg: 1, cargo: 1, harvest: 1, repair: 0, ram: 1, nitro: 1 });
+    // Every story past the second is more hull (and more weight).
+    const extra = fortress ? Math.max(0, this.stories - 2) : 0;
+    hp *= 1 + 0.22 * extra;
+    mass *= 1 + 0.08 * extra;
     for (const m of this.modules) {
       const d: ModuleDef = MODULES[m.key];
       mass += d.w * d.h * 0.6 * this.cell * this.cell;
@@ -365,6 +454,7 @@ export class Tank {
       thrust += (d.thrust ?? 0) * f;
       cargo += Math.round((d.cargo ?? 0) * f);
       crewCap += d.crew ? d.crew + (m.lvl - 1) : 0;
+      if (d.bunks) bunks += d.bunks * (1 + 0.5 * (m.lvl - 1));
       vision += (d.vision ?? 0) * f;
       drill = Math.max(drill, d.drill ?? 1);
       harvest *= 1 + ((d.harvest ?? 1) - 1) * f;
@@ -403,9 +493,9 @@ export class Tank {
       const sanctumF = fam === 'arcane' && sanctum ? 0.1 * sanctum : 0;
       const mods: WeaponMods = {
         ...base,
-        dmg: base.dmg * (1 + crew.dmg) * (1 + sanctumF) * (1 + 0.15 * (m.lvl - 1)) * this.dmgScale,
+        dmg: base.dmg * (1 + crew.dmg) * (1 + sanctumF) * (1 + 0.15 * (m.lvl - 1)) * this.dmgScale * cm.dmg * (m.key === 'main_gun' ? cm.mainDmg : 1),
         rate: base.rate * (1 + crew.rate) * (1 + depotF),
-        range: base.range * (1 + crew.range),
+        range: base.range * (1 + crew.range) * cm.range,
         crit: base.crit + crew.crit,
       };
       m.stats = weaponStats(m.weapon, mods);
@@ -418,25 +508,59 @@ export class Tank {
     const dread = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
     const length = this.rows * this.cell + (dread ? 2.8 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
-    const topSpeed = this.anchored ? 0 : (2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed);
+    const topSpeed = this.anchored ? 0 : (2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed) * cm.speed;
+    this.handling = cm.turn;
+    this.ram = cm.ram;
+    this.nitroMult = cm.nitro;
+    this.soldierDmg = cm.soldierDmg;
+    const bunkTotal = Math.round(bunks * cm.bunks);
+    const manning = this.man(this.kind === 'main' ? this.troops : Infinity);
     const turnRate = 1.9 * Math.sqrt(8 / ((this.rows + this.cols * 0.5) * this.cell / 0.5)) * (this.kind === 'main' ? 1.6 : 1);
     this.stats = {
-      maxHp: Math.round(hp * hull.hp * (1 + crew.hp)),
-      armor: Math.min(0.6, armor + hull.armor + crew.armor),
+      maxHp: Math.round(hp * hull.hp * (1 + crew.hp) * cm.hp),
+      armor: Math.min(0.6, armor + hull.armor + crew.armor + cm.armor),
       shield: Math.round(shield * hull.shield * (1 + crew.shield)),
       shieldRegen: shieldRegen * hull.shieldRegen,
       power, use, powerRatio, thrust, mass, topSpeed, turnRate,
-      cargo: Math.round(cargo + hull.cargo + crew.cargo),
+      cargo: Math.round((cargo + hull.cargo + crew.cargo) * cm.cargo),
       crewCap: Math.min(15, crewCap),
       vision: vision + crew.vision,
-      drill, harvest: harvest * hull.harvest * (1 + crew.harvest),
-      protects, repair: repair + crew.regen, vault, food, radar, refinery, workshop, garage, medbay,
+      drill, harvest: harvest * hull.harvest * (1 + crew.harvest) * cm.harvest,
+      protects, repair: repair + crew.regen + cm.repair, vault, food, radar, refinery, workshop, garage, medbay,
       width, length, radius: width / 2, crush: hull.crush, loot: hull.loot * (1 + crew.loot),
       cards, forge, training, sanctum, depot, mess, cc,
+      bunks: bunkTotal, crewWanted: manning.wanted, crewManned: manning.manned,
     };
     if (this.cargo.size !== this.stats.cargo) this.cargo.resize(this.stats.cargo);
     this.hp = Math.min(this.hp, this.stats.maxHp);
     this.shield = Math.min(this.shield, this.stats.shield);
+  }
+
+  /**
+   * Puts `troops` on the guns and nests: main batteries first, then heavy mounts, pads, the rest, then the roof
+   * nests. Each gun needs 1 (2 for heavies); a heavy with only one hand fires at half rate.
+   */
+  man(troops: number): { wanted: number; manned: number } {
+    const order = (m: ModuleInst): number => (m.key === 'main_gun' ? 0 : m.key === 'hp_heavy' ? 1 : m.key === 'pad' ? 2 : MODULES[m.key].hardpoint ? 3 : 4);
+    const posts = this.modules.filter((m) => m.built && ((m.weapon && MODULES[m.key].hardpoint) || MODULES[m.key].nest)).sort((a, b) => order(a) - order(b) || a.id - b.id);
+    let left = troops, wanted = 0, manned = 0;
+    for (const m of this.modules) m.crew = 0;
+    for (const m of posts) {
+      const d = MODULES[m.key];
+      const need = d.nest ? d.soldiers ?? 2 : crewNeed(WEAPONS[m.weapon!.key]?.size ?? 'light');
+      wanted += need;
+      m.crew = Math.max(0, Math.min(need, left));
+      left -= m.crew;
+      manned += m.crew;
+    }
+    return { wanted, manned };
+  }
+
+  /** Troops a gun or nest needs to be fully manned. */
+  crewNeeded(m: ModuleInst): number {
+    const d = MODULES[m.key];
+    if (d.nest) return d.soldiers ?? 2;
+    return m.weapon && d.hardpoint ? crewNeed(WEAPONS[m.weapon.key]?.size ?? 'light') : 0;
   }
 
   /** Applies research + crew bonuses (player tanks). */
@@ -448,6 +572,19 @@ export class Tank {
   }
 
   /* ---------------- geometry ---------------- */
+
+  /** A land-cruiser hull (yours, rivals, other players) with stories. */
+  get fortress(): boolean {
+    return this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
+  }
+
+  /** World height of a deck's floor (deck 0 = the roof top). */
+  deckY(deck = 0): number {
+    const k = this.cell / 0.5;
+    if (!this.fortress) return SMALL_DECK * k;
+    if (deck <= 0) return (HULL_BASE + this.stories * STORY_H) * k;
+    return (HULL_BASE + (this.stories - deck) * STORY_H + 0.03) * k;
+  }
 
   /** Local (forward, right) -> world. */
   toWorld(lx: number, lz: number): { x: number; y: number } {
@@ -521,13 +658,18 @@ export class Tank {
   serialize(): TankSave {
     return {
       chassis: this.chassis, cols: this.cols, rows: this.rows, drive: this.drive, x: this.x, y: this.y, rot: this.rot, hp: this.hp, shield: this.shield,
-      modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined, b: m.built ? undefined : false })),
+      stories: this.stories, klass: this.klass, classMk: this.classMk, troops: this.troops,
+      modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, d: m.deck, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined, b: m.built ? undefined : false })),
       cargo: this.cargo.snapshot(),
     };
   }
 
   static deserialize(s: TankSave, team: Team = 'player', kind: TankKind = 'main', name = 'Fortress'): Tank {
     const t = new Tank(team, kind, s.chassis, name);
+    if (s.klass) t.klass = s.klass;
+    t.classMk = s.classMk ?? 1;
+    if (s.stories && s.stories !== t.stories) t.setStories(s.stories);
+    t.troops = s.troops ?? 0;
     t.drive = s.drive;
     t.x = s.x;
     t.y = s.y;
@@ -538,7 +680,9 @@ export class Tank {
     const ox = Math.max(0, Math.floor((t.cols - oldCols) / 2)), oy = Math.max(0, Math.floor((t.rows - oldRows) / 2));
     for (const m of s.modules) {
       if (!MODULES[m.key]) continue;
-      const inst = t.addModule(m.key, m.cx + ox, m.cy + oy, m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null);
+      // Saves from before the fortress had stories: guns and the tower go on the roof, the rest on the upper deck.
+      const deck = m.d ?? defaultDeck(MODULES[m.key]);
+      const inst = t.addModule(m.key, m.cx + ox, m.cy + oy, m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null, deck) ?? t.addModule(m.key, m.cx + ox, m.cy + oy, m.weapon && WEAPONS[m.weapon.key] ? m.weapon : null, deck === ROOF ? ROOF : 1);
       if (inst) {
         inst.mode = 'auto';
         inst.aim = t.rot;
@@ -547,6 +691,8 @@ export class Tank {
       }
     }
     if (!t.modules.some((m) => m.key === 'bridge')) t.autoAdd('bridge');
+    // Saves from before troops: everyone's aboard.
+    if (s.troops === undefined) t.troops = kind === 'main' ? t.stats.bunks : 0;
     t.recalc();
     t.cargo = new Inventory(t.stats.cargo, s.cargo);
     t.hp = Math.min(t.stats.maxHp, s.hp);
@@ -566,6 +712,11 @@ export interface TankSave {
   rot: number;
   hp: number;
   shield?: number;
-  modules: { key: string; cx: number; cy: number; weapon: WeaponItem | null; mode?: FireMode; lvl?: number; b?: boolean }[];
+  /** v0.8+: stories below the roof, hull class and mark, troops aboard. */
+  stories?: number;
+  klass?: HullClass;
+  classMk?: number;
+  troops?: number;
+  modules: { key: string; cx: number; cy: number; d?: number; weapon: WeaponItem | null; mode?: FireMode; lvl?: number; b?: boolean }[];
   cargo: Slot[];
 }
