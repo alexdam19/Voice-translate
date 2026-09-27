@@ -44,5 +44,8 @@ export function build(g: Game, key: string): number {
   if (!r.ok) throw new Error(r.msg);
   const m = g.player.modules[g.player.modules.length - 1];
   finishNow(g, m.id);
+  // Enough people to staff it.
+  g.player.troops = Math.max(g.player.troops, g.player.stats.bunks, g.player.stats.crewWanted);
+  g.player.recalc();
   return m.id;
 }

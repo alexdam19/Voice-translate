@@ -195,7 +195,8 @@ export function updateAllies(g: Game, dt: number): void {
 /** Marines and scout buggies: fight near their anchor, otherwise walk (or drive) to it. */
 function updateMarine(g: Game, a: Ally, dt: number, an: Anchor): void {
   const buggy = a.kind === 'buggy';
-  const speed = buggy ? 10 : 4.5;
+  const tank = a.kind === 'minitank';
+  const speed = buggy ? 10 : tank ? 7.5 : 4.5;
   const best = targetFor(g, a, an, a.range + (an.busy ? 2 : 8));
   let mx = 0, my = 0;
   if (best) {
@@ -207,9 +208,9 @@ function updateMarine(g: Game, a: Ally, dt: number, an: Anchor): void {
     }
     a.cd -= dt;
     if (a.cd <= 0 && bd <= a.range + best.r) {
-      a.cd = buggy ? 0.25 : a.heavy ? 0.5 : 0.7;
-      shot(g, a, Math.atan2(best.y - a.y, best.x - a.x), 28, a.dmg, { splash: a.heavy ? 0.8 : 0, targetId: best.id, color: buggy ? '#ffe57f' : '#ff8a80' });
-      g.hooks.sound('smg', a.x, a.y, 0.2);
+      a.cd = buggy ? 0.25 : tank ? 1.1 : a.heavy ? 0.5 : 0.7;
+      shot(g, a, Math.atan2(best.y - a.y, best.x - a.x), tank ? 30 : 28, a.dmg, { splash: tank ? 1.4 : a.heavy ? 0.8 : 0, targetId: best.id, color: buggy ? '#ffe57f' : tank ? '#ffab40' : '#ff8a80' });
+      g.hooks.sound(tank ? 'cannon' : 'smg', a.x, a.y, tank ? 0.4 : 0.2);
     }
   }
   if (!mx && !my) {

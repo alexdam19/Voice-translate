@@ -117,7 +117,14 @@ export const CARD_LIST: readonly CardDef[] = Object.values(CARDS);
 /** The 8 commons every commander starts with. */
 export const STARTER_DECK = ['artillery', 'salvo', 'weld', 'nitro', 'barrage', 'squad', 'mines', 'shield_surge'];
 
+/** Starting deck slots; more open up the longer you play (see `deckSlots`). */
 export const DECK_SIZE = 8;
+export const MAX_DECK = 16;
+
+/** Deck slots: 8, +1 every 4 commander levels and +1 every 4 hordes survived (up to 16). */
+export function deckSlots(level: number, hordes: number): number {
+  return Math.min(MAX_DECK, DECK_SIZE + Math.floor((level - 1) / 4) + Math.min(4, Math.floor(hordes / 4)));
+}
 export const HAND_SIZE = 4;
 export const MAX_CARD_LEVEL = 10;
 export const BASE_MAX_ENERGY = 10;

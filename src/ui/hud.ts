@@ -12,6 +12,9 @@ import { waveStatus } from '../game/systems/waves';
 
 import type { DriveKey } from '../shared/types';
 import type { Game } from '../game/game';
+import { isDocked, mission } from '../game/campaign';
+import { shift } from '../game/systems/crewlife';
+import { STORMS } from '../game/systems/weather';
 import { FEATURES, levelRoad, MAX_COMMANDER_LEVEL, type FeatureKey, type LevelReward } from '../game/progress';
 import { SQUADS, squadSize, type SquadType } from '../game/squads';
 import { forgeSpeed } from '../game/systems/arsenal';
@@ -50,6 +53,8 @@ export interface HudActions {
   village(on: boolean): void;
   trackClick(): void;
   untrack(): void;
+  /** Set up camp / pack up. */
+  camp(): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -69,6 +74,8 @@ const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
   { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
   { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
+  { key: 'shipyard', label: 'SHIPYARD', sub: 'U', cls: 'shipyard' },
+  { key: 'camp', label: 'CAMP', sub: 'T', cls: 'camp' },
   { key: 'blueprint', label: 'BLUEPRINT', sub: 'N' },
   { key: 'cargo', label: 'CARGO', sub: 'I' },
   { key: 'map', label: 'MAP', sub: 'M' },
@@ -81,6 +88,8 @@ export class Hud {
   private cmd = h('div', 'cmdr');
   private zone = h('div', 'zone-banner');
   private obj = h('div', 'objective');
+  private mission = h('div', 'mission');
+  private stormBar = h('div', 'storm-bar');
   private track = h('div', 'tracker');
   private jobs = h('div', 'jobs');
   private res = h('div', 'resources');
@@ -140,7 +149,11 @@ export class Hud {
     // First, so every other HUD element sits on top of its touch area.
     this.joy = new Joystick(this.root);
     const tl = h('div', 'hud-tl');
-    tl.append(this.cmd, this.zone, this.obj, this.track, this.jobs);
+    tl.append(this.cmd, this.zone, this.mission, this.obj, this.track, this.jobs);
+    this.mission.addEventListener('click', (e) => {
+      e.stopPropagation();
+      act.openPanel('map');
+    });
     this.cmd.addEventListener('click', (e) => {
       e.stopPropagation();
       act.openPanel('progress');
@@ -160,7 +173,7 @@ export class Hud {
     const tr = h('div', 'hud-tr');
     tr.append(this.menu, this.res);
     const tc = h('div', 'hud-tc');
-    tc.append(this.waveBar, this.lvlBanner, this.boss, this.buffs, this.hazard, this.toasts);
+    tc.append(this.waveBar, this.stormBar, this.lvlBanner, this.boss, this.buffs, this.hazard, this.toasts);
     this.lvlBanner.addEventListener('click', (e) => {
       e.stopPropagation();
       this.lvlT = 0;
@@ -175,6 +188,7 @@ export class Hud {
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         if (m.key === 'base') act.village(!this.village);
+        else if (m.key === 'camp') act.camp();
         else act.openPanel(m.key);
       });
       this.menu.appendChild(b);
@@ -433,14 +447,41 @@ export class Hud {
     this.updateJobs(g);
     // Resources
     const res = ['scrap', 'iron_plate', 'copper_wire', 'circuit', 'titanium_alloy', 'tech_parts'].map((id) => `<span title="${getItem(id).name}"><img src="${itemIcon(id)}">${p.cargo.count(id)}</span>`);
-    res.push(`<span title="Crew aboard / bunks">👥 ${g.mainCrew().length}/${g.crewCap()}</span>`);
+    const sh = shift(g);
+    const l = g.life;
+    const food = p.cargo.count('rations');
+    const foodMins = sh.eatPerMin > sh.growPerMin ? food / Math.max(0.01, sh.eatPerMin - sh.growPerMin) : Infinity;
+    res.push(`<span class="crewchip ${sh.resting < sh.needRest ? 'warn' : ''}" title="People aboard / bunks. On duty ${sh.onDuty} (of ${p.stats.crewWanted} posts), resting ${sh.resting} (need ${sh.needRest} resting to rotate shifts).">👥 ${p.troops}/${p.stats.bunks}</span>`);
+    res.push(`<span class="${food < 5 || foodMins < 3 ? 'warn' : ''}" title="Rations: ${sh.eatPerMin.toFixed(1)}/min eaten, ${sh.growPerMin.toFixed(1)}/min grown${foodMins !== Infinity ? ` · runs out in ~${Math.ceil(foodMins)} min` : ''}"><img src="${itemIcon('rations')}">${food}</span>`);
+    if (l.fatigue > 0.05 || l.hunger > 0.05) res.push(`<span class="warn" title="Crew fatigue and hunger slow every station and gun">${l.fatigue > 0.05 ? `😴${Math.round(l.fatigue * 100)}%` : ''}${l.hunger > 0.05 ? ` 🍽${Math.round(l.hunger * 100)}%` : ''}</span>`);
     setHTML(this.res, res.join(''));
+    // The mission (the campaign goal).
+    if (g.mode === 'world') {
+      const ms = mission(g);
+      const dist = ms.x !== undefined && ms.y !== undefined ? Math.hypot(ms.x - p.x, ms.y - p.y) : 0;
+      const eta = dist > 0 ? Math.ceil(dist / Math.max(1, p.stats.topSpeed) / 60) : 0;
+      setHTML(this.mission, `<div class="mt">MISSION ${ms.step}/${ms.of}${dist > 0 ? ` · ${dist > 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`}${eta ? ` · ~${eta} min` : ''}` : ''}</div><div class="mn">${esc(ms.title)}</div><div class="mh">${esc(ms.text)}</div>`);
+      this.mission.style.display = 'block';
+    } else this.mission.style.display = 'none';
+    // Storms.
+    const w = g.weather;
+    if (g.mode === 'world' && w.phase !== 'none' && w.kind) {
+      const sd = STORMS[w.kind];
+      this.stormBar.style.display = 'block';
+      this.stormBar.style.setProperty('--sc', sd.color);
+      setHTML(this.stormBar, w.phase === 'warning' ? `⚠ ${esc(sd.name.toUpperCase())} IN ${Math.ceil(w.t)}s` : `🌪 ${esc(sd.name.toUpperCase())} · ${Math.ceil(w.t)}s · soldiers inside`);
+    } else this.stormBar.style.display = 'none';
     // Menu buttons (features appear as you level)
     for (const m of MENU) {
       const b = this.badges.get(m.key)!;
       const f = m.feature ? FEATURES.find((k) => k.key === m.feature) : undefined;
       b.style.display = !f || c.level >= f.level || (m.key === 'arsenal' && g.armory.length > 0) ? '' : 'none';
-      b.classList.toggle('on', m.key === 'base' && village);
+      b.classList.toggle('on', (m.key === 'base' && village) || (m.key === 'camp' && g.deploy.state !== 'mobile'));
+      if (m.key === 'shipyard') b.style.display = g.mode === 'world' && isDocked(g) ? '' : 'none';
+      if (m.key === 'camp') {
+        b.style.display = g.mode === 'world' ? '' : 'none';
+        setHTML(b.querySelector('b')!, g.deploy.state === 'up' ? 'PACK UP' : g.deploy.state === 'deploying' ? 'DEPLOYING' : g.deploy.state === 'packing' ? 'PACKING' : 'CAMP');
+      }
     }
     const badge = (k: string, txt: string): void => {
       const s = this.badges.get(k)!.querySelector('.badge') as HTMLElement;
@@ -467,7 +508,7 @@ export class Hud {
       setHTML(this.waveBar, `<div class="wb-t">${ws.urgent ? '☣ ' : ''}${esc(ws.label)}</div><div class="wb-b"><div style="width:${Math.round(Math.max(0, Math.min(1, ws.frac)) * 100)}%"></div></div>`);
     } else this.waveBar.style.display = 'none';
     // Boss bar
-    const titan = g.enemies.find((e) => e.titan && Math.hypot(e.x - p.x, e.y - p.y) < 70);
+    const titan = g.enemies.find((e) => e.boss && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 90) ?? g.enemies.find((e) => e.titan && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 70);
     const rival = g.tanks.find((t) => t.kind === 'rival' && !t.dead && Math.hypot(t.x - p.x, t.y - p.y) < 110);
     if (rival) {
       this.boss.style.display = 'block';
@@ -475,7 +516,7 @@ export class Hud {
       setHTML(this.boss, `<div class="bn">${esc(rival.name)} <small>RIVAL ${esc(chassisForCC(rival.stats.cc).name.toUpperCase())} · ${Math.round(Math.hypot(rival.x - p.x, rival.y - p.y))}m</small></div><div class="bb"><div style="width:${hp * 100}%"></div></div>`);
     } else if (titan) {
       this.boss.style.display = 'block';
-      setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${esc(titan.kind.replace('titan_', '').toUpperCase())} TITAN</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
+      setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${titan.boss ? 'BOSS' : `${esc(titan.kind.replace('titan_', '').toUpperCase())} TITAN`}</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
     } else this.boss.style.display = 'none';
     // Level banner timer
     if (this.lvlT > 0) {

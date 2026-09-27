@@ -19,6 +19,8 @@ import { trackInfo } from './game/systems/tracking';
 import { Minimap } from './render/minimap';
 import { deckHeight } from './render/models';
 import type { HullClass } from './game/classes';
+import { toggleDeploy } from './game/systems/camp';
+import { isDocked, mission } from './game/campaign';
 import { Overlay, type VillageState } from './render/overlay';
 import { View } from './render/view';
 import { ChestUI } from './ui/chest';
@@ -58,6 +60,7 @@ export class App {
   paused = false;
   /** Wheel zoom on top of the automatic zoom. */
   private zoomMul = 1;
+  private packHint = false;
   /** Camera look-ahead in the driving direction. */
   private camLead = { x: 0, y: 0 };
   private villageZoomMul = 1;
@@ -96,6 +99,7 @@ export class App {
       village: (on) => this.setVillage(on),
       trackClick: () => this.trackClick(),
       untrack: () => this.game && untrack(this.game),
+      camp: () => this.toggleCamp(),
     });
     this.mapCtx = this.hud.minimap.getContext('2d')!;
     this.villageUI = new VillageUI(uiRoot, this);
@@ -145,6 +149,7 @@ export class App {
         this.setVillage(false);
       },
       enterDeadZone: () => this.enterDeadZone(),
+      victory: () => this.showVictory(),
     };
     this.view.setWorld(g);
     this.view.cam.x = g.player.x;
@@ -154,6 +159,30 @@ export class App {
     this.running = true;
     this.title.hide();
     this.saveT = 30;
+  }
+
+  /** The Mothership woke: the end credits of the campaign (the world keeps going). */
+  showVictory(): void {
+    const g = this.game;
+    let el = document.querySelector('.victory') as HTMLDivElement | null;
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'victory';
+      document.body.appendChild(el);
+    }
+    const mins = Math.round(g.stats.time / 60);
+    el.innerHTML = `<div class="vc"><h1>THE MOTHERSHIP WAKES</h1><p>You held it against the Last Horde and the Devourer. ${mins} minutes, ${g.stats.kills} kills, ${g.stats.hordes ?? 0} hordes survived, ${g.stats.bosses ?? 0} bosses.</p><p>The wasteland is still out there, and the hordes still come, stronger every time. Keep going.</p></div>`;
+    const b = document.createElement('button');
+    b.className = 'btn primary';
+    b.textContent = 'KEEP PLAYING';
+    b.addEventListener('click', () => {
+      el!.style.display = 'none';
+      this.paused = false;
+    });
+    el.querySelector('.vc')!.appendChild(b);
+    el.style.display = 'flex';
+    this.paused = true;
+    this.save();
   }
 
   save(): void {
@@ -459,6 +488,10 @@ export class App {
       this.overlay.drawVillage(g, this.vstate);
     } else if (g.mode === 'world') this.overlay.drawMarkers(g, this.hud.trackInfo?.target ?? null, this.hud.trackInfo?.target?.label ?? '');
     this.overlay.drawHorde(g);
+    if (g.mode === 'world' && !this.village) {
+      const ms = mission(g);
+      if (ms.x !== undefined && ms.y !== undefined) this.overlay.drawMission(g, ms.x, ms.y, ms.title.length > 26 ? `${ms.title.slice(0, 24)}…` : ms.title);
+    }
     this.minimap.draw(this.mapCtx, 220, 220, g, this.view, false);
     this.hud.update(g, dt, this.village);
     this.villageUI.update();
@@ -537,6 +570,14 @@ export class App {
       x = joy.x;
       y = joy.y;
     }
+    // Camped: packing up comes first.
+    if ((x || y) && g.deploy.state !== 'mobile') {
+      if (!this.packHint) this.hud.toast(g.deploy.state === 'packing' ? 'Packing up...' : 'You are camped: press T (CAMP) to pack up before you drive.', '#ffab40');
+      this.packHint = true;
+      di.active = false;
+      return;
+    }
+    this.packHint = false;
     // Driving off leaves the base view.
     if (this.village) {
       if (x || y) this.setVillage(false);
@@ -553,6 +594,13 @@ export class App {
       g.harvestId = 0;
       this.objCounters('wasd');
     }
+  }
+
+  /** Set up camp here, or pack it up. */
+  toggleCamp(): void {
+    const g = this.game;
+    if (!g || g.mode !== 'world') return;
+    this.hud.toast(toggleDeploy(g), '#ffd740');
   }
 
   private objCounters(k: string): void {
@@ -577,6 +625,8 @@ export class App {
       if (this.panels.isOpen) this.panels.close();
       this.setVillage(!this.village);
     }
+    if (i.consume('KeyT')) this.toggleCamp();
+    if (i.consume('KeyU') && this.game && isDocked(this.game)) this.panels.toggle('shipyard');
     const panelKeys: [string, string][] = [
       ['KeyC', 'cards'], ['KeyV', 'arsenal'], ['KeyK', 'crew'], ['KeyL', 'progress'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'], ['KeyN', 'blueprint'],
     ];

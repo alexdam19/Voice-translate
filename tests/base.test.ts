@@ -25,7 +25,7 @@ describe('the fortress is a full facility', () => {
     expect(p.weapons().length).toBe(5);
     expect(p.stats.powerRatio).toBe(1);
     expect(p.stats.cc).toBe(1);
-    expect(g.crewCap()).toBe(8);
+    expect(g.crewCap()).toBe(11);
     expect(g.mainCrew().length).toBe(4);
     // Two stories under the roof: guns and the tower up top, bunks and cargo on the upper deck, engines below.
     expect(p.stories).toBe(2);

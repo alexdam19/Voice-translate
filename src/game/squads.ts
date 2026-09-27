@@ -7,7 +7,7 @@ import type { AllyKind } from './entities';
  * A squad's level is its building's level, so upgrading the building upgrades the squad.
  */
 
-export type SquadType = 'marines' | 'buggies' | 'drones' | 'fighters' | 'walker';
+export type SquadType = 'marines' | 'buggies' | 'drones' | 'fighters' | 'walker' | 'minitanks';
 export type SquadOrder = 'follow' | 'guard' | 'scavenge';
 
 export interface SquadDef {
@@ -32,6 +32,7 @@ export const SQUADS: Record<SquadType, SquadDef> = {
   buggies: { key: 'buggies', name: 'Scout Buggies', building: 'garage', unit: 'buggy', desc: 'Fast armed buggies. Best at scavenging ahead: they harvest nodes and loot areas and bring the haul home.', sizes: [2, 3, 3, 4, 5], hp: 180, dmg: 9, range: 10, respawn: 18, canScavenge: true, color: '#ffd740' },
   drones: { key: 'drones', name: 'Guard Drones', building: 'drone_bay', unit: 'drone', desc: 'Laser drones. Quick to respawn and great at guarding an area.', sizes: [3, 4, 5, 6, 7], hp: 120, dmg: 18, range: 10, respawn: 12, canScavenge: false, color: '#80d8ff' },
   fighters: { key: 'fighters', name: 'Fighter Wing', building: 'jet_hangar', unit: 'jet', desc: 'Mini fighter jets that patrol the sky, strafing and bombing. Enemies can\'t hit them.', sizes: [2, 2, 3, 3, 4], hp: 1, dmg: 36, range: 12, respawn: 20, canScavenge: false, color: '#90caf9' },
+  minitanks: { key: 'minitanks', name: 'Mini Tanks', building: 'tank_bay', unit: 'minitank', desc: 'Small, fast escort tanks rolled out of the Tank Bay. They screen your flanks and hunt anything that gets close.', sizes: [1, 2, 2, 3, 4], hp: 900, dmg: 48, range: 14, respawn: 35, canScavenge: false, color: '#26c6da' },
   walker: { key: 'walker', name: 'Walker Mech', building: 'mech_bay', unit: 'mech', desc: 'A slow giant with a cannon and missile racks. Soaks up enormous damage.', sizes: [1, 1, 1, 2, 2], hp: 2200, dmg: 110, range: 16, respawn: 45, canScavenge: false, color: '#ffab40' },
 };
 

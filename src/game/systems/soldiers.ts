@@ -108,6 +108,7 @@ export function updateSoldiers(g: Game, t: Tank, dt: number): void {
       case 'rifle': {
         const p = launch(g, t, 'bullet', at.x, at.y, a + (Math.random() - 0.5) * 0.05, 36, dmg, 0, 0, 0, tgt, n.range, 0, undefined, undefined, undefined, n.color, 0.1);
         p.z = roof;
+        p.gun = true;
         p.vz = -(roof - (tgt.flying ? 1.6 : 0.5)) / Math.max(0.1, dist / 36);
         g.fx.push({ t: 'muzzle', x: at.x, y: at.y, a, color: n.color, size: 0.35 });
         if (Math.random() < 0.35) g.hooks.sound('smg', at.x, at.y, 0.18);
@@ -124,11 +125,13 @@ export function updateSoldiers(g: Game, t: Tank, dt: number): void {
         p.vy = (p.ty - at.y) / flight;
         p.vz = (9.8 * flight) / 2;
         p.z = roof;
+        p.gun = true;
         break;
       }
       case 'rocket': {
         const p = launch(g, t, 'missile', at.x, at.y, a, 17, dmg, n.splash, 0, 2.4, tgt, n.range * 1.3, 0, undefined, undefined, undefined, n.color, 0.22);
         p.z = roof;
+        p.gun = true;
         g.fx.push({ t: 'muzzle', x: at.x, y: at.y, a, color: '#ffab40', size: 0.6 });
         g.hooks.sound('rocket', at.x, at.y, 0.35);
         break;
@@ -144,7 +147,7 @@ export function updateSoldiers(g: Game, t: Tank, dt: number): void {
           let da = Math.abs(Math.atan2(dy, dx) - a);
           if (da > Math.PI) da = Math.PI * 2 - da;
           if (da > 0.5 && dd > 1.2) continue;
-          damageEnemy(g, e, dmg, { srcTank: t.id, silent: true });
+          damageEnemy(g, e, dmg, { srcTank: t.id, silent: true, weapon: true });
           e.burn = Math.max(e.burn, 2);
           e.burnDps = Math.max(e.burnDps, dmg * 0.8);
         }

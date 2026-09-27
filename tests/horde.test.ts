@@ -54,20 +54,39 @@ describe('horde waves', () => {
     expect(hordeSize(10, 3, false)).toBeGreaterThan(250);
   });
 
-  it('swarmers climb aboard, chew the hull, and get shaken off at speed', () => {
+  it('a few swarmers can only claw at the hull: they need a pile to climb it', () => {
     const g = game(6);
     const p = g.player;
     for (const m of p.modules) m.weapon = null;
+    p.troops = 0;
     p.recalc();
-    for (let i = 0; i < 40; i++) {
-      const a = (i / 40) * Math.PI * 2;
+    for (let i = 0; i < 30; i++) {
+      const a = (i / 30) * Math.PI * 2;
       const e = g.spawnEnemy('swarmer', p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 18, 1);
       e.horde = true;
     }
-    const hp = p.hp;
     run(g, 8);
+    expect(g.enemies.filter((e) => e.latch).length).toBe(0);
+  });
+
+  it('a wall of swarmers piles up against one side, climbs aboard, chews the hull, and gets shaken off at speed', () => {
+    const g = game(6);
+    const p = g.player;
+    for (const m of p.modules) m.weapon = null;
+    p.troops = 0;
+    p.recalc();
+    for (let i = 0; i < 160; i++) {
+      const a = (Math.random() - 0.5) * 0.8;
+      const d = 16 + Math.random() * 10;
+      const e = g.spawnEnemy('swarmer', p.x + Math.cos(a) * d, p.y + Math.sin(a) * d, 1);
+      e.horde = true;
+    }
+    const hp = p.hp;
+    run(g, 10);
     const on = g.enemies.filter((e) => e.latch);
     expect(on.length).toBeGreaterThan(5);
+    // The ones still on the ground are stacked up the side.
+    expect(Math.max(...g.enemies.filter((e) => !e.latch && p.edgeDist(e.x, e.y) < 1).map((e) => e.z))).toBeGreaterThan(1.5);
     expect(on.length).toBeLessThanOrEqual(latchCap(p));
     // Riding on the deck, not on the ground.
     for (const e of on) expect(p.hits(e.x, e.y, 0.1) && e.z > 1).toBe(true);

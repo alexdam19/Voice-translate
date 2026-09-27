@@ -1,6 +1,7 @@
 import { ZONE } from '../shared/map';
 import type { ProjKind } from '../shared/weapons';
 import type { EnemyKind } from './entities';
+import type { Faction } from '../shared/mapgen';
 
 export interface EnemyDef {
   kind: EnemyKind;
@@ -21,6 +22,22 @@ export interface EnemyDef {
   /** Spawn weight per zone. */
   zones: Partial<Record<number, number>>;
   color: string;
+  /** Who it fights for (region spawns and hordes pick by faction). */
+  faction?: Faction;
+  /** A boss: a 3D giant with a health bar across the screen and its own attack patterns. */
+  boss?: boolean;
+  /** Guns can't touch it: only cards, abilities and squads hurt it. */
+  immune?: boolean;
+  /** Blows up on contact (acid or fire). */
+  explode?: boolean;
+  /** Telegraphed ground slam instead of a bite. */
+  slam?: boolean;
+  /** Raises or calls in `n` of `kind` every `every` seconds while fighting. */
+  summon?: { kind: string; n: number; every: number };
+  /** Long-range: aims first (a warning line or circle), then fires. */
+  aimed?: 'line' | 'circle';
+  /** Doesn't move (turrets, mortar pits). */
+  still?: boolean;
 }
 
 const ALL = (w: number): Partial<Record<number, number>> => ({
@@ -41,6 +58,36 @@ export const ENEMIES: Record<string, EnemyDef> = {
   mech: { kind: 'mech', name: 'Walker Mech', hp: 900, r: 1.35, speed: 2.2, dmg: 16, range: 16, rate: 2.2, proj: 'bullet', projSpeed: 26, loot: 'elite', xp: 80, minThreat: 5, zones: ALL(1.5), color: '#78909c' },
   swarmer: { kind: 'swarmer', name: 'Swarmer', hp: 16, r: 0.32, speed: 6.2, dmg: 4, range: 0.4, rate: 1.4, loot: 'swarm', xp: 1.2, minThreat: 99, zones: {}, color: '#a5a58d' },
   leaper: { kind: 'leaper', name: 'Leaper', hp: 30, r: 0.36, speed: 5.2, dmg: 6, range: 0.4, rate: 1.2, loot: 'swarm', xp: 2.5, minThreat: 99, zones: {}, color: '#7cb342' },
+  /* ---------------- Zombies ---------------- */
+  z_walker: { kind: 'z_walker', name: 'Walker', hp: 40, r: 0.36, speed: 2.4, dmg: 7, range: 0.45, rate: 1, loot: 'swarm', xp: 2, minThreat: 1, zones: {}, color: '#8a9a5b', faction: 'zombie' },
+  z_runner: { kind: 'z_runner', name: 'Runner', hp: 22, r: 0.33, speed: 6.6, dmg: 5, range: 0.4, rate: 1.4, loot: 'swarm', xp: 1.5, minThreat: 1, zones: {}, color: '#9ccc65', faction: 'zombie' },
+  z_bloater: { kind: 'z_bloater', name: 'Bloater', hp: 90, r: 0.55, speed: 2.2, dmg: 45, range: 0.7, rate: 1, splash: 2.8, explode: true, loot: 'creature', xp: 6, minThreat: 1.5, zones: {}, color: '#c0ca33', faction: 'zombie' },
+  z_brute: { kind: 'z_brute', name: 'Tank Zombie', hp: 600, r: 1.05, speed: 2.8, dmg: 45, range: 1.2, rate: 0.55, slam: true, loot: 'elite', xp: 40, minThreat: 2.5, zones: {}, color: '#6d4c41', faction: 'zombie' },
+  /* ---------------- Necro ---------------- */
+  skeleton: { kind: 'skeleton', name: 'Skeleton', hp: 26, r: 0.34, speed: 5.4, dmg: 6, range: 0.45, rate: 1.2, loot: 'swarm', xp: 1.6, minThreat: 1, zones: {}, color: '#e0e0d0', faction: 'necro' },
+  skel_archer: { kind: 'skel_archer', name: 'Bone Archer', hp: 34, r: 0.36, speed: 3.2, dmg: 9, range: 13, rate: 0.7, proj: 'bullet', projSpeed: 22, loot: 'creature', xp: 4, minThreat: 1.5, zones: {}, color: '#d7ccc8', faction: 'necro' },
+  necromancer: { kind: 'necromancer', name: 'Necromancer', hp: 160, r: 0.5, speed: 2.6, dmg: 14, range: 12, rate: 0.5, proj: 'plasma', projSpeed: 14, summon: { kind: 'skeleton', n: 3, every: 7 }, loot: 'elite', xp: 25, minThreat: 2.2, zones: {}, color: '#7e57c2', faction: 'necro' },
+  bone_golem: { kind: 'bone_golem', name: 'Bone Colossus', hp: 800, r: 1.2, speed: 2.4, dmg: 55, range: 1.4, rate: 0.5, slam: true, loot: 'elite', xp: 55, minThreat: 3, zones: {}, color: '#bcaaa4', faction: 'necro' },
+  phantom: { kind: 'phantom', name: 'Phantom', hp: 300, r: 0.6, speed: 4.2, flying: true, dmg: 16, range: 7, rate: 0.8, proj: 'plasma', projSpeed: 13, immune: true, loot: 'elite', xp: 45, minThreat: 2.5, zones: {}, color: '#b388ff', faction: 'necro' },
+  /* ---------------- Cyborgs ---------------- */
+  cy_hound: { kind: 'cy_hound', name: 'Chrome Hound', hp: 36, r: 0.4, speed: 7, dmg: 7, range: 0.45, rate: 1.4, loot: 'swarm', xp: 2, minThreat: 1, zones: {}, color: '#80deea', faction: 'cyborg' },
+  cy_trooper: { kind: 'cy_trooper', name: 'Cyborg Trooper', hp: 70, r: 0.42, speed: 3.2, dmg: 10, range: 12, rate: 0.8, proj: 'plasma', projSpeed: 20, loot: 'trooper', xp: 6, minThreat: 1.5, zones: {}, color: '#4dd0e1', faction: 'cyborg' },
+  cy_enforcer: { kind: 'cy_enforcer', name: 'Enforcer', hp: 520, r: 0.95, speed: 2.3, dmg: 24, range: 11, rate: 0.9, proj: 'plasma', projSpeed: 16, splash: 1.2, loot: 'elite', xp: 45, minThreat: 3, zones: {}, color: '#26c6da', faction: 'cyborg' },
+  cy_sniper: { kind: 'cy_sniper', name: 'Longshot', hp: 90, r: 0.42, speed: 2.4, dmg: 34, range: 34, rate: 0.22, aimed: 'line', loot: 'trooper', xp: 18, minThreat: 2, zones: {}, color: '#00e5ff', faction: 'cyborg' },
+  /* ---------------- Military machines ---------------- */
+  mil_bot: { kind: 'mil_bot', name: 'Sentry Bot', hp: 45, r: 0.4, speed: 5.6, dmg: 6, range: 0.45, rate: 1.3, loot: 'swarm', xp: 2, minThreat: 1, zones: {}, color: '#aed581', faction: 'military' },
+  mil_artillery: { kind: 'mil_artillery', name: 'Mortar Pit', hp: 260, r: 0.8, speed: 0, dmg: 40, range: 40, rate: 0.18, splash: 3, aimed: 'circle', still: true, loot: 'elite', xp: 30, minThreat: 2, zones: {}, color: '#8d9a6a', faction: 'military' },
+  gunship: { kind: 'gunship', name: 'Gunship', hp: 380, r: 0.9, speed: 5, flying: true, dmg: 7, range: 14, rate: 3, proj: 'bullet', projSpeed: 26, loot: 'elite', xp: 32, minThreat: 2.5, zones: {}, color: '#78909c', faction: 'military' },
+  /* ---------------- Monsters (more) ---------------- */
+  bat: { kind: 'bat', name: 'Carrion Bat', hp: 20, r: 0.36, speed: 7.2, flying: true, dmg: 5, range: 0.5, rate: 1.5, loot: 'swarm', xp: 1.5, minThreat: 1.5, zones: {}, color: '#5d4037', faction: 'monster' },
+  /* ---------------- Bosses ---------------- */
+  boss_warlord: { kind: 'boss_warlord', name: 'Warlord Krag', hp: 5000, r: 2, speed: 3, dmg: 60, range: 14, rate: 0.5, boss: true, loot: 'titan', xp: 600, minThreat: 99, zones: {}, color: '#ff7043', faction: 'raider' },
+  boss_goliath: { kind: 'boss_goliath', name: 'Project Goliath', hp: 7000, r: 2.6, speed: 2.2, dmg: 70, range: 18, rate: 0.5, boss: true, loot: 'titan', xp: 700, minThreat: 99, zones: {}, color: '#7c8a5a', faction: 'military' },
+  boss_abomination: { kind: 'boss_abomination', name: 'The Abomination', hp: 6500, r: 2.4, speed: 3.2, dmg: 80, range: 4, rate: 0.5, boss: true, summon: { kind: 'z_runner', n: 8, every: 9 }, loot: 'titan', xp: 700, minThreat: 99, zones: {}, color: '#8d8a4a', faction: 'zombie' },
+  boss_overmind: { kind: 'boss_overmind', name: 'Overmind Prime', hp: 7500, r: 2.2, speed: 2.6, flying: true, dmg: 50, range: 16, rate: 0.5, boss: true, summon: { kind: 'cy_hound', n: 6, every: 10 }, loot: 'titan', xp: 750, minThreat: 99, zones: {}, color: '#b0bec5', faction: 'cyborg' },
+  boss_lich: { kind: 'boss_lich', name: 'The Lich King', hp: 7000, r: 1.8, speed: 2.4, flying: true, dmg: 55, range: 15, rate: 0.5, boss: true, summon: { kind: 'skeleton', n: 10, every: 8 }, loot: 'titan', xp: 750, minThreat: 99, zones: {}, color: '#9575cd', faction: 'necro' },
+  boss_queen: { kind: 'boss_queen', name: 'The Brood Queen', hp: 11000, r: 3, speed: 2.6, dmg: 90, range: 12, rate: 0.5, boss: true, summon: { kind: 'swarmer', n: 14, every: 7 }, loot: 'titan', xp: 1000, minThreat: 99, zones: {}, color: '#8e24aa', faction: 'monster' },
+  boss_devourer: { kind: 'boss_devourer', name: 'The Devourer', hp: 40000, r: 4.5, speed: 2.4, dmg: 140, range: 8, rate: 0.5, boss: true, summon: { kind: 'leaper', n: 16, every: 8 }, loot: 'titan', xp: 3000, minThreat: 99, zones: {}, color: '#4a148c', faction: 'monster' },
   guardian: { kind: 'guardian', name: 'Rune Guardian', hp: 700, r: 1.25, speed: 3, dmg: 30, range: 1.4, rate: 0.7, loot: 'elite', xp: 60, minThreat: 99, zones: {}, color: '#b388ff' },
   titan_walker: { kind: 'titan_walker', name: 'Colossal Walker', hp: 6000, r: 3, speed: 2, dmg: 90, range: 6, rate: 0.3, loot: 'titan', xp: 400, minThreat: 99, zones: {}, color: '#8d8d8d' },
   titan_beast: { kind: 'titan_beast', name: 'Dread Behemoth', hp: 5000, r: 2.6, speed: 3.6, dmg: 70, range: 3.5, rate: 0.5, loot: 'titan', xp: 400, minThreat: 99, zones: {}, color: '#6d4c41' },
@@ -56,3 +103,25 @@ export const TITAN_NAMES: Record<string, string[]> = {
   titan_beast: ['Cinderjaw', 'The Slag Hound', 'Emberback'],
   titan_worm: ['Sandmaw', 'The Deep Throat', 'Acid Leviathan'],
 };
+
+/** What each faction fields: its rank and file, its horde runners, its heavies, flyers and boss. */
+export const FACTION_UNITS: Record<Faction, { common: [string, number][]; horde: string[]; heavy: string[]; flyer: string | null; boss: string; name: string }> = {
+  monster: { name: 'the Brood', common: [['swarmer', 4], ['leaper', 2], ['spitter', 2], ['stalker', 1], ['bat', 2]], horde: ['swarmer', 'swarmer', 'leaper'], heavy: ['brute', 'stalker'], flyer: 'bat', boss: 'boss_queen' },
+  zombie: { name: 'the Dead', common: [['z_walker', 5], ['z_runner', 3], ['z_bloater', 1], ['z_brute', 0.4]], horde: ['z_runner', 'z_runner', 'z_walker'], heavy: ['z_brute', 'z_bloater'], flyer: null, boss: 'boss_abomination' },
+  necro: { name: 'the Necropolis', common: [['skeleton', 5], ['skel_archer', 3], ['necromancer', 0.7], ['phantom', 0.4], ['bone_golem', 0.3]], horde: ['skeleton', 'skeleton', 'skeleton'], heavy: ['bone_golem', 'necromancer'], flyer: 'phantom', boss: 'boss_lich' },
+  cyborg: { name: 'the Assembly', common: [['cy_hound', 3], ['cy_trooper', 4], ['cy_sniper', 1], ['cy_enforcer', 0.4], ['drone', 1]], horde: ['cy_hound', 'cy_hound', 'cy_hound'], heavy: ['cy_enforcer', 'cy_sniper'], flyer: 'drone', boss: 'boss_overmind' },
+  military: { name: 'the war machines', common: [['mil_bot', 4], ['drone', 2], ['mech', 0.5], ['gunship', 0.4], ['mil_artillery', 0.4], ['rocketeer', 1]], horde: ['mil_bot', 'mil_bot', 'mil_bot'], heavy: ['mech', 'gunship'], flyer: 'gunship', boss: 'boss_goliath' },
+  raider: { name: 'the gangs', common: [['raider', 4], ['rat', 3], ['rocketeer', 1], ['buggy', 1], ['bomber', 1], ['z_walker', 1]], horde: ['swarmer', 'z_runner', 'rat'], heavy: ['brute', 'buggy'], flyer: 'drone', boss: 'boss_warlord' },
+};
+
+/** Picks a unit of a faction for a spawn (weighted, respecting how dangerous the spot is). */
+export function pickFactionKind(f: Faction, threat: number): string {
+  const pool = FACTION_UNITS[f].common.filter(([k]) => ENEMIES[k].minThreat <= threat + 0.5);
+  const total = pool.reduce((a, [, w]) => a + w, 0);
+  let r = Math.random() * total;
+  for (const [k, w] of pool) {
+    r -= w;
+    if (r <= 0) return k;
+  }
+  return pool[0]?.[0] ?? 'rat';
+}

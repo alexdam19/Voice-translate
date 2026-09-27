@@ -4,11 +4,11 @@ import { canAfford, payCost, type Cost, type Stack } from '../shared/inventory';
 import { getItem } from '../shared/items';
 import { rollLoot } from '../shared/loot';
 import type { GameMap } from '../shared/map';
-import { generateWorld, threatAt, type Prop, type RuneKind, type WorldGen } from '../shared/mapgen';
+import { generateWorld, threatAt, type Faction, type Prop, type RuneKind, type WorldGen } from '../shared/mapgen';
 import { RNG } from '../shared/rng';
 import type { WeaponItem } from '../shared/weapons';
 import type { DriveKey } from '../shared/types';
-import { BASE_MAX_ENERGY, CARDS, DECK_SIZE, ENERGY_REGEN, HAND_SIZE, levelPower, MAX_CARD_LEVEL, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
+import { BASE_MAX_ENERGY, CARDS, deckSlots, ENERGY_REGEN, HAND_SIZE, levelPower, MAX_CARD_LEVEL, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
 import { computeCrewBonus, giveXp, makeRecruit, type CrewMember } from './crew';
 import { eid, type Ally, type ChestKind, type Enemy, type FloatText, type Pickup, type Projectile, type Reward, type Telegraph, type Zone } from './entities';
 import { ENEMIES } from './enemyDefs';
@@ -18,6 +18,10 @@ import { builderCount, levelBonus, levelRoad, MAX_COMMANDER_LEVEL, relicSlots, t
 import type { SquadState, SquadType } from './squads';
 import { crewFx, emptyCrewFx, type CrewFx } from './tech';
 import type { HullClass } from './classes';
+import { newCampaign, type Campaign } from './campaign';
+import { newCrewLife, type CrewLife } from './systems/crewlife';
+import { newStorm, type Storm } from './systems/weather';
+import { newDeploy, type Deploy } from './systems/camp';
 import { Tank } from './tank';
 import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates';
 
@@ -34,7 +38,8 @@ export type FxEvent =
   | { t: 'nuke'; x: number; y: number; r: number }
   | { t: 'wave'; x: number; y: number; a: number; r: number; spread: number; color: string }
   | { t: 'strike'; x: number; y: number; color: string }
-  | { t: 'teleport'; x: number; y: number };
+  | { t: 'teleport'; x: number; y: number }
+  | { t: 'debris'; x: number; y: number; h: number; color: string; n: number; fx: number; fy: number; push: number };
 
 /** A builder putting up a new building or upgrading one (Clash-of-Clans style, runs in real time). */
 export interface BuildJob {
@@ -68,6 +73,7 @@ export interface GameHooks {
   levelUp(reward: LevelReward): void;
   died(): void;
   enterDeadZone(): void;
+  victory?(): void;
 }
 
 export interface GameStats {
@@ -86,6 +92,8 @@ export interface GameStats {
   /** Troops killed. */
   lost?: number;
   bosses?: number;
+  /** Game time the Mothership woke for good. */
+  victory?: number;
 }
 
 export type OutriderOrder = { mode: 'follow' } | { mode: 'hold'; x: number; y: number } | { mode: 'expedition'; kind: 'node' | 'site'; id: number; phase: 'going' | 'working' | 'returning'; t: number };
@@ -144,7 +152,7 @@ export class Game {
   aim = { x: 0, y: 0 };
   respawnIn = 0;
   deadZoneMode = false;
-  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0, drive: 0, rival: 150, troop: 0, evict: 6 };
+  timers = { spawn: 2, raider: 50, titan: 200, crew: 0, vision: 0, hazard: 0, food: 0, recruit: 0, save: 30, train: 0, nav: 0, drive: 0, rival: 150, troop: 0, evict: 6, siege: 0, pylon: 0, finale: 0 };
   hazardWarn: string | null = null;
   hooks: GameHooks = { toast: () => {}, sound: () => {}, chest: () => {}, levelUp: () => {}, died: () => {}, enterDeadZone: () => {} };
   revealAll = false;
@@ -174,13 +182,21 @@ export class Game {
    * Horde waves (World War Z style): calm, a warning with the direction, then a surge that pours in from there.
    * `n` is the wave number (it only goes up), `total`/`spawned` count this wave's horde.
    */
-  wave = { n: 0, phase: 'calm' as 'calm' | 'warning' | 'surge', t: 100, dir: 0, total: 0, spawned: 0, batchT: 0 };
+  wave = { n: 0, phase: 'calm' as 'calm' | 'warning' | 'surge', t: 100, dir: 0, total: 0, spawned: 0, batchT: 0, faction: 'monster' as Faction, rate: 0, dur: 0, elapsed: 0, bossDone: false };
   /** Neighbour lookups for the crowd (rebuilt each step). */
   grid = new EnemyGrid();
   private enemyIndex = new Map<number, Enemy>();
   private titans: Enemy[] = [];
   /** Targets for the player's guns, built once per step. */
   targetCache: { at: number; list: Target[] } = { at: -1, list: [] };
+  /** The goal: strongholds, Mothership parts and the last stand. */
+  campaign: Campaign = newCampaign();
+  /** Life aboard: fatigue, hunger. */
+  life: CrewLife = newCrewLife();
+  /** The weather (storms). */
+  weather: Storm = newStorm();
+  /** Setting up camp. */
+  deploy: Deploy = newDeploy();
   /** Drive trains you own (swapping between them is free). */
   drivesOwned = new Set<DriveKey>(['wheels']);
   /** Pick the best owned drive train for the ground by itself. */
@@ -216,6 +232,8 @@ export class Game {
   /** Terrain chunks the fortress flattened something in (renderer rebuilds them). */
   dirtyChunks = new Set<number>();
   navDirty = false;
+  /** Building sections coming down after the fortress broke through them (tile, when, height). */
+  collapses: { tx: number; ty: number; t: number; fx: number; fy: number }[] = [];
 
   constructor(seed: number, gen?: WorldGen, klass: HullClass = 'juggernaut') {
     this.gen = gen ?? generateWorld(seed);
@@ -295,6 +313,11 @@ export class Game {
   /* Cards                                                             */
   /* ---------------------------------------------------------------- */
 
+  /** How many cards your deck holds right now (it grows as you play). */
+  deckSize(): number {
+    return deckSlots(this.commander.level, this.stats.hordes ?? 0);
+  }
+
   cardLevel(id: string): number {
     return this.cards[id]?.level ?? 0;
   }
@@ -326,7 +349,7 @@ export class Game {
     if (!c) {
       this.cards[id] = { level: 1, shards: Math.max(0, n - 1) };
       // Fill an empty deck slot automatically so new players see their new card right away.
-      if (CARDS[id].type !== 'relic' && this.deck.length < DECK_SIZE) {
+      if (CARDS[id].type !== 'relic' && this.deck.length < this.deckSize()) {
         this.deck.push(id);
         this.queue.push(id);
       }
@@ -604,7 +627,7 @@ export class Game {
     if (id === this.player.id && !this.player.dead) return { id, x: this.player.x, y: this.player.y, r: this.player.stats.width / 2, flying: false };
     if (this.outrider && id === this.outrider.id && !this.outrider.dead) return { id, x: this.outrider.x, y: this.outrider.y, r: this.outrider.stats.width / 2, flying: false };
     const a = this.allies.find((x) => x.id === id);
-    if (a && a.kind !== 'jet' && a.kind !== 'dragon' && a.kind !== 'mine') return { id, x: a.x, y: a.y, r: a.kind === 'mech' ? 1.2 : 0.35, flying: a.kind === 'drone' };
+    if (a && a.kind !== 'jet' && a.kind !== 'dragon' && a.kind !== 'mine') return { id, x: a.x, y: a.y, r: a.kind === 'mech' ? 1.2 : a.kind === 'minitank' ? 0.9 : 0.35, flying: a.kind === 'drone' };
     return null;
   }
 
@@ -613,7 +636,7 @@ export class Game {
     const out: Target[] = [];
     if (!this.player.dead) out.push({ id: this.player.id, x: this.player.x, y: this.player.y, r: this.player.stats.width / 2, flying: false });
     if (this.outrider && !this.outrider.dead) out.push({ id: this.outrider.id, x: this.outrider.x, y: this.outrider.y, r: this.outrider.stats.width / 2, flying: false });
-    for (const a of this.allies) if (a.kind !== 'jet' && a.kind !== 'dragon' && a.kind !== 'mine') out.push({ id: a.id, x: a.x, y: a.y, r: a.kind === 'mech' ? 1.2 : 0.35, flying: a.kind === 'drone' });
+    for (const a of this.allies) if (a.kind !== 'jet' && a.kind !== 'dragon' && a.kind !== 'mine') out.push({ id: a.id, x: a.x, y: a.y, r: a.kind === 'mech' ? 1.2 : a.kind === 'minitank' ? 0.9 : 0.35, flying: a.kind === 'drone' });
     return out;
   }
 
@@ -622,7 +645,7 @@ export class Game {
     const t = this.tankById(id);
     if (t) return t.edgeDist(x, y);
     const a = this.allies.find((k) => k.id === id);
-    return a ? Math.max(0, Math.hypot(a.x - x, a.y - y) - (a.kind === 'mech' ? 1.2 : 0.35)) : Infinity;
+    return a ? Math.max(0, Math.hypot(a.x - x, a.y - y) - (a.kind === 'mech' ? 1.2 : a.kind === 'minitank' ? 0.9 : 0.35)) : Infinity;
   }
 
   isVisible(x: number, y: number): boolean {
@@ -697,7 +720,7 @@ export class Game {
       speed: d.speed * (elite ? 1.1 : 1), dmg: d.dmg * dmgScale, range: d.range, atkCd: 1 + Math.random(), atkRate: d.rate, threat, elite,
       flying: !!d.flying, state: 'idle', stateT: 0, targetId: 0, homeX: x, homeY: y, leash: 0, camp: 0, stun: 0, slow: 0, slowAmt: 0, burn: 0, burnDps: 0,
       hitFlash: 0, anim: Math.random() * 10, burrowed: false, lastHitBy: 0, aggro: false, parts: [], loot: d.loot, xp: d.xp * (elite ? 2 : 1),
-      titan: kind.startsWith('titan'), name: d.name, z: d.flying ? 1.6 : 0, horde: false, latch: null,
+      titan: kind.startsWith('titan') || !!d.boss, boss: !!d.boss, name: d.name, z: d.flying ? 1.6 : 0, horde: false, latch: null,
     };
     this.enemies.push(e);
     return e;

@@ -1,5 +1,6 @@
 import { chassisForCC, MODULES } from '../defs';
 import type { BuildJob, Game } from '../game';
+import { campBonus } from './camp';
 
 /**
  * Builders at work. Each builder handles one job at a time: putting up a new building or upgrading one.
@@ -12,6 +13,10 @@ export function jobFor(g: Game, modId: number): BuildJob | undefined {
 
 export function updateBuilds(g: Game, dt: number): void {
   if (g.mode !== 'world' || !g.builds.length) return;
+  // Builders work in crews of two: short-handed, jobs go slower. Camped, they go twice as fast.
+  const p = g.player;
+  const crew = p.buildCrew > 0 ? Math.max(0.25, p.builderStaff / p.buildCrew) : 1;
+  dt *= crew * p.efficiency * campBonus(g).build;
   for (let i = g.builds.length - 1; i >= 0; i--) {
     const job = g.builds[i];
     const m = g.player.moduleById(job.modId);

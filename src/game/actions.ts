@@ -4,7 +4,7 @@ import { DRIVE_ITEM, getItem } from '../shared/items';
 import type { DriveKey } from '../shared/types';
 import { canTakeNode, treeNode, WEAPONS, type WeaponItem } from '../shared/weapons';
 import { nextRarity, scrapValue, STAR_TIME, starBlock, starCost } from './arsenal';
-import { CARDS, DECK_SIZE, MAX_CARD_LEVEL, rollPack, shardsNeeded, upgradeCost, type PackKind } from './cards';
+import { CARDS, MAX_CARD_LEVEL, rollPack, shardsNeeded, upgradeCost, type PackKind } from './cards';
 import { hireCost, pickPerk } from './crew';
 import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, deckAllows, deckKind, defaultDeck, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
 import type { Reward } from './entities';
@@ -13,6 +13,7 @@ import { techLevel } from './progress';
 import { completeJob, jobFor } from './systems/builds';
 import { DRIVE_LEVEL, ownsDrive, setDrive } from './systems/drives';
 import { weaponCraftable } from './tech';
+import { partsForCC } from './campaign';
 import { newWeapon } from './templates';
 import { applyOutriderCrew, OUTRIDER_UPGRADE } from './systems/outrider';
 
@@ -77,6 +78,8 @@ export function upgradeBlock(g: Game, modId: number): string | null {
   if (d.required) {
     const need = CC_COMMANDER_LEVEL[m.lvl];
     if (need && g.commander.level < need) return `Reach commander level ${need} to upgrade the Command Center.`;
+    // Big hull changes need the Mothership's shipyard (and its parts).
+    if (m.lvl >= 2) return `Hull expansions past level 2 are built at the Mothership: dock there and open the SHIPYARD (${partsForCC(m.lvl + 1)} part${partsForCC(m.lvl + 1) > 1 ? 's' : ''} installed needed).`;
   } else if (m.lvl >= g.player.stats.cc) return `Upgrade the Command Center to level ${m.lvl + 1} first.`;
   if (g.freeBuilders() <= 0) return 'All builders are busy.';
   return null;
@@ -377,7 +380,7 @@ export function toggleDeck(g: Game, id: string): Result {
     if (g.deck.length <= 4) return NO('Keep at least 4 cards in your deck.');
     g.deck.splice(i, 1);
   } else {
-    if (g.deck.length >= DECK_SIZE) return NO(`Your deck is full (${DECK_SIZE}). Take a card out first.`);
+    if (g.deck.length >= g.deckSize()) return NO(`Your deck is full (${g.deckSize()}). Take a card out first, or play on: slots open up with levels and hordes survived.`);
     g.deck.push(id);
   }
   g.resetHand();
@@ -435,6 +438,48 @@ export function upgradeCard(g: Game, id: string): Result {
 }
 
 /** Opens an unopened card pack; returns the cards as rewards for the reveal screen. */
+/** Opens every pack at once: all the cards go straight into the collection. Returns what came out. */
+export function openAllPacks(g: Game): { id: string; isNew: boolean }[] {
+  const out: { id: string; isNew: boolean }[] = [];
+  while (g.packs.length) {
+    const res = openPack(g, 0);
+    if (!res) break;
+    for (const r of res.rewards) {
+      if (r.type !== 'card') continue;
+      const isNew = !g.cards[r.id];
+      g.ownCard(r.id);
+      out.push({ id: r.id, isNew });
+    }
+  }
+  return out;
+}
+
+/** Upgrades every card that has enough copies and materials. Returns how many levels were gained. */
+export function upgradeAllCards(g: Game): number {
+  let n = 0;
+  for (let pass = 0; pass < 12; pass++) {
+    let any = false;
+    for (const id of Object.keys(g.cards)) {
+      if (canUpgradeCard(g, id)) continue;
+      const r = upgradeCard(g, id);
+      if (r.ok) {
+        n++;
+        any = true;
+      }
+    }
+    if (!any) break;
+  }
+  return n;
+}
+
+/** Fills the deck with your strongest cards (highest level, then rarity), keeping a spread of costs. */
+export function autoDeck(g: Game): void {
+  const owned = Object.keys(g.cards).filter((id) => CARDS[id] && CARDS[id].type !== 'relic');
+  owned.sort((a, b) => g.cardLevel(b) - g.cardLevel(a) || CARDS[b].rarity - CARDS[a].rarity || CARDS[a].cost - CARDS[b].cost);
+  g.deck = owned.slice(0, g.deckSize());
+  g.resetHand();
+}
+
 export function openPack(g: Game, idx = 0): { kind: PackKind; rewards: Reward[] } | null {
   const kind = g.packs[idx];
   if (!kind) return null;

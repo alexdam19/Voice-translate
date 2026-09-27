@@ -769,6 +769,68 @@ export function buildGateModel(): { root: Group; disc: Mesh } {
   return { root, disc };
 }
 
+/**
+ * The Mothership: a ship the size of a city, hovering over its landing field. Local +X points at the world's
+ * centre (the way you arrive); the docking ramp comes down on that side.
+ */
+export function buildMothershipModel(): { root: Group; core: Mesh; lights: Mesh } {
+  const atlas = getAtlas();
+  const { lit, glow } = featureMats();
+  const gb = new GeoBuilder();
+  const gl = new GeoBuilder();
+  const hull = atlas.get('hull_remote'), deck = atlas.get('deck_remote'), trim = atlas.get('trim_remote');
+  const dark = atlas.get('darkmetal'), metal = atlas.get('metal');
+  const cyan = atlas.get('glow_cyan'), blue = atlas.get('glow_blue'), red = atlas.get('glow_red'), yellow = atlas.get('glow_yellow');
+  const win = atlas.get('windows');
+  const H0 = 9;
+  // The main hull: a long wedge with a stepped superstructure.
+  gb.box(-75, H0, -32, 55, H0 + 16, 32, deck, hull);
+  gb.wedgeX(55, 88, H0 + 2, H0 + 16, -30, 30, -1, trim, hull);
+  gb.box(-60, H0 + 16, -24, 40, H0 + 26, 24, deck, hull);
+  gb.wedgeX(40, 60, H0 + 16, H0 + 26, -22, 22, -1, trim, hull);
+  gb.box(-50, H0 + 26, -14, 10, H0 + 34, 14, deck, hull);
+  // Bridge tower and antenna spires.
+  gb.box(-44, H0 + 34, -7, -26, H0 + 50, 7, hull, hull);
+  gl.box(-26.2, H0 + 44, -6, -25.8, H0 + 47, 6, cyan, cyan);
+  const spires: [number, number, number][] = [[-40, -10, 22], [-30, 11, 16], [-12, 0, 14]];
+  for (const [x, z, hh] of spires) {
+    gb.box(x - 0.6, H0 + 34, z - 0.6, x + 0.6, H0 + 34 + hh, z + 0.6, metal, metal);
+    gl.box(x - 1, H0 + 34 + hh, z - 1, x + 1, H0 + 36 + hh, z + 1, red, red);
+  }
+  // Underside: the belly, landing struts and the docking bay with its ramp to the ground.
+  gb.box(-65, H0 - 3, -26, 45, H0, 26, dark, dark);
+  const struts: [number, number][] = [[-55, -22], [-55, 22], [30, -22], [30, 22], [-10, -28], [-10, 28]];
+  for (const [x, z] of struts) gb.box(x - 2, 0, z - 2, x + 2, H0 - 3, z + 2, dark, metal);
+  gb.box(38, 0, -9, 62, 1.2, 9, metal, dark);
+  gb.box(28, 1.2, -9, 40, H0 - 3, 9, metal, dark);
+  gl.box(36, H0 - 3.2, -8, 46, H0 - 2.9, 8, yellow, yellow);
+  // Rows of lit windows along every tier, and running lights.
+  const tiers: [number, number, number, number][] = [[H0 + 4, -72, 52, 32], [H0 + 10, -72, 52, 32], [H0 + 19, -58, 38, 24], [H0 + 29, -48, 8, 14]];
+  for (const [y0, x0, x1, z] of tiers) {
+    for (const s of [-1, 1]) {
+      for (let x = x0; x < x1; x += 3.2) {
+        if (Math.floor(x * 7 + y0) % 5 === 0) continue;
+        gl.box(x, y0, s > 0 ? z : -z - 0.2, x + 2, y0 + 1.6, s > 0 ? z + 0.2 : -z, win, win);
+      }
+    }
+  }
+  for (const s of [-1, 1]) gl.box(-74, H0 + 15.6, s * 32 - 0.3, 54, H0 + 16.2, s * 32 + 0.3, cyan, cyan);
+  // Engines at the stern.
+  for (const z of [-22, -8, 8, 22]) {
+    gb.box(-84, H0 + 3, z - 5, -75, H0 + 13, z + 5, dark, dark);
+    gl.box(-85, H0 + 4, z - 4, -84, H0 + 12, z + 4, blue, blue);
+  }
+  const root = new Group();
+  root.add(new Mesh(gb.build(), lit));
+  const lights = new Mesh(gl.build(), glow);
+  root.add(lights);
+  // The heart of the ship: a slow-spinning core that burns brighter as parts are installed.
+  const core = new Mesh(new BoxGeometry(8, 8, 8), new MeshBasicMaterial({ color: '#18ffff', transparent: true, opacity: 0.8 }));
+  core.position.set(-20, H0 + 42, 0);
+  root.add(core);
+  return { root, core, lights };
+}
+
 /* ---------------------------------------------------------------------- */
 /* Titans (voxel, animated)                                                */
 /* ---------------------------------------------------------------------- */
@@ -828,6 +890,139 @@ export function buildTitanModel(kind: string, color: string): TitanModel {
       const leg = new Group();
       leg.position.set(x, 2.2, z);
       box(0.9, 2.4, 0.9, dark, 0, -1.1, 0, leg);
+      root.add(leg);
+      legs.push(leg);
+    }
+  } else if (kind === 'boss_warlord') {
+    // A giant raider king in scrap armor, with a rocket pod on one shoulder and a wrecking hammer.
+    const rust = new MeshLambertMaterial({ color: '#8d4a2a' });
+    box(2.2, 2.4, 2.8, mat, 0, 3.6, 0);
+    box(2.6, 0.5, 3.2, rust, 0, 4.9, 0);
+    for (const z of [-1.2, -0.4, 0.4, 1.2]) box(0.2, 0.8, 0.2, dark, 0, 5.5, z);
+    const h = new Group();
+    h.position.set(0.3, 5.5, 0);
+    box(1.1, 1, 1.1, mat, 0, 0, 0, h);
+    box(0.2, 0.25, 0.8, eye, 0.56, 0.1, 0, h);
+    root.add(h);
+    head = h;
+    box(1, 1, 1.2, dark, -0.2, 5.1, -1.8);
+    for (let i = 0; i < 3; i++) box(0.3, 0.3, 0.3, new MeshBasicMaterial({ color: '#ff5722' }), 0.35, 5.2, -2.2 + i * 0.4);
+    box(0.5, 2.8, 0.5, dark, 0.6, 3.2, 1.9);
+    box(1.2, 1, 1.4, rust, 0.6, 1.8, 1.9);
+    for (const z of [-0.7, 0.7]) {
+      const leg = new Group();
+      leg.position.set(0, 2.4, z);
+      box(0.9, 2.4, 0.9, dark, 0, -1.2, 0, leg);
+      root.add(leg);
+      legs.push(leg);
+    }
+  } else if (kind === 'boss_goliath') {
+    // A four-legged war mech with a cannon and missile racks.
+    const olive = new MeshLambertMaterial({ color: '#56613a' });
+    box(5, 2.2, 4, mat, 0, 5.2, 0);
+    box(3.6, 1.2, 3, olive, -0.3, 6.8, 0);
+    box(4.5, 0.6, 0.6, dark, 3.4, 6.8, 0);
+    for (const z of [-1.6, 1.6]) {
+      box(1.4, 1, 1, olive, -0.6, 6.4, z * 1.2);
+      for (let i = 0; i < 3; i++) box(0.2, 0.2, 0.2, new MeshBasicMaterial({ color: '#ffab00' }), 0.15, 6.5, z * 1.2 - 0.3 + i * 0.3);
+    }
+    const h = new Group();
+    h.position.set(2.6, 5.6, 0);
+    box(1, 0.8, 1.6, mat, 0, 0, 0, h);
+    box(0.1, 0.25, 1.2, eye, 0.52, 0.1, 0, h);
+    root.add(h);
+    head = h;
+    for (const [x, z] of [[1.8, 1.9], [-1.8, 1.9], [1.8, -1.9], [-1.8, -1.9]]) {
+      const leg = new Group();
+      leg.position.set(x, 4.8, z);
+      box(0.9, 4.8, 0.9, dark, 0, -2.4, 0, leg);
+      box(1.6, 0.5, 1.6, olive, 0, -4.6, 0, leg);
+      root.add(leg);
+      legs.push(leg);
+    }
+  } else if (kind === 'boss_abomination') {
+    // A heap of stitched flesh on stumpy legs, with long arms and a jaw in its belly.
+    const flesh = new MeshLambertMaterial({ color: '#a1887f' });
+    box(4, 3.2, 3.6, mat, 0, 3.2, 0);
+    box(3, 2, 2.8, flesh, 0.3, 5.2, 0);
+    for (const [x, y, z] of [[1.6, 4, 1.4], [-1.2, 5, -1], [0.8, 2.4, -1.7], [-1.6, 3, 1.2]]) box(0.8, 0.8, 0.8, new MeshLambertMaterial({ color: '#c0ca33' }), x, y, z);
+    box(0.4, 1, 2.2, new MeshBasicMaterial({ color: '#4a0000' }), 2.02, 3, 0);
+    const h = new Group();
+    h.position.set(1.8, 6.2, 0);
+    box(1.2, 1, 1.2, flesh, 0, 0, 0, h);
+    box(0.2, 0.3, 0.9, eye, 0.62, 0.1, 0, h);
+    root.add(h);
+    head = h;
+    for (const z of [-2.2, 2.2]) {
+      const arm = new Group();
+      arm.position.set(0.6, 5, z);
+      box(0.8, 4, 0.8, flesh, 0, -2, 0, arm);
+      box(1.2, 0.8, 1.2, mat, 0.2, -4, 0, arm);
+      root.add(arm);
+      legs.push(arm);
+    }
+  } else if (kind === 'boss_overmind') {
+    // A floating chrome eye inside spinning rings.
+    const chrome = new MeshLambertMaterial({ color: '#cfd8dc' });
+    const cyan = new MeshBasicMaterial({ color: '#18ffff' });
+    const core = new Group();
+    core.position.set(0, 5.5, 0);
+    box(3, 3, 3, mat, 0, 0, 0, core);
+    box(3.4, 1, 1, chrome, 0, 0, 0, core);
+    box(1, 1, 3.4, chrome, 0, 0, 0, core);
+    box(0.3, 1.2, 1.2, cyan, 1.6, 0, 0, core);
+    root.add(core);
+    head = core;
+    for (let k = 0; k < 3; k++) {
+      const ring = new Group();
+      ring.position.set(0, 5.5, 0);
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        box(0.5, 0.3, 0.5, i % 3 ? chrome : cyan, Math.cos(a) * (2.6 + k * 0.6), 0, Math.sin(a) * (2.6 + k * 0.6), ring);
+      }
+      ring.rotation.x = k * 0.7;
+      root.add(ring);
+      legs.push(ring);
+    }
+  } else if (kind === 'boss_lich') {
+    // A tall robed king with a crown and a staff, floating over the ground.
+    const robe = new MeshLambertMaterial({ color: '#311b92' });
+    const bone = new MeshLambertMaterial({ color: '#efebe9' });
+    const glow = new MeshBasicMaterial({ color: '#76ff03' });
+    box(2, 4.5, 2, robe, 0, 3.6, 0);
+    box(2.8, 0.6, 2.8, robe, 0, 1.4, 0);
+    box(2.4, 0.8, 2.6, mat, 0, 5.6, 0);
+    const h = new Group();
+    h.position.set(0, 6.6, 0);
+    box(1, 1.1, 1, bone, 0, 0, 0, h);
+    box(0.1, 0.25, 0.7, glow, 0.52, 0.1, 0, h);
+    for (let i = 0; i < 5; i++) box(0.15, 0.45, 0.15, new MeshBasicMaterial({ color: '#ffd740' }), -0.35 + i * 0.18, 0.75, 0.3 * ((i % 2) * 2 - 1) * 0.3, h);
+    root.add(h);
+    head = h;
+    const staff = new Group();
+    staff.position.set(0.6, 4.5, 1.5);
+    box(0.2, 6, 0.2, dark, 0, 0, 0, staff);
+    box(0.7, 0.7, 0.7, glow, 0, 3.2, 0, staff);
+    root.add(staff);
+    legs.push(staff);
+  } else if (kind === 'boss_queen' || kind === 'boss_devourer') {
+    // An insect queen: a huge swollen abdomen, a crested head and six legs. The Devourer is bigger and darker.
+    const big = kind === 'boss_devourer' ? 1.6 : 1;
+    const shell = new MeshLambertMaterial({ color: kind === 'boss_devourer' ? '#1a0033' : '#4a148c' });
+    const sac = new MeshLambertMaterial({ color: kind === 'boss_devourer' ? '#6a1b9a' : '#ce93d8' });
+    box(5 * big, 3 * big, 4 * big, sac, -3 * big, 2.6 * big, 0);
+    box(3.4 * big, 2.2 * big, 2.8 * big, mat, 0.6 * big, 3.2 * big, 0);
+    const h = new Group();
+    h.position.set(2.8 * big, 3.8 * big, 0);
+    box(1.8 * big, 1.6 * big, 2 * big, shell, 0, 0, 0, h);
+    box(0.2, 0.4 * big, 1.4 * big, eye, 0.92 * big, 0.2, 0, h);
+    for (let i = 0; i < 4; i++) box(0.3 * big, 1.4 * big, 0.3 * big, shell, -0.4 * big + i * 0.25 * big, 1.1 * big, (i % 2 ? 1 : -1) * 0.5 * big, h);
+    root.add(h);
+    head = h;
+    for (const [x, z] of [[1.4, 1.9], [0.2, 2.1], [-1, 1.9], [1.4, -1.9], [0.2, -2.1], [-1, -1.9]]) {
+      const leg = new Group();
+      leg.position.set(x * big, 3 * big, z * big);
+      box(0.5 * big, 3.2 * big, 0.5 * big, shell, 0, -1.6 * big, z > 0 ? 0.6 * big : -0.6 * big, leg);
       root.add(leg);
       legs.push(leg);
     }
@@ -917,6 +1112,19 @@ export function buildAllyModel(kind: string): AllyModel {
         const r = vox(root, '#b0bec5', x, 0.08, z, 0.28, 0.02, 0.04);
         parts.push(r);
       }
+      break;
+    }
+    case 'minitank': {
+      // A little tank: tracks, hull, turret and a long barrel (the turret group swivels).
+      for (const z of [-0.45, 0.45]) vox(root, '#263238', 0, 0.2, z, 1.6, 0.4, 0.3);
+      vox(root, '#00838f', 0, 0.5, 0, 1.4, 0.35, 0.8);
+      vox(root, '#26c6da', 0.72, 0.52, 0, 0.04, 0.12, 0.6, true);
+      const tur = new Group();
+      tur.position.y = 0.8;
+      vox(tur, '#006064', -0.05, 0, 0, 0.7, 0.28, 0.6);
+      vox(tur, '#37474f', 0.55, 0.02, 0, 0.9, 0.1, 0.1);
+      root.add(tur);
+      parts.push(tur);
       break;
     }
     case 'mech': {

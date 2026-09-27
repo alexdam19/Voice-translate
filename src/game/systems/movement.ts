@@ -5,9 +5,61 @@ import { NODE_INFO } from '../../shared/mapgen';
 import { turnToward, wrapAngle } from '../../shared/types';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
+import { damageEnemy } from './damage';
 
 export function tankNav(t: Tank): NavMode {
   return navModeFor(t.drive, t.crush);
+}
+
+/**
+ * When the hull breaks through a building, the rest of it comes down: connected walls within a few tiles
+ * collapse one after another over the next second (nearer ones first).
+ */
+function queueCollapse(g: Game, tx: number, ty: number, fromX: number, fromY: number): void {
+  const map = g.map;
+  const seen = new Set<number>();
+  const q: [number, number, number][] = [[tx, ty, 0]];
+  let n = 0;
+  while (q.length && n < 36) {
+    const [x, y, d] = q.shift()!;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      const k = ny * 20000 + nx;
+      if (seen.has(k) || !map.inside(nx, ny)) continue;
+      seen.add(k);
+      const o = map.getObs(nx, ny);
+      if (!crushable(o) || map.getOh(nx, ny) < 4 || d >= 5) continue;
+      if (Math.random() < 0.25) continue;
+      g.collapses.push({ tx: nx, ty: ny, t: g.time + 0.12 + d * 0.14 + Math.random() * 0.2, fx: fromX, fy: fromY });
+      q.push([nx, ny, d + 1]);
+      n++;
+    }
+  }
+}
+
+/** Brings down queued building sections: rubble falls on whatever is standing there. */
+export function updateCollapses(g: Game): void {
+  if (!g.collapses.length) return;
+  const map = g.map;
+  for (let i = g.collapses.length - 1; i >= 0; i--) {
+    const c = g.collapses[i];
+    if (c.t > g.time) continue;
+    g.collapses.splice(i, 1);
+    const o = map.getObs(c.tx, c.ty), h = map.getOh(c.tx, c.ty);
+    if (!crushable(o) || !o) continue;
+    map.crush(c.tx, c.ty);
+    g.markDirty(c.tx, c.ty);
+    g.navDirty = true;
+    const x = c.tx + 0.5, y = c.ty + 0.5;
+    g.fx.push({ t: 'debris', x, y, h: h * 0.5, color: OBS_COLOR[o] ?? '#8a8680', n: 3 + Math.min(6, Math.floor(h / 3)), fx: c.fx, fy: c.fy, push: 1 });
+    if (Math.random() < 0.35) g.fx.push({ t: 'dust', x, y, color: '#9e9e9e' });
+    // Falling rubble crushes creatures underneath.
+    for (const e of g.enemiesNear(x, y, 1.6)) {
+      if (e.flying || e.titan || e.latch || Math.hypot(e.x - x, e.y - y) > 1.4) continue;
+      damageEnemy(g, e, 25 + h * 6, { silent: true });
+    }
+  }
+  if (Math.random() < 0.3) g.hooks.sound('crunch', g.player.x, g.player.y, 0.5);
 }
 
 /** The fortress rolls over rocks, ruins, wrecks and props, flattening them. */
@@ -16,17 +68,25 @@ export function crushUnder(g: Game, t: Tank): void {
   const half = Math.hypot(t.stats.length, t.stats.width) / 2;
   const x0 = Math.floor(t.x - half), x1 = Math.floor(t.x + half), y0 = Math.floor(t.y - half), y1 = Math.floor(t.y + half);
   let n = 0;
+  let heavy = 0;
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       if (!map.inside(tx, ty)) continue;
       const o = map.getObs(tx, ty);
       if (!crushable(o) || !t.hits(tx + 0.5, ty + 0.5, 0.2)) continue;
+      const h = map.getOh(tx, ty);
       map.crush(tx, ty);
       g.markDirty(tx, ty);
       n++;
+      heavy += h;
       if (n <= 6) {
         g.fx.push({ t: 'spark', x: tx + 0.5, y: ty + 0.5, color: OBS_COLOR[o] ?? '#8d6e63', n: 5 });
         g.fx.push({ t: 'dust', x: tx + 0.5, y: ty + 0.5, color: '#a1887f' });
+      }
+      // Tall things come down in chunks, and bring the rest of the building with them.
+      if (h >= 4) {
+        g.fx.push({ t: 'debris', x: tx + 0.5, y: ty + 0.5, h: h * 0.5, color: OBS_COLOR[o] ?? '#8a8680', n: 2 + Math.min(5, Math.floor(h / 4)), fx: t.x, fy: t.y, push: Math.abs(t.speed) });
+        if (t === g.player && g.collapses.length < 300) queueCollapse(g, tx, ty, t.x, t.y);
       }
     }
   }
@@ -42,7 +102,8 @@ export function crushUnder(g: Game, t: Tank): void {
   }
   if (n > 0) {
     g.navDirty = true;
-    t.speed *= Math.pow(t.kind === 'main' ? 0.994 : 0.985, Math.min(n, 12));
+    // Rubble slows you a little; ploughing through a skyscraper slows you more.
+    t.speed *= Math.pow(t.kind === 'main' ? 0.994 : 0.985, Math.min(n, 12)) * Math.max(0.8, 1 - heavy * 0.0015);
     if (Math.random() < 0.5) g.hooks.sound('crunch', t.x, t.y, Math.min(1, 0.3 + n * 0.1));
     if (n >= 4) g.fx.push({ t: 'shake', amt: 0.15 });
   }
@@ -240,6 +301,20 @@ export function separateTanks(g: Game): void {
           b.x += dx * push * wb;
           b.y += dy * push * wb;
         }
+      }
+    }
+  }
+  // The Mothership's hull: nothing drives through it, not even a fortress.
+  const ms = g.gen.mothership;
+  if (ms) {
+    for (const t of all) {
+      if (Math.abs(t.x - ms.x) > 120 || Math.abs(t.y - ms.y) > 120) continue;
+      for (const c of t.circles()) {
+        const dx = c.x - ms.x, dy = c.y - ms.y, d = Math.hypot(dx, dy);
+        const min = 62 + c.r;
+        if (d >= min || d < 1e-6) continue;
+        t.x += (dx / d) * (min - d);
+        t.y += (dy / d) * (min - d);
       }
     }
   }

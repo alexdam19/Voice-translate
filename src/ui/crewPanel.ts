@@ -1,4 +1,5 @@
 import { MAX_BASE_CREW } from '../shared/constants';
+import { renderStations } from './stationsPanel';
 import { RARITIES } from '../shared/rarity';
 import { choosePerk, dismiss, hire, moveCrew, REFRESH_COST, refreshRecruits, upgradeOutrider } from '../game/actions';
 import { CARDS } from '../game/cards';
@@ -65,6 +66,7 @@ function crewCard(ctx: PanelCtx, c: CrewMember, compact = false): HTMLElement {
 }
 
 export function renderCrew(ctx: PanelCtx): void {
+  if (ctx.tab === 'stations') return renderStations(ctx);
   if (ctx.tab === 'recruit') return renderRecruit(ctx);
   if (ctx.tab === 'outrider') return renderOutrider(ctx);
   renderRoster(ctx);

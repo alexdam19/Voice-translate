@@ -8,7 +8,7 @@ import { creatureCanvas } from './sprites';
  */
 
 const CELL = 32;
-const GRID = 16;
+const GRID = 24;
 const SIZE = CELL * GRID;
 
 const VERT = `

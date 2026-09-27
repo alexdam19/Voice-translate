@@ -33,7 +33,7 @@ export function updateTesla(g: Game, t: Tank, dt: number): void {
     for (const e of hits.slice(0, n)) {
       const mx = (pos.x + e.x) / 2 + (Math.random() - 0.5) * 1.5, my = (pos.y + e.y) / 2 + (Math.random() - 0.5) * 1.5;
       g.fx.push({ t: 'bolt', pts: [{ x: pos.x, y: pos.y }, { x: mx, y: my }, { x: e.x, y: e.y }], color: '#80d8ff' });
-      damageEnemy(g, e, dmg, { silent: true, srcTank: t.id });
+      damageEnemy(g, e, dmg, { silent: true, srcTank: t.id, weapon: true });
       e.stun = Math.max(e.stun, 0.25);
     }
     g.hooks.sound('tesla', pos.x, pos.y, 0.4);

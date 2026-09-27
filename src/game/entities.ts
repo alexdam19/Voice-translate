@@ -5,7 +5,12 @@ import type { CrewMember } from './crew';
 
 export type EnemyKind =
   | 'rat' | 'drone' | 'raider' | 'bomber' | 'buggy' | 'stalker' | 'spitter' | 'brute' | 'rocketeer' | 'mech' | 'wraith' | 'guardian'
-  | 'swarmer' | 'leaper'
+  | 'swarmer' | 'leaper' | 'bat'
+  | 'z_walker' | 'z_runner' | 'z_bloater' | 'z_brute'
+  | 'skeleton' | 'skel_archer' | 'necromancer' | 'bone_golem' | 'phantom'
+  | 'cy_hound' | 'cy_trooper' | 'cy_enforcer' | 'cy_sniper'
+  | 'mil_bot' | 'mil_artillery' | 'gunship'
+  | 'boss_warlord' | 'boss_goliath' | 'boss_abomination' | 'boss_overmind' | 'boss_lich' | 'boss_queen' | 'boss_devourer'
   | 'titan_walker' | 'titan_beast' | 'titan_worm';
 
 export interface Enemy {
@@ -58,6 +63,18 @@ export interface Enemy {
   horde: boolean;
   /** Clinging to a hull (tank-local position and the tank's id) instead of walking. */
   latch: { tank: number; lx: number; lz: number } | null;
+  /** A boss (screen-wide health bar, 3D model, attack patterns). */
+  boss?: boolean;
+  /** Seconds until it summons again. */
+  summonT?: number;
+  /** Boss attack rotation counter. */
+  moveN?: number;
+  /** The major region whose stronghold this boss holds (-1: the Devourer). */
+  region?: number;
+  /** Throwing itself at the Mothership. */
+  siege?: boolean;
+  /** Aiming at a spot before firing (long-range units). */
+  aim?: { x: number; y: number; t: number } | null;
 }
 
 export type Team = 'player' | 'enemy';
@@ -116,6 +133,8 @@ export interface Projectile {
   wr?: number;
   /** Purely cosmetic (other players' shots in the Dead Zone). */
   visual?: boolean;
+  /** Fired by a gun that isn't a mounted weapon (roof soldiers): still a weapon hit. */
+  gun?: boolean;
   fx?: ShotFx;
 }
 
@@ -168,7 +187,7 @@ export interface Telegraph {
   onDone?: () => void;
 }
 
-export type AllyKind = 'marine' | 'heavy' | 'drone' | 'jet' | 'mech' | 'dragon' | 'mine' | 'buggy';
+export type AllyKind = 'marine' | 'heavy' | 'drone' | 'jet' | 'mech' | 'dragon' | 'mine' | 'buggy' | 'minitank';
 
 export interface Ally {
   id: number;

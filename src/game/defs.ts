@@ -101,7 +101,7 @@ const add = (d: ModuleDef): void => {
 };
 
 /* Command */
-add(M({ key: 'bridge', name: 'Command Tower', w: 4, h: 4, cat: 'command', cost: {}, height: 1.2, unique: true, required: true, maxLevel: 6, crew: 2, bunks: 4, vision: 26, power: 4, thrust: 3, deck: 'roof', desc: 'The bridge on top of your fortress and the heart of the whole facility. Upgrade it to grow the hull and raise every building\'s max level.' }));
+add(M({ key: 'bridge', name: 'Command Tower', w: 4, h: 4, cat: 'command', cost: {}, height: 1.2, unique: true, required: true, maxLevel: 6, crew: 2, bunks: 6, vision: 26, power: 4, thrust: 3, deck: 'roof', desc: 'The bridge on top of your fortress and the heart of the whole facility. Upgrade it to grow the hull and raise every building\'s max level.' }));
 
 /* Built into the hull */
 add(M({ key: 'main_gun', name: 'Main Battery Turret', w: 4, h: 4, cat: 'weapon', cost: {}, height: 0.9, fixed: true, hardpoint: 'heavy', hp: 150, armor: 0.01, deck: 'roof', desc: "The fortress's great twin-barrelled turret. Takes a heavy weapon. A second one rises on the rear deck at Command Center level 4. Each level adds +15% damage." }));
@@ -131,12 +131,13 @@ add(M({ key: 'barracks', name: 'Barracks', w: 3, h: 4, cat: 'army', unlock: 3, c
 add(M({ key: 'garage', name: 'Garage', w: 4, h: 4, cat: 'army', unique: true, unlock: 5, garage: true, squad: 'buggies', cost: { iron_plate: 30, circuit: 6, scrap: 60 }, height: 1.1, desc: 'Builds Scout Buggies that scavenge ahead and bring loot back, and the Outrider mini tank. Upgrade it to upgrade the buggies.' }));
 add(M({ key: 'drone_bay', name: 'Drone Bay', w: 3, h: 3, cat: 'army', unique: true, unlock: 9, squad: 'drones', cost: { circuit: 10, copper_wire: 16, iron_plate: 10 }, height: 0.7, use: 1, deck: 'roof', desc: 'Launches Guard Drones: fast laser flyers, great at guarding an area.' }));
 add(M({ key: 'jet_hangar', name: 'Jet Hangar', w: 3, h: 4, cat: 'army', unique: true, unlock: 14, squad: 'fighters', cost: { titanium_alloy: 12, circuit: 10, iron_plate: 16 }, height: 0.7, use: 1, deck: 'roof', desc: 'Keeps a wing of mini fighter jets in the air that strafe and bomb anything near you.' }));
+add(M({ key: 'tank_bay', name: 'Tank Bay', w: 4, h: 4, cat: 'army', unique: true, unlock: 7, squad: 'minitanks', cost: { iron_plate: 40, circuit: 10, titanium_alloy: 6 }, height: 1, desc: 'Machinery for building and launching Mini Tanks: small escort tanks that ride out through the rear ramp and fight beside the fortress. Upgrade it for more of them.' }));
 add(M({ key: 'mech_bay', name: 'Mech Bay', w: 4, h: 4, cat: 'army', unique: true, unlock: 18, squad: 'walker', cost: { titanium_alloy: 30, uranium_rod: 6, circuit: 16 }, height: 1.2, desc: 'Builds a Walker Mech: a slow giant with a cannon and missile racks.' }));
 
 /* Crew */
-add(M({ key: 'quarters', name: 'Living Quarters', w: 2, h: 2, cat: 'crew', cost: { scrap: 25, iron_plate: 4 }, height: 0.9, crew: 3, limit: [2, 3, 3, 4, 4, 5], bunks: 4, desc: 'Bunks for 3 officers (+1 per level) and 4 troops (+2 per level). Injured crew recover faster.' }));
+add(M({ key: 'quarters', name: 'Living Quarters', w: 2, h: 2, cat: 'crew', cost: { scrap: 25, iron_plate: 4 }, height: 0.9, crew: 3, limit: [3, 4, 5, 6, 7, 8], bunks: 8, desc: 'Bunks for 3 officers (+1 per level) and 8 crew (+4 per level): enough people to run every station in shifts, with some always asleep. Injured crew recover faster.' }));
 add(M({ key: 'medbay', name: 'Medbay', w: 2, h: 2, cat: 'crew', unlock: 4, cost: { iron_plate: 8, circuit: 3, biomass: 6 }, height: 0.8, medbay: true, use: 1, limit: [1, 1, 1, 2, 2, 2], desc: 'Injured crew recover 3x faster.' }));
-add(M({ key: 'hydroponics', name: 'Hydroponics', w: 2, h: 2, cat: 'crew', unlock: 3, cost: { scrap: 20, iron_plate: 4, biomass: 8 }, height: 0.6, food: 1, use: 1, limit: [1, 2, 2, 3, 3, 4], desc: 'Grows a ration every 25 seconds (faster per level).' }));
+add(M({ key: 'hydroponics', name: 'Hydroponics', w: 2, h: 2, cat: 'crew', cost: { scrap: 20, iron_plate: 4, biomass: 8 }, height: 0.6, food: 1, use: 1, limit: [1, 2, 2, 3, 3, 4], desc: 'Grows a ration every 25 seconds (faster per level).' }));
 add(M({ key: 'mess_hall', name: 'Mess Hall', w: 3, h: 3, cat: 'crew', unique: true, unlock: 8, cost: { scrap: 30, iron_plate: 8, biomass: 6 }, height: 0.8, mess: true, food: 1, crew: 1, bunks: 3, desc: 'Injured crew recover 50% faster. Cooks rations and bunks 1.' }));
 add(M({ key: 'training_grounds', name: 'Training Grounds', w: 3, h: 4, cat: 'crew', unique: true, unlock: 10, cost: { iron_plate: 16, scrap: 40 }, height: 0.35, training: 1.2, desc: 'Every crew member aboard earns experience over time.' }));
 
@@ -202,6 +203,36 @@ export function deckName(deck: number, stories: number): string {
   if (deck === 1) return 'Upper Deck';
   return `Deck ${deck}`;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Departments: who works where                                            */
+/* ---------------------------------------------------------------------- */
+
+export type Dept = 'gunnery' | 'roof' | 'engine' | 'command' | 'medical' | 'galley' | 'works' | 'science' | 'hangar';
+
+/** In the order people are sent to them when there aren't enough to go round. */
+export const DEPTS: { key: Dept; name: string; icon: string; color: string; staff: string; desc: string }[] = [
+  { key: 'gunnery', name: 'Gunnery', icon: '🎯', color: '#ff7043', staff: 'gunners', desc: 'One gunner on every gun, two on the heavies. No gunner, no shooting.' },
+  { key: 'roof', name: 'Roof Guard', icon: '🪖', color: '#c5e1a5', staff: 'soldiers', desc: 'Soldiers in the roof nests. Storms drive them inside.' },
+  { key: 'engine', name: 'Engine Room', icon: '⚙', color: '#ffd740', staff: 'engineers', desc: 'Engines, reactors and shield generators run on engineers. Short-staffed, you lose power and speed.' },
+  { key: 'command', name: 'Command', icon: '⭐', color: '#4dd0e1', staff: 'lieutenants', desc: 'The General\'s staff on the bridge: lieutenants, signals, attack command. Without them the fortress fights blind (less vision and range).' },
+  { key: 'medical', name: 'Medical', icon: '✚', color: '#ef5350', staff: 'doctors', desc: 'Doctors heal the wounded and get people back on duty.' },
+  { key: 'galley', name: 'Galley', icon: '🍲', color: '#a1887f', staff: 'cooks', desc: 'Cooks and growers. Hydroponics grows rations; a staffed Mess Hall makes them go further.' },
+  { key: 'works', name: 'Works', icon: '🔧', color: '#ffca28', staff: 'mechanics & builders', desc: 'Mechanics, fabricators and builders. Builders need a crew of two per job.' },
+  { key: 'science', name: 'Science', icon: '⚗', color: '#ea80fc', staff: 'scientists', desc: 'Scientists in the labs: card power, training and arcane work.' },
+  { key: 'hangar', name: 'Hangar', icon: '🛩', color: '#90caf9', staff: 'pilots & drivers', desc: 'Pilots and drivers for the squads, drones, jets and mini tanks.' },
+];
+
+/** People each building needs on duty, and the department they belong to (guns and nests are counted separately). */
+export const STAFF: Record<string, [Dept, number]> = {
+  bridge: ['command', 3], radar: ['command', 1],
+  engine: ['engine', 2], ion_engine: ['engine', 2], reactor: ['engine', 1], fission: ['engine', 2], shield: ['engine', 1],
+  medbay: ['medical', 2], repair_bay: ['works', 1],
+  hydroponics: ['galley', 1], mess_hall: ['galley', 2],
+  workshop: ['works', 2], forge: ['works', 2], refinery: ['works', 1], drill_mk2: ['works', 1], drill_mk3: ['works', 1], ammo_depot: ['works', 1],
+  science_lab: ['science', 2], arcane_sanctum: ['science', 1], training_grounds: ['science', 1],
+  garage: ['hangar', 2], drone_bay: ['hangar', 1], jet_hangar: ['hangar', 2], mech_bay: ['hangar', 2], tank_bay: ['hangar', 2], barracks: ['command', 1],
+};
 
 /** Troops it takes to man a weapon of this size: one each, two for the heavies. */
 export function crewNeed(size: WeaponSize): number {

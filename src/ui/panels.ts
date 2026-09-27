@@ -16,6 +16,7 @@ import { renderArsenal } from './arsenalPanel';
 import { renderCards } from './cardsPanel';
 import { renderProgress } from './progressPanel';
 import { renderBlueprint } from './blueprintPanel';
+import { renderShipyard } from './shipyardPanel';
 
 const SWITCH: [string, string, string][] = [
   ['cards', 'CARDS (C)', ''], ['arsenal', 'ARSENAL (V)', 'arsenal'], ['crew', 'CREW (K)', 'crew'], ['progress', 'LEVEL ROAD (L)', ''],
@@ -74,8 +75,12 @@ export class Panels {
         tabs: [['weapons', 'My Weapons'], ['codex', 'Codex & Workshop']], render: renderArsenal, wide: true, cls: 'arsenal',
       },
       crew: {
-        title: 'CREW', sub: 'Your people: passive bonuses, perks, recruits and the Outrider. Max 15 aboard the fortress.',
-        tabs: [['roster', 'Roster'], ['recruit', 'Recruit'], ['outrider', 'Outrider']], render: renderCrew, wide: true, cls: 'crew',
+        title: 'CREW', sub: 'Stations: everyone aboard and where they work. Officers: your named crew with bonuses and perks (max 15).',
+        tabs: [['stations', 'Stations'], ['roster', 'Officers'], ['recruit', 'Recruit'], ['outrider', 'Outrider']], render: renderCrew, wide: true, cls: 'crew',
+      },
+      shipyard: {
+        title: 'MOTHERSHIP SHIPYARD', sub: 'Install the parts from the strongholds, rebuild your fortress, trade and hire.',
+        tabs: [['parts', 'Parts'], ['refit', 'Rebuild'], ['trade', 'Trade'], ['hire', 'Hire']], render: renderShipyard, wide: true, cls: 'shipyard',
       },
       drive: { title: 'DRIVE TRAIN', sub: 'Different treads for different ground. Craft them at a Workshop (CARGO > Workshop).', render: (c) => this.renderDrive(c), wide: true },
       cargo: { title: 'CARGO', sub: 'Your hold, and the Refinery and Workshop where ore becomes parts.', tabs: [['hold', 'Hold'], ['workshop', 'Refine & Craft']], render: renderCargo, wide: true },

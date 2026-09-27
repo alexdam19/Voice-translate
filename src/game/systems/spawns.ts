@@ -1,8 +1,8 @@
 import { CENTER } from '../../shared/constants';
 import { ZONE } from '../../shared/map';
-import { threatAt } from '../../shared/mapgen';
+import { REGION_INFO, threatAt, type Faction } from '../../shared/mapgen';
 import { eid } from '../entities';
-import { TITAN_NAMES, TITAN_STYLE } from '../enemyDefs';
+import { ENEMIES, pickFactionKind, TITAN_NAMES, TITAN_STYLE } from '../enemyDefs';
 import type { Game } from '../game';
 import { buildRaider, buildRival, RIVAL_NAMES } from '../templates';
 import { featureLevel } from '../progress';
@@ -54,17 +54,23 @@ export function updateSpawns(g: Game, dt: number): void {
   g.timers.spawn -= dt;
   if (g.timers.spawn <= 0) {
     g.timers.spawn = 2.2;
-    const ambient = g.enemies.filter((e) => !e.camp && !e.titan).length;
-    const target = inCamp ? 0 : Math.round(5 + threat * 2.4);
+    const ambient = g.enemies.filter((e) => !e.camp && !e.titan && !e.horde).length;
+    // Regions are crawling with their faction; the longer you survive, the more there are.
+    const here = g.gen.regionAt(p.x, p.y);
+    const esc = Math.min(2.2, g.escalation());
+    const target = inCamp ? 0 : Math.round((6 + threat * 2.6) * (here && here.kind !== 'mothership' ? 2 : 1) * esc);
     if (ambient < target) {
-      const pt = spawnPoint(g, 26 + ext, 38 + ext);
+      const pt = spawnPoint(g, 26 + ext, 42 + ext);
       if (pt) {
         const zone = g.map.zoneAt(pt.x, pt.y);
         const t = threatAt(pt.x, pt.y);
-        const pack = 1 + Math.floor(Math.random() * (2 + t * 0.6));
-        const kind = pickKind(t, zone);
+        const faction = factionAt(g, pt.x, pt.y, zone);
+        const pack = 1 + Math.floor(Math.random() * (2 + t * 0.7));
+        const first = faction ? pickFactionKind(faction, t) : pickKind(t, zone);
+        const heavy = ENEMIES[first].r > 0.9;
         for (let k = 0; k < pack; k++) {
-          const e = g.spawnEnemy(kind === 'mech' || kind === 'brute' ? kind : pickKind(t, zone), pt.x + (Math.random() - 0.5) * 4, pt.y + (Math.random() - 0.5) * 4, t, t >= 2.5 && Math.random() < 0.07);
+          const kind = heavy && k === 0 ? first : faction ? pickFactionKind(faction, t) : pickKind(t, zone);
+          const e = g.spawnEnemy(kind, pt.x + (Math.random() - 0.5) * 4, pt.y + (Math.random() - 0.5) * 4, t, t >= 2.5 && Math.random() < 0.07);
           if (Math.random() < 0.3) e.aggro = true;
         }
       }
@@ -110,6 +116,18 @@ export function updateSpawns(g: Game, dt: number): void {
   }
   void eid;
   void spawnFor;
+}
+
+/**
+ * Who holds a spot: the faction of the region it's in, otherwise the biome leans one way (the frozen north is full
+ * of the dead, the magma west of the necropolis's servants...), otherwise the old wasteland mix (null).
+ */
+export function factionAt(g: Game, x: number, y: number, zone: number): Faction | null {
+  const reg = g.gen.regionAt(x, y);
+  if (reg && reg.kind !== 'mothership') return REGION_INFO[reg.kind].faction;
+  const lean: Partial<Record<number, Faction>> = { [ZONE.CRYO]: 'zombie', [ZONE.MAGMA]: 'necro', [ZONE.GLASS]: 'cyborg', [ZONE.DUNES]: 'military', [ZONE.ACID]: 'monster', [ZONE.RUSTBELT]: 'raider' };
+  const f = lean[zone];
+  return f && Math.random() < 0.45 ? f : null;
 }
 
 /** Brings a rival dreadnought in from out of sight. Returns it (or null if there was no room). */

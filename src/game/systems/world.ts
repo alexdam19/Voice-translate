@@ -2,6 +2,7 @@ import { getItem } from '../../shared/items';
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
 import { TER, ZONE } from '../../shared/map';
 import { liquidHurts } from './drives';
+import { stormVision } from './weather';
 import { NODE_INFO, RUNE_INFO, SITE_INFO, threatAt } from '../../shared/mapgen';
 import { HAZARD_INFO } from '../../shared/types';
 import { ZONES } from '../../shared/zones';
@@ -454,7 +455,7 @@ export function updateHazards(g: Game, dt: number): void {
 
 export function updateVision(g: Game): void {
   const eyes: { x: number; y: number; r: number }[] = [];
-  if (!g.player.dead) eyes.push({ x: g.player.x, y: g.player.y, r: g.player.stats.vision });
+  if (!g.player.dead) eyes.push({ x: g.player.x, y: g.player.y, r: g.player.stats.vision * stormVision(g) });
   if (g.outrider && !g.outrider.dead) eyes.push({ x: g.outrider.x, y: g.outrider.y, r: 12 });
   g.fog.update(g.player.x, g.player.y, eyes);
 }

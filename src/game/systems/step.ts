@@ -8,7 +8,7 @@ import { updateCards } from './cards';
 import { healPlayer, injureRandomCrew } from './damage';
 import { updateBuffs, updateCrew, updateZones } from './crewsys';
 import { updateSquads } from './squads';
-import { driveTank, manualDrive, separateTanks } from './movement';
+import { driveTank, manualDrive, separateTanks, updateCollapses } from './movement';
 import { updateFocus, updateInteract } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
 import { updateProjectiles } from './projectiles';
@@ -16,9 +16,13 @@ import { updateSpawns } from './spawns';
 import { updateTankWeapons } from './weapons';
 import { updateAutoDrive } from './drives';
 import { updateWaves } from './waves';
+import { updateCampaign } from '../campaign';
 import { updateTesla } from './tesla';
 import { updateSoldiers } from './soldiers';
 import { updateTroops } from './troops';
+import { updateCrewLife } from './crewlife';
+import { updateCamp } from './camp';
+import { stormSpeed, updateWeather } from './weather';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
 
 export const RESPAWN_TIME = 6;
@@ -44,9 +48,12 @@ export function installHandlers(g: Game): void {
 function respawn(g: Game): void {
   const p = g.player;
   p.dead = false;
-  p.x = g.gen.spawn.x;
-  p.y = g.gen.spawn.y;
+  // Towed back to your last camp if you made one, else to where you started.
+  const home = g.deploy.home ?? g.gen.spawn;
+  p.x = home.x;
+  p.y = home.y;
   p.rot = -Math.PI / 2;
+  p.anchored = false;
   // Every respawn comes back at full health.
   p.hp = p.stats.maxHp;
   p.shield = p.stats.shield;
@@ -84,7 +91,7 @@ export function stepWorld(g: Game, dt: number): void {
     }
     const nitro = p.buff('nitro');
     const chill = p.buff('chill');
-    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0));
+    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)) * stormSpeed(g);
     driveTank(g, p, dt, mult, di.active ? manualDrive(p, di.x, di.y, g.tankControls) : undefined);
     if (nitro && Math.random() < dt * 20) {
       const b = p.toWorld(-p.stats.length / 2, (Math.random() - 0.5) * p.stats.width);
@@ -117,6 +124,7 @@ export function stepWorld(g: Game, dt: number): void {
     if (t.kind === 'rival') updateSoldiers(g, t, dt);
   }
   updateProjectiles(g, dt);
+  updateCollapses(g);
   updateZones(g, dt);
   updateArsenal(g, dt);
   updateCards(g, dt);
@@ -137,11 +145,15 @@ export function stepWorld(g: Game, dt: number): void {
       updateHazards(g, dt);
       updateAutoDrive(g, dt);
       updateTroops(g, dt);
+      updateCrewLife(g, dt);
     }
+    updateCamp(g, dt);
+    updateWeather(g, dt);
     updateOutposts(g);
     updatePickups(g, dt);
     updateSpawns(g, dt);
-    updateWaves(g, dt);
+    if (g.campaign.finale !== 'active') updateWaves(g, dt);
+    updateCampaign(g, dt);
     g.timers.vision -= dt;
     if (g.timers.vision <= 0) {
       g.timers.vision = 0.2;

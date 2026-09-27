@@ -221,6 +221,22 @@ export class Overlay {
   }
 
   /** An arrow at the edge of the play area pointing toward a world point. */
+  /** The campaign target: a cyan arrow at the screen edge pointing the way (targets can be kilometres off). */
+  drawMission(g: Game, x: number, y: number, label: string): void {
+    const p = g.player;
+    const d = Math.hypot(x - p.x, y - p.y);
+    if (d < 1) return;
+    const q = this.view.worldToScreen(x, y, 0);
+    const onScreen = q.ok && q.x > 40 && q.y > 40 && q.x < this.view.width - 40 && q.y < this.view.height - 40;
+    if (onScreen && d < 200) {
+      this.text(`▼ ${label}`, q.x, q.y - 30, '#18ffff', 11);
+      return;
+    }
+    // Aim at a point on the way, so the direction is right however far away it is.
+    const k = Math.min(1, 60 / d);
+    this.edgeArrow(p.x + (x - p.x) * k, p.y + (y - p.y) * k, '#18ffff', `${label} · ${d > 1000 ? `${(d / 1000).toFixed(1)}km` : `${Math.round(d)}m`}`, Math.sin(performance.now() / 250) * 3, 1.1);
+  }
+
   private edgeArrow(wx: number, wy: number, color: string, label: string, bob = 0, scale = 1): void {
     const v = this.view;
     const c = this.ctx;

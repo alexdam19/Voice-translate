@@ -8,7 +8,7 @@ const POOL_COLOR: Record<string, string> = { acid: '#76ff03', fire: '#ff6d00', c
 
 function detonate(g: Game, p: Projectile): void {
   const fx = p.fx;
-  const o = { srcTank: p.srcTank, burn: p.burn || undefined, crit: p.crit, lifesteal: p.lifesteal, wkey: p.wkey, wr: p.wr, fx, acid: p.kind === 'acid' };
+  const o = { srcTank: p.srcTank, burn: p.burn || undefined, crit: p.crit, lifesteal: p.lifesteal, wkey: p.wkey, wr: p.wr, weapon: p.gun, fx, acid: p.kind === 'acid' };
   if (p.splash > 0) {
     explode(g, p.x, p.y, p.splash, p.dmg, p.team, o, p.kind === 'spit' ? '#76ff03' : p.color, p.kind === 'fireball' || p.kind === 'grenade');
     if (p.kind === 'spit') g.zones.push({ id: p.id, x: p.x, y: p.y, r: p.splash, t: 4, kind: 'acid', dps: p.dmg * 0.25, team: 'enemy' });
@@ -42,7 +42,7 @@ function detonate(g: Game, p: Projectile): void {
       g.projectiles.push({
         id: eid(), x: p.x, y: p.y, z: 1, vx: Math.cos(a) * 11, vy: Math.sin(a) * 11, vz: 0, team: p.team, kind: 'fireball', dmg: base * 0.3, splash: 1.3,
         pierce: 0, life: 0, maxLife: 0.45 + Math.random() * 0.2, color: p.kind === 'phoenix' ? '#ff9100' : '#ffcc80', homing: 0, targetId: 0, arc: false, tx: 0, ty: 0,
-        burn: p.burn * 0.5, crit: false, lifesteal: p.lifesteal, srcTank: p.srcTank, hit: [], flyer: 0, interceptable: false, hp: 1, size: 0.28, wkey: p.wkey, wr: p.wr,
+        burn: p.burn * 0.5, crit: false, lifesteal: p.lifesteal, srcTank: p.srcTank, hit: [], flyer: 0, interceptable: false, hp: 1, size: 0.28, wkey: p.wkey, wr: p.wr, gun: p.gun,
       });
     }
   }
@@ -55,7 +55,7 @@ const EXPIRE_BURST = new Set(['shell', 'missile', 'spit', 'plasma', 'gravity', '
 /** Returns true if the projectile is used up. */
 function hitSomething(g: Game, p: Projectile): boolean {
   if (p.visual) return false;
-  const opts = { crit: p.crit, burn: p.burn || undefined, srcTank: p.srcTank, lifesteal: p.lifesteal, knock: p.kind === 'shell' ? 3 : p.fx?.knock || 0.5, kx: 0, ky: 0, wkey: p.wkey, wr: p.wr, fx: p.fx };
+  const opts = { crit: p.crit, burn: p.burn || undefined, srcTank: p.srcTank, lifesteal: p.lifesteal, knock: p.kind === 'shell' ? 3 : p.fx?.knock || 0.5, kx: 0, ky: 0, wkey: p.wkey, wr: p.wr, weapon: p.gun, fx: p.fx };
   const sp = Math.hypot(p.vx, p.vy) || 1;
   opts.kx = p.vx / sp;
   opts.ky = p.vy / sp;
@@ -93,7 +93,7 @@ function hitSomething(g: Game, p: Projectile): boolean {
     }
     for (const a of g.allies) {
       if (a.kind === 'jet' || a.kind === 'dragon' || a.kind === 'mine') continue;
-      const ar = a.kind === 'mech' ? 1.2 : 0.4;
+      const ar = a.kind === 'mech' ? 1.2 : a.kind === 'minitank' ? 0.9 : 0.4;
       if ((a.x - p.x) ** 2 + (a.y - p.y) ** 2 > ar * ar) continue;
       if (p.splash > 0) return true;
       damageFriendly(g, a.id, p.dmg);

@@ -33,6 +33,8 @@ export const STARTER_LAYOUT: [string, number, number, number][] = [
   ['quarters', 2, 6, 1],
   ['quarters', 8, 6, 1],
   ['cargo', 5, 9, 1],
+  ['hydroponics', 2, 12, 1],
+  ['quarters', 8, 12, 1],
   ['reactor', 2, 13, 2],
   ['engine', 4, 16, 2],
   ['engine', 6, 16, 2],
@@ -75,7 +77,7 @@ export function buildStarterTank(x: number, y: number, klass: HullClass = 'jugge
   t.cargo.add('iron_plate', 20);
   t.cargo.add('copper_wire', 6);
   t.cargo.add('repair_kit', 2);
-  t.cargo.add('rations', 8);
+  t.cargo.add('rations', 30);
   if (klass === 'ark') t.cargo.add('explosive', 6);
   return t;
 }

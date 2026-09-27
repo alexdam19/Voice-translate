@@ -1,11 +1,11 @@
-import { canUpgradeCard, openPack, swapDeck, toggleDeck, toggleRelic, trackCard, upgradeCard } from '../game/actions';
-import { CARD_LIST, CARDS, DECK_SIZE, MAX_CARD_LEVEL, PACK_INFO, SCHOOLS, shardsNeeded, upgradeCost, type School } from '../game/cards';
+import { autoDeck, canUpgradeCard, openAllPacks, openPack, swapDeck, toggleDeck, toggleRelic, trackCard, upgradeAllCards, upgradeCard } from '../game/actions';
+import { CARD_LIST, CARDS, MAX_CARD_LEVEL, MAX_DECK, PACK_INFO, SCHOOLS, shardsNeeded, upgradeCost, type School } from '../game/cards';
 import { RARITIES } from '../shared/rarity';
 import { cardEl } from './cardView';
 import { button, clickWord, costHTML, esc, h } from './dom';
 import type { PanelCtx } from './panels';
 
-const st = { sel: '', swapIn: '', school: 'all' as School | 'all' };
+const st = { sel: '', swapIn: '', school: 'all' as School | 'all', opened: [] as { id: string; isNew: boolean }[] };
 
 export function renderCards(ctx: PanelCtx): void {
   if (ctx.tab === 'relics') return renderRelics(ctx);
@@ -41,7 +41,7 @@ function detail(ctx: PanelCtx, id: string): HTMLElement {
   } else {
     const inDeck = g.deck.includes(id);
     row.appendChild(button(inDeck ? 'Remove from deck' : 'Add to deck', () => {
-      if (!inDeck && g.deck.length >= DECK_SIZE) {
+      if (!inDeck && g.deck.length >= g.deckSize()) {
         st.swapIn = id;
         ctx.msg(`Deck full: ${clickWord()} a deck card above to swap it out.`, true);
         ctx.rerender();
@@ -74,9 +74,24 @@ function detail(ctx: PanelCtx, id: string): HTMLElement {
 function renderDeck(ctx: PanelCtx): void {
   const g = ctx.app.game;
   const top = h('div', 'deck-row');
-  top.appendChild(h('div', 'cat', `YOUR DECK <small>${g.deck.length}/${DECK_SIZE} · you hold 4 at a time and draw the next one when you play a card${st.swapIn ? ` · <b class="y">${clickWord()} a card to swap in ${esc(CARDS[st.swapIn].name)}</b>` : ''}</small>`));
+  const size = g.deckSize();
+  top.appendChild(h('div', 'cat', `YOUR DECK <small>${g.deck.length}/${size} slots (more open every 4 levels and every 4 hordes survived, up to ${MAX_DECK}) · you hold 4 at a time and draw the next one when you play a card${st.swapIn ? ` · <b class="y">${clickWord()} a card to swap in ${esc(CARDS[st.swapIn].name)}</b>` : ''}</small>`));
+  const tools = h('div', 'row deck-tools');
+  const ready = Object.keys(g.cards).filter((id) => !canUpgradeCard(g, id)).length;
+  tools.appendChild(button('AUTO-BUILD DECK', () => {
+    autoDeck(g);
+    ctx.msg('Deck filled with your strongest cards.', true);
+    ctx.rerender();
+  }, 'small'));
+  tools.appendChild(button(`UPGRADE ALL${ready ? ` (${ready} ready)` : ''}`, () => {
+    const n = upgradeAllCards(g);
+    ctx.msg(n ? `${n} card level${n > 1 ? 's' : ''} gained.` : 'Nothing ready to upgrade (needs copies and materials).', n > 0);
+    if (n) ctx.app.sound('levelup');
+    ctx.rerender();
+  }, ready ? 'small primary' : 'small'));
+  top.appendChild(tools);
   const slots = h('div', 'deck-slots');
-  for (let i = 0; i < DECK_SIZE; i++) {
+  for (let i = 0; i < size; i++) {
     const id = g.deck[i];
     if (!id) {
       slots.appendChild(h('div', 'mcard mini empty', '<div class="mc-name">empty</div>'));
@@ -169,7 +184,35 @@ function renderRelics(ctx: PanelCtx): void {
 
 function renderPacks(ctx: PanelCtx): void {
   const g = ctx.app.game;
-  ctx.body.appendChild(h('div', 'hint', 'Card packs drop from <b>elite</b> enemies, <b>raider tanks</b>, <b>outposts</b>, <b>rune altars</b>, <b>titans</b> and loot areas, and you get one every commander level.'));
+  ctx.body.appendChild(h('div', 'hint', 'Card packs drop from <b>elite</b> enemies, <b>bosses</b>, <b>raider tanks</b>, <b>outposts</b>, <b>rune altars</b>, <b>titans</b> and loot areas, every other horde you survive, and one every commander level.'));
+  if (g.packs.length > 1) {
+    ctx.body.appendChild(button(`OPEN ALL ${g.packs.length} PACKS`, () => {
+      st.opened = openAllPacks(g);
+      ctx.app.sound('legendary');
+      ctx.rerender();
+    }, 'primary big open-all'));
+  }
+  if (st.opened.length) {
+    const fresh = st.opened.filter((o) => o.isNew).length;
+    ctx.body.appendChild(h('div', 'cat', `OPENED <small>${st.opened.length} cards · ${fresh} new · the rest level your cards up</small>`));
+    const res = h('div', 'coll-grid opened');
+    const counts = new Map<string, { n: number; isNew: boolean }>();
+    for (const o of st.opened) {
+      const c = counts.get(o.id);
+      if (c) c.n++;
+      else counts.set(o.id, { n: 1, isNew: o.isNew });
+    }
+    for (const [id, c] of counts) {
+      const el = cardEl(g, id, { mini: true });
+      el.appendChild(h('div', `mc-lv ${c.isNew ? 'ready' : ''}`, `${c.isNew ? 'NEW' : 'copy'}${c.n > 1 ? ` ×${c.n}` : ''}`));
+      res.appendChild(el);
+    }
+    ctx.body.appendChild(res);
+    ctx.body.appendChild(button('OK', () => {
+      st.opened = [];
+      ctx.rerender();
+    }, 'small'));
+  }
   const row = h('div', 'pack-row');
   g.packs.forEach((k, i) => {
     const info = PACK_INFO[k];

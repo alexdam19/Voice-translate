@@ -1131,3 +1131,78 @@ html.touch .joy { display: block; }
   .v-decks { top: 40px; left: 6px; transform: none; }
   .v-decks .v-deck { padding: 2px 6px; font-size: 9px; }
 }
+
+/* ---------------- v0.8: class picker ---------------- */
+.title-card.class-pick { max-width: min(1180px, 96vw); }
+.logo.small { font-size: 28px; }
+.class-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.class-card { border: 2px solid var(--cc); background: rgba(10, 12, 18, 0.85); padding: 10px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.class-card .cc-name { font-size: 18px; font-weight: bold; }
+.class-card .cc-role { color: #b0bec5; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.class-card .cc-desc { font-size: 12px; color: #cfd8dc; flex: 1; }
+.class-card .cc-perk { font-size: 12px; color: #fff8e1; border-left: 3px solid var(--cc); padding-left: 6px; }
+.class-card .cc-pros { display: flex; flex-direction: column; font-size: 11px; }
+.class-card .good { color: #76ff03; }
+.class-card .bad { color: #ff8a80; }
+@media (max-width: 900px), (max-height: 560px) {
+  .class-row { grid-template-columns: repeat(5, minmax(150px, 1fr)); overflow-x: auto; }
+  .class-card .cc-desc { display: none; }
+  .title-card.class-pick { max-height: 96vh; overflow-y: auto; }
+}
+
+/* ---------------- v0.8: mission, storms, crew, shipyard ---------------- */
+.mission { background: rgba(0, 40, 48, 0.85); border: 2px solid #18ffff; padding: 6px 10px; cursor: pointer; pointer-events: auto; max-width: 320px; }
+.mission .mt { font-family: var(--px); font-size: 10px; color: #18ffff; }
+.mission .mn { font-size: 15px; color: #fff; font-weight: 600; }
+.mission .mh { font-size: 12px; color: #b2dfdb; }
+.storm-bar { display: none; background: rgba(13, 14, 20, 0.88); border: 2px solid var(--sc, #e0b060); color: var(--sc, #e0b060); padding: 4px 12px; font-family: var(--px); font-size: 11px; text-align: center; margin-bottom: 4px; }
+.resources .warn { color: #ff8a80; }
+.menu-btn.shipyard { border-color: #18ffff; color: #18ffff; animation: pulse-cyan 1.6s infinite; }
+.menu-btn.camp.on { border-color: #76ff03; color: #76ff03; }
+@keyframes pulse-cyan { 50% { box-shadow: 0 0 12px #18ffff; } }
+.yard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.yard-card { background: rgba(10, 16, 22, 0.9); border: 2px solid #26c6da; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.yard-card.wide { grid-column: 1 / -1; }
+.yard-card.done { border-color: #76ff03; opacity: 0.85; }
+.yard-card .yc-t { font-family: var(--px); font-size: 12px; color: #e0f7fa; }
+.yard-card .yc-t img { width: 20px; height: 20px; vertical-align: -4px; }
+.yard-card .yc-d { font-size: 12px; color: #b0bec5; }
+.yard-card .yc-req { font-size: 12px; color: #cfd8dc; }
+.big.awaken { margin-top: 14px; font-size: 18px; padding: 12px 20px; background: #006064; border-color: #18ffff; }
+.trade-grid { display: flex; flex-direction: column; gap: 6px; }
+.trade-row { display: flex; gap: 10px; align-items: center; background: rgba(10, 16, 22, 0.8); padding: 6px 10px; border: 1px solid #37474f; }
+.trade-row .arrow { color: #18ffff; font-weight: bold; }
+.trade-row .get { flex: 1; color: #fff; }
+.trade-row img { width: 16px; height: 16px; vertical-align: -3px; }
+.stations-head { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.st-big { background: rgba(10, 14, 20, 0.85); border: 1px solid #455a64; padding: 6px 12px; display: flex; flex-direction: column; min-width: 110px; }
+.st-big b { font-size: 22px; color: #fff; }
+.st-big small { color: #90a4ae; font-size: 11px; }
+.st-big.bad b { color: #ff5252; }
+.st-big.good b { color: #76ff03; }
+.st-life { display: flex; gap: 12px; margin-bottom: 8px; }
+.st-bar { flex: 1; font-size: 11px; color: #b0bec5; }
+.st-bar div { height: 8px; background: #263238; margin-top: 2px; }
+.st-bar i { display: block; height: 100%; }
+.dept-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.dept-card { background: rgba(10, 14, 20, 0.85); border: 1px solid #37474f; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.dept-card .dc-t { font-size: 14px; font-weight: 600; }
+.dept-card .dc-t b { color: #fff; margin-left: 6px; }
+.dept-card .dc-t small { color: #78909c; font-weight: 400; margin-left: 4px; }
+.dept-card .dc-bar { height: 6px; background: #263238; }
+.dept-card .dc-bar i { display: block; height: 100%; }
+.dept-card .dc-d { font-size: 11px; color: #90a4ae; }
+.dept-card .dc-posts { display: flex; flex-wrap: wrap; gap: 4px; font-size: 11px; }
+.dept-card .dc-posts span { background: #1c262e; padding: 1px 5px; color: #cfd8dc; }
+.dept-card .dc-posts span.bad { color: #ff8a80; }
+.deck-tools { margin: 4px 0 6px; gap: 6px; }
+.big.open-all { margin: 8px 0; font-size: 16px; padding: 10px 18px; }
+.coll-grid.opened { margin-bottom: 8px; }
+.victory { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(0, 20, 24, 0.82); z-index: 60; pointer-events: auto; }
+.victory .vc { text-align: center; color: #e0f7fa; border: 3px solid #18ffff; background: rgba(0, 30, 36, 0.95); padding: 26px 34px; max-width: 560px; }
+.victory .vc h1 { font-family: var(--px); color: #18ffff; font-size: 30px; margin: 0 0 10px; }
+@media (max-width: 900px), (max-height: 560px) {
+  .mission { max-width: 230px; padding: 3px 6px; }
+  .mission .mh { display: none; }
+  .mission .mn { font-size: 12px; }
+}

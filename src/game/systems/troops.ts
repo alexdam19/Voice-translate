@@ -1,5 +1,6 @@
 import { MODULES } from '../defs';
 import type { Game } from '../game';
+import { campBonus } from './camp';
 import type { ModuleInst } from '../tank';
 
 /**
@@ -14,7 +15,7 @@ export function troopTrainTime(g: Game): number {
   let barracks = 0;
   for (const m of p.modules) if (m.built && m.key === 'barracks') barracks += m.lvl;
   const inCamp = g.playerDistToCenter() < 30;
-  return 14 / (1 + 0.35 * barracks) / (inCamp ? 4 : 1);
+  return 14 / (1 + 0.35 * barracks) / (inCamp ? 4 : campBonus(g).train);
 }
 
 export function updateTroops(g: Game, dt: number): void {

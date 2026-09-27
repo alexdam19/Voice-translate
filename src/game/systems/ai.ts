@@ -7,6 +7,7 @@ import type { Tank } from '../tank';
 import { damageEnemy, damageFriendly, damageTank, explode } from './damage';
 import { driveTank, moveSmall, planPath } from './movement';
 import { troopCasualty } from './troops';
+import { siegeTarget } from '../campaign';
 
 function nearestFriendly(g: Game, e: Enemy, range: number, friends: Target[]): Target | null {
   let best: Target | null = null;
@@ -218,6 +219,50 @@ const deckY = (t: Tank): number => t.deckY(0);
 /** How many creatures fit on a hull at once. */
 export const latchCap = (t: Tank): number => Math.max(6, Math.floor((t.stats.length * t.stats.width) / 14));
 
+/** Pile height (world units) along each 2.5-unit stretch of a hull's perimeter, rebuilt every step. */
+const piles = new Map<number, Float32Array>();
+const PILE_SEG = 2.5;
+
+function perimeterPos(t: Tank, x: number, y: number): number {
+  const l = t.toLocal(x, y);
+  const hl = t.stats.length / 2, hw = t.stats.width / 2;
+  const px = Math.max(-hl, Math.min(hl, l.lx)), pz = Math.max(-hw, Math.min(hw, l.lz));
+  // Which edge is nearest: walk the perimeter front-right-back-left.
+  const dF = hl - px, dB = px + hl, dR = hw - pz, dL = pz + hw;
+  const m = Math.min(dF, dB, dR, dL);
+  if (m === dF) return pz + hw;
+  if (m === dR) return 2 * hw + (hl - px);
+  if (m === dB) return 2 * hw + 2 * hl + (hw - pz);
+  return 4 * hw + 2 * hl + (px + hl);
+}
+
+/** Counts the crowd pressed against each hull and turns it into pile heights. */
+function buildPiles(g: Game, list: Enemy[]): void {
+  piles.clear();
+  const hulls = [g.player, ...g.tanks.filter((t) => t.kind === 'rival')];
+  for (const t of hulls) {
+    if (t.dead) continue;
+    const n = Math.ceil((2 * (t.stats.length + t.stats.width)) / PILE_SEG) + 1;
+    const a = new Float32Array(n);
+    piles.set(t.id, a);
+    const R = t.stats.length / 2 + 2;
+    for (const e of g.grid.near(t.x, t.y, R, [])) {
+      if (e.hp <= 0 || e.latch || e.flying || e.titan || e.r > 0.6) continue;
+      if (t.edgeDist(e.x, e.y) > 0.9) continue;
+      a[Math.floor(perimeterPos(t, e.x, e.y) / PILE_SEG)] += 0.34;
+    }
+  }
+  void list;
+}
+
+function pileAt(t: Tank, x: number, y: number): number {
+  const a = piles.get(t.id);
+  if (!a) return 0;
+  const k = Math.floor(perimeterPos(t, x, y) / PILE_SEG);
+  // Neighbouring stretches prop each other up.
+  return a[k] + 0.5 * ((a[k - 1] ?? 0) + (a[k + 1] ?? 0));
+}
+
 /** The point on a tank's hull nearest to (x, y). */
 function hullPoint(t: Tank, x: number, y: number): { x: number; y: number } {
   const l = t.toLocal(x, y);
@@ -250,7 +295,7 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
   e.y = w.y;
   e.z = deckY(t);
   e.face = l.lz >= 0 ? -1 : 1;
-  damageTank(g, t, e.dmg * 0.8 * dt * (e.elite ? 1.5 : 1), { silent: true });
+  damageTank(g, t, e.dmg * 0.55 * dt * (e.elite ? 1.5 : 1), { silent: true });
   // Boarders on the roof go for the soldiers standing there.
   if (t === g.player && Math.random() < dt * 0.012 * (e.elite ? 3 : 1)) troopCasualty(g, 'soldier', 'Boarders killed a soldier on the roof.');
   if (Math.random() < dt * 0.6) {
@@ -271,6 +316,143 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
     e.vy = (dy / d) * 8;
     e.stun = 0.8;
     damageEnemy(g, e, e.maxHp * 0.3, { silent: true });
+  }
+}
+
+/** Calls in `n` of a kind around an enemy (necromancers raise skeletons, bosses call their brood). */
+function summon(g: Game, e: Enemy, kind: string, n: number): void {
+  // Don't bury the world: at most ~60 summoned things around one summoner.
+  let around = 0;
+  for (const o of g.enemiesNear(e.x, e.y, 20)) if (o.kind === kind) around++;
+  if (around > 60) return;
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, d = e.r + 1 + Math.random() * 3;
+    const m = g.spawnEnemy(kind, e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, e.threat);
+    m.aggro = true;
+    m.horde = e.horde || e.boss === true;
+    g.fx.push({ t: 'spark', x: m.x, y: m.y, color: ENEMIES[e.kind].color, n: 3 });
+  }
+  g.fx.push({ t: 'ring', x: e.x, y: e.y, r: e.r + 3, color: ENEMIES[e.kind].color });
+}
+
+/** Long-range fire with a warning: a laser line (snipers) or a circle on the ground (artillery). */
+function aimedShot(g: Game, e: Enemy, tgt: Target, kind: 'line' | 'circle'): void {
+  const d = ENEMIES[e.kind];
+  if (kind === 'circle') {
+    // Shells land where you were a moment ago, a little scattered.
+    const x = tgt.x + (Math.random() - 0.5) * 3, y = tgt.y + (Math.random() - 0.5) * 3;
+    telegraph(g, x, y, d.splash ?? 3, 2.2, e.dmg, '#ff6d00');
+    g.hooks.sound('mortar', e.x, e.y, 0.5);
+    return;
+  }
+  const a = Math.atan2(tgt.y - e.y, tgt.x - e.x);
+  const len = Math.hypot(tgt.x - e.x, tgt.y - e.y) + 6;
+  const x0 = e.x, y0 = e.y, dmg = e.dmg;
+  telegraph(g, x0, y0, 0.35, 1.3, dmg, '#00e5ff', 'line', a, len, () => {
+    if (e.hp <= 0) return;
+    g.fx.push({ t: 'beam', x0, y0, x1: x0 + Math.cos(a) * len, y1: y0 + Math.sin(a) * len, color: '#00e5ff', w: 0.25, life: 0.25 });
+    g.hooks.sound('rail', x0, y0, 0.6);
+    // Anything of yours on the line takes the hit.
+    for (const f of g.friendlies()) {
+      const t = ((f.x - x0) * Math.cos(a) + (f.y - y0) * Math.sin(a));
+      if (t < 0 || t > len) continue;
+      const px = x0 + Math.cos(a) * t, py = y0 + Math.sin(a) * t;
+      if (g.friendlyEdgeDist(f.id, px, py) < 0.6) damageFriendly(g, f.id, dmg);
+    }
+  });
+}
+
+/**
+ * Bosses: giants with a rotation of attacks. Slams (telegraphed rings), volleys, summons and charges; ranged
+ * bosses keep their distance, brawlers close in.
+ */
+function bossAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
+  const player = g.player;
+  if (!tgt) tgt = { id: player.id, x: player.x, y: player.y, r: player.stats.width / 2, flying: false };
+  const d = ENEMIES[e.kind];
+  const dx = tgt.x - e.x, dy = tgt.y - e.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const edge = g.friendlyEdgeDist(tgt.id, e.x, e.y);
+  e.face = dx >= 0 ? 1 : -1;
+  e.targetId = tgt.id;
+  e.stateT -= dt;
+  e.atkCd -= dt;
+  // Movement: brawlers close in, shooters hold at range.
+  const want = d.range > 8 ? d.range * 0.7 : 1;
+  let mx = 0, my = 0;
+  if (e.state === 'charge') {
+    mx = e.vx;
+    my = e.vy;
+    if (e.stateT <= 0) {
+      e.state = 'idle';
+      e.vx = e.vy = 0;
+    }
+  } else if (edge > want) {
+    mx = (dx / dist) * e.speed * slowMul(e);
+    my = (dy / dist) * e.speed * slowMul(e);
+  } else if (edge < want * 0.6) {
+    mx = (-dx / dist) * e.speed * 0.6;
+    my = (-dy / dist) * e.speed * 0.6;
+  }
+  const r = moveSmall(g, e.x, e.y, e.r * 0.6, mx * dt, my * dt, true);
+  e.x = r.x;
+  e.y = r.y;
+  if (d.summon) {
+    e.summonT = (e.summonT ?? 3) - dt;
+    if (e.summonT <= 0) {
+      e.summonT = d.summon.every;
+      summon(g, e, d.summon.kind, d.summon.n);
+    }
+  }
+  if (e.atkCd > 0 || edge > Math.max(d.range, 6) + 10) return;
+  // Pick the next attack in the rotation.
+  const moves: ('slam' | 'volley' | 'charge' | 'beam' | 'rain')[] =
+    e.kind === 'boss_warlord' ? ['volley', 'charge', 'slam']
+      : e.kind === 'boss_goliath' ? ['rain', 'volley', 'beam']
+        : e.kind === 'boss_abomination' ? ['slam', 'charge', 'volley']
+          : e.kind === 'boss_overmind' ? ['beam', 'volley', 'rain']
+            : e.kind === 'boss_lich' ? ['volley', 'rain', 'beam']
+              : ['slam', 'volley', 'charge', 'rain'];
+  const mv = moves[(e.moveN = (e.moveN ?? 0) + 1) % moves.length];
+  e.atkCd = 2.4 + Math.random();
+  const dmg = e.dmg;
+  switch (mv) {
+    case 'slam':
+      if (edge < 7) telegraph(g, e.x + (dx / dist) * Math.min(dist, e.r + 2), e.y + (dy / dist) * Math.min(dist, e.r + 2), 4.5, 1.1, dmg * 1.4, '#ff1744');
+      else e.atkCd = 0.4;
+      break;
+    case 'volley':
+      for (let i = 0; i < 7; i++) shootAt(g, e, tgt.x + (Math.random() - 0.5) * 6, tgt.y + (Math.random() - 0.5) * 6, 'spit', 13, dmg * 0.3, 1.6);
+      g.hooks.sound('rocket', e.x, e.y, 0.8);
+      break;
+    case 'charge':
+      e.state = 'charge';
+      e.stateT = 1.1;
+      e.vx = (dx / dist) * e.speed * 4;
+      e.vy = (dy / dist) * e.speed * 4;
+      telegraph(g, e.x, e.y, e.r, 0.9, 0, '#ff9100', 'line', Math.atan2(dy, dx), e.speed * 4.4, () => {});
+      break;
+    case 'beam': {
+      const a = Math.atan2(dy, dx);
+      const x0 = e.x, y0 = e.y, len = dist + 8;
+      telegraph(g, x0, y0, 1, 1.2, dmg, '#e040fb', 'line', a, len, () => {
+        g.fx.push({ t: 'beam', x0, y0, x1: x0 + Math.cos(a) * len, y1: y0 + Math.sin(a) * len, color: '#e040fb', w: 0.9, life: 0.4 });
+        for (const f of g.friendlies()) {
+          const t = (f.x - x0) * Math.cos(a) + (f.y - y0) * Math.sin(a);
+          if (t < 0 || t > len) continue;
+          if (g.friendlyEdgeDist(f.id, x0 + Math.cos(a) * t, y0 + Math.sin(a) * t) < 1.2) damageFriendly(g, f.id, dmg * 1.6);
+        }
+      });
+      break;
+    }
+    case 'rain':
+      for (let i = 0; i < 6; i++) telegraph(g, tgt.x + (Math.random() - 0.5) * 16, tgt.y + (Math.random() - 0.5) * 16, 3, 1.6 + i * 0.2, dmg * 0.8, '#ff6d00');
+      break;
+  }
+  // Charging bosses trample what they hit.
+  if (e.state === 'charge' && edge < 1.5) {
+    damageFriendly(g, tgt.id, dmg * dt * 2);
+    g.fx.push({ t: 'shake', amt: 0.3 });
   }
 }
 
@@ -327,23 +509,28 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
       g.hooks.sound('bite', e.x, e.y, 0.2);
       return;
     }
-    if (edge < 0.5 && !full && Math.random() < dt * 1.4) {
-      // Pile up and climb aboard.
-      const l = tank.toLocal(e.x, e.y);
-      latchOn(e, tank, l.lx, l.lz);
-      latched.set(tank.id, (latched.get(tank.id) ?? 0) + 1);
-      return;
+    if (edge < 0.9 && !e.flying) {
+      // Bodies pile up against the hull; once the pile reaches the roof they climb over it and aboard.
+      const pile = pileAt(tank, e.x, e.y);
+      const roof = deckY(tank);
+      e.z = Math.min(roof, pile * (0.25 + 0.75 * (((e.id * 37) % 100) / 100)));
+      if (!full && pile >= roof * 0.85 && Math.random() < dt * 2) {
+        const l = tank.toLocal(e.x, e.y);
+        latchOn(e, tank, l.lx, l.lz);
+        latched.set(tank.id, (latched.get(tank.id) ?? 0) + 1);
+        return;
+      }
     }
   }
   if (edge <= e.range + 0.25 && e.atkCd <= 0) {
     e.atkCd = 1 / e.atkRate;
-    if (e.kind === 'bomber') {
-      explode(g, e.x, e.y, ENEMIES.bomber.splash ?? 2, e.dmg, 'enemy', {}, '#ff5252');
+    if (e.kind === 'bomber' || ENEMIES[e.kind].explode) {
+      explode(g, e.x, e.y, ENEMIES[e.kind].splash ?? 2, e.dmg, 'enemy', {}, e.kind === 'z_bloater' ? '#c6ff00' : '#ff5252');
       e.hp = 0;
       return;
     }
-    // Against a hull they mostly claw for a grip to climb; the damage is done once they're aboard.
-    damageFriendly(g, tgt.id, tank ? e.dmg * 0.08 : e.dmg, { silent: true });
+    // Against a hull they mostly claw for a grip to climb; the damage is done once they're aboard. Flyers dive in.
+    damageFriendly(g, tgt.id, tank ? e.dmg * (e.flying ? 0.3 : 0.08) : e.dmg, { silent: true });
     if (Math.random() < 0.3) g.fx.push({ t: 'spark', x: e.x + dx * e.r, y: e.y + dy * e.r, color: '#ffab40', n: 2 });
   }
   // Run at it, shoulder to shoulder, climbing over whatever is in the way.
@@ -371,16 +558,24 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
   const decay = Math.pow(0.05, dt);
   e.vx *= decay;
   e.vy *= decay;
-  // Clambering over rocks and ruins.
-  const tx = Math.floor(e.x), ty = Math.floor(e.y);
-  const oh = g.map.inside(tx, ty) && g.map.getObs(tx, ty) ? g.map.getOh(tx, ty) * 0.3 : 0;
-  e.z += (oh - e.z) * Math.min(1, dt * 8);
+  if (e.flying) {
+    // Flyers swoop down to roof height when they're on a hull.
+    e.z = tank && edge < 3 ? deckY(tank) + 0.4 : 0;
+    return;
+  }
+  // Clambering over rocks and ruins (and each other, against a hull).
+  if (!(tank && edge < 0.9)) {
+    const tx = Math.floor(e.x), ty = Math.floor(e.y);
+    const oh = g.map.inside(tx, ty) && g.map.getObs(tx, ty) ? g.map.getOh(tx, ty) * 0.3 : 0;
+    e.z += (oh - e.z) * Math.min(1, dt * 8);
+  }
   crushAndPush(g, e, dt);
 }
 
 export function updateEnemies(g: Game, dt: number): void {
   const list = g.enemies;
   g.indexEnemies();
+  buildPiles(g, list);
   const friends = g.friendlies();
   const near: Enemy[] = [];
   // How many are already clinging to each hull.
@@ -414,6 +609,23 @@ export function updateEnemies(g: Game, dt: number): void {
     }
     e.slow = Math.max(0, e.slow - dt);
     if (e.slow <= 0) e.slowAmt = 0;
+    if (e.siege) {
+      // Besieging the Mothership: run at its hull, unless you're close enough to be the better meal.
+      const at = siegeTarget(g, e);
+      if (at) {
+        const dx = at.x - e.x, dy = at.y - e.y, d = Math.hypot(dx, dy) || 1;
+        if (d > 95) {
+          e.x += (dx / d) * e.speed * dt;
+          e.y += (dy / d) * e.speed * dt;
+        }
+        e.face = dx >= 0 ? 1 : -1;
+        e.anim += dt * 4;
+        continue;
+      }
+      e.siege = false;
+      e.horde = true;
+      e.aggro = true;
+    }
     if (e.horde || e.kind === 'swarmer' || e.kind === 'leaper') {
       e.anim += dt * 4;
       updateSwarmer(g, e, dt, friends, latched, near);
@@ -421,7 +633,9 @@ export function updateEnemies(g: Game, dt: number): void {
     }
     // Knockback decay.
     const kb = Math.hypot(e.vx, e.vy);
-    const aggroR = e.camp ? 12 : 17 + e.threat * 1.5;
+    const def = ENEMIES[e.kind];
+    // Long-range units spot you from further out than you can shoot back.
+    const aggroR = e.camp ? 12 : Math.max(17 + e.threat * 1.5, def.range + 8);
     let tgt = nearestFriendly(g, e, e.aggro ? aggroR * 2.2 : aggroR, friends);
     if (e.camp) {
       const home = Math.hypot(e.x - e.homeX, e.y - e.homeY);
@@ -433,9 +647,21 @@ export function updateEnemies(g: Game, dt: number): void {
     }
     if (tgt) e.aggro = true;
     e.targetId = tgt?.id ?? 0;
+    if (e.boss) {
+      bossAI(g, e, dt, tgt);
+      continue;
+    }
     if (e.titan) {
       titanAI(g, e, dt, tgt);
       continue;
+    }
+    // Summoners raise or call in more of their kind while they fight.
+    if (def.summon && tgt) {
+      e.summonT = (e.summonT ?? def.summon.every * 0.5) - dt;
+      if (e.summonT <= 0) {
+        e.summonT = def.summon.every;
+        summon(g, e, def.summon.kind, def.summon.n);
+      }
     }
     let mx = 0, my = 0;
     const d = ENEMIES[e.kind];
@@ -444,8 +670,10 @@ export function updateEnemies(g: Game, dt: number): void {
       const dx = tgt.x - e.x, dy = tgt.y - e.y;
       const len = Math.hypot(dx, dy) || 1;
       e.face = dx >= 0 ? 1 : -1;
-      const ranged = !!d.proj;
-      if (e.kind === 'stalker') {
+      const ranged = !!d.proj || !!d.aimed;
+      if (d.still) {
+        // Turrets and mortar pits don't move.
+      } else if (e.kind === 'stalker') {
         // Burrow, close in, then lunge.
         e.stateT -= dt;
         if (e.state !== 'lunge' && edge > 6) {
@@ -478,14 +706,16 @@ export function updateEnemies(g: Game, dt: number): void {
       e.atkCd -= dt;
       if (e.atkCd <= 0 && edge <= e.range + 0.2 && !e.burrowed) {
         e.atkCd = 1 / e.atkRate;
-        if (ranged) {
+        if (d.aimed) {
+          aimedShot(g, e, tgt, d.aimed);
+        } else if (ranged) {
           if (e.flying || losClear(g.map, e.x, e.y, tgt.x, tgt.y)) shoot(g, e, tgt.x, tgt.y);
           else e.atkCd = 0.3;
-        } else if (e.kind === 'bomber') {
-          explode(g, e.x, e.y, d.splash ?? 2, e.dmg, 'enemy', {}, '#ff5252');
+        } else if (e.kind === 'bomber' || d.explode) {
+          explode(g, e.x, e.y, d.splash ?? 2, e.dmg, 'enemy', {}, e.kind === 'z_bloater' ? '#c6ff00' : '#ff5252');
           e.hp = 0;
           continue;
-        } else if (e.kind === 'guardian' || e.kind === 'brute') {
+        } else if (e.kind === 'guardian' || e.kind === 'brute' || d.slam) {
           telegraph(g, e.x + (dx / len) * 1.2, e.y + (dy / len) * 1.2, e.kind === 'guardian' ? 3 : 2.2, 0.7, e.dmg, '#ff1744');
         } else {
           damageFriendly(g, tgt.id, e.dmg);
@@ -572,7 +802,7 @@ function crushAndPush(g: Game, e: Enemy, dt: number): void {
     e.y = p.y;
     if (t.team === 'player' && Math.abs(t.speed) > 1.5 && !e.titan) {
       const nitro = t.hasBuff('nitro') ? 3 : 1;
-      damageEnemy(g, e, Math.abs(t.speed) * 7 * t.stats.crush * t.ram * nitro * dt * 4, { silent: true, srcTank: t.id });
+      damageEnemy(g, e, Math.abs(t.speed) * 7 * t.stats.crush * t.ram * nitro * dt * 4, { silent: true, srcTank: t.id, weapon: true });
       if (Math.random() < dt * 5) g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffab40', n: 2 });
     }
   }

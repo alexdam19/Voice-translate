@@ -1,4 +1,6 @@
 import { troopCasualty } from './troops';
+import { onBossKilled } from '../campaign';
+import { ENEMIES } from '../enemyDefs';
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
 import { NODE_INFO } from '../../shared/mapgen';
 import { eid, type Enemy, type ShotFx } from '../entities';
@@ -23,6 +25,8 @@ export interface HitOpts {
   fx?: ShotFx;
   /** Acid: ignores armor. */
   acid?: boolean;
+  /** Fired by a gun that isn't a mounted weapon (soldiers, Tesla Coils, ramming): counts as a weapon hit. */
+  weapon?: boolean;
 }
 
 /** On-hit effects of a shot against a creature. Returns the adjusted damage. */
@@ -80,6 +84,11 @@ function lifesteal(g: Game, src: number | undefined, dealt: number, frac: number
 
 export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): void {
   if (e.hp <= 0 || e.burrowed) return;
+  // Phantoms and their like shrug off guns: only cards, abilities and squads can hurt them.
+  if ((o.wkey || o.weapon) && ENEMIES[e.kind]?.immune) {
+    if (!o.silent && Math.random() < 0.15) g.float(e.x, e.y + 0.5, 'IMMUNE: USE ABILITIES', '#b388ff');
+    return;
+  }
   dmg = preHit(e, dmg, o.fx);
   if (o.srcTank === g.player.id) {
     const c = g.player.crew;
@@ -124,6 +133,7 @@ export function killEnemy(g: Game, e: Enemy): void {
   }
   g.fx.push({ t: 'boom', x: e.x, y: e.y, r: e.r * 1.6, color: e.titan ? '#ff9100' : '#ffcc80', big: e.titan });
   g.hooks.sound(e.titan ? 'bigboom' : 'splat', e.x, e.y);
+  if (e.boss) onBossKilled(g, e);
   if (e.titan) {
     g.stats.titans++;
     g.dropLoot(e.x, e.y, 'titan', 4);

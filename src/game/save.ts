@@ -2,7 +2,7 @@ import { TRACTION } from '../shared/map';
 import type { DriveKey } from '../shared/types';
 import type { OpenWorld, RuneKind } from '../shared/mapgen';
 import { sanitizeTree, WEAPONS, type WeaponItem } from '../shared/weapons';
-import { CARDS, DECK_SIZE, MAX_CARD_LEVEL, PACK_INFO, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
+import { CARDS, deckSlots, MAX_CARD_LEVEL, PACK_INFO, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
 import { normalizeCrew, type CrewMember } from './crew';
 import { CC_CHASSIS, CC_COMMANDER_LEVEL, chassisForCC, MODULES } from './defs';
 import { Game, type BuildJob, type ForgeJob, type GameStats, type Track } from './game';
@@ -12,6 +12,8 @@ import { TECH_BY_ID } from './tech';
 import { Tank, type TankSave } from './tank';
 import { bumpUid, peekUid } from './templates';
 import { applyOutriderCrew, launchOutrider } from './systems/outrider';
+import { newCampaign, type Campaign } from './campaign';
+import { newCrewLife, type CrewLife } from './systems/crewlife';
 
 export const SAVE_KEY = 'ironcrawl3d-save-v1';
 
@@ -56,6 +58,9 @@ export interface SaveData {
   wave?: number;
   /* v7: the streamed world keeps exploration per chunk */
   fog?: [number, string][];
+  campaign?: Campaign;
+  life?: CrewLife;
+  home?: { x: number; y: number } | null;
 }
 
 export function serialize(g: Game): SaveData {
@@ -73,7 +78,7 @@ export function serialize(g: Game): SaveData {
     builds: g.builds.map(({ modId, ...b }) => ({ ...b, mod: idx(modId) })).filter((b) => b.mod >= 0),
     squads,
     tracked: !tr ? null : tr.kind === 'upgrade' ? { kind: 'upgrade', mod: idx(tr.modId) } : tr,
-    drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n,
+    drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n, campaign: g.campaign, life: g.life, home: g.deploy.home,
   };
 }
 
@@ -138,7 +143,7 @@ export function deserialize(d: SaveData): Game {
     g.cards[id] = { level: Math.max(1, Math.min(MAX_CARD_LEVEL, Math.round(c.level || 1))), shards: Math.max(0, Math.round(c.shards || 0)) };
   }
   for (const id of STARTER_DECK) if (!g.cards[id]) g.cards[id] = { level: 1, shards: 0 };
-  const deck = (d.deck ?? STARTER_DECK).filter((id, i, a) => g.cards[id] && CARDS[id].type !== 'relic' && a.indexOf(id) === i).slice(0, DECK_SIZE);
+  const deck = (d.deck ?? STARTER_DECK).filter((id, i, a) => g.cards[id] && CARDS[id].type !== 'relic' && a.indexOf(id) === i).slice(0, deckSlots(g.commander.level, d.stats?.hordes ?? 0));
   g.deck = deck.length >= 4 ? deck : [...STARTER_DECK];
   g.relics = (d.relics ?? []).filter((id) => g.cards[id] && CARDS[id].type === 'relic').slice(0, g.relicSlots());
   g.packs = (d.packs ?? []).filter((k) => k in PACK_INFO);
@@ -208,6 +213,9 @@ export function deserialize(d: SaveData): Game {
       applyOutriderCrew(g);
     }
   }
+  if (d.campaign) g.campaign = { ...newCampaign(), ...d.campaign, finale: d.campaign.finale === 'won' ? 'won' : 'none' };
+  if (d.life) g.life = { ...newCrewLife(), ...d.life };
+  if (d.home && d.v >= 7) g.deploy.home = d.home;
   g.gen.focus(g.player.x, g.player.y);
   return g;
 }

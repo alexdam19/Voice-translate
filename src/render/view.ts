@@ -14,7 +14,9 @@ import type { Tank } from '../game/tank';
 import { CHEST_INFO } from '../game/chests';
 import { makeDecal, Particles, Transients, type Decal } from './fx';
 import { fowUniforms, updateFow, fillFow } from './fow';
-import { buildAllyModel, buildGateModel, buildNodeModel, buildRuneModel, buildSiteModel, buildTankModel, buildTitanModel, disposeModel, type AllyModel, type TankModel, type TitanModel } from './models';
+import { Debris } from './debris';
+import { STORMS } from '../game/systems/weather';
+import { buildAllyModel, buildGateModel, buildMothershipModel, buildNodeModel, buildRuneModel, buildSiteModel, buildTankModel, buildTitanModel, disposeModel, type AllyModel, type TankModel, type TitanModel } from './models';
 import { shadowTexture, spriteMat } from './sprites';
 import { CreatureLayer } from './creatures';
 import { TerrainView } from './terrain';
@@ -89,6 +91,7 @@ export class View {
   private units = new Group();
   private addP = new Particles(4000, true);
   private normP = new Particles(3000, false);
+  private debris = new Debris();
   private trans = new Transients();
   private tankModels = new Map<Tank, TankModel & { deck?: number }>();
   /** Which deck of your fortress the base view shows (0 = roof; lower decks are a cutaway). */
@@ -104,6 +107,7 @@ export class View {
   private decals = new Map<number, Decal>();
   private zoneDecals = new Map<number, Decal>();
   private nodeVis = new Map<number, Object3D>();
+  private mothershipVis: { root: Group; core: Mesh; lights: Mesh } | null = null;
   private siteVis = new Map<number, { root: Group; beacon: Mesh; ring: Decal }>();
   private runeVis = new Map<number, { root: Group; crystal: Object3D; beam: Mesh }>();
   private gateVis: { root: Group; disc: Mesh } | null = null;
@@ -173,6 +177,7 @@ export class View {
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.scene.fog = new Fog('#c89a78', 60, 140);
+    this.scene.add(this.debris.mesh);
     this.scene.add(this.world, this.units, this.addP.points, this.normP.points, this.trans.group, this.creatures.sprites.points, this.creatures.shadows.points);
     this.shadowMat = new MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false });
     this.shadowGeo.rotateX(-Math.PI / 2);
@@ -224,6 +229,18 @@ export class View {
       grp.position.set(e.x, 0.03, e.y);
       this.world.add(grp);
       this.extractVis.push(grp);
+    }
+    if (this.mothershipVis) {
+      this.world.remove(this.mothershipVis.root);
+      this.mothershipVis = null;
+    }
+    if (g.mode === 'world' && g.gen.mothership) {
+      const ms = g.gen.mothership;
+      const m = buildMothershipModel();
+      m.root.position.set(ms.x, 0, ms.y);
+      m.root.rotation.y = -Math.atan2(5120 - ms.y, 5120 - ms.x);
+      this.world.add(m.root);
+      this.mothershipVis = m;
     }
     if (g.mode === 'world') {
       const gate = buildGateModel();
@@ -329,6 +346,39 @@ export class View {
     return { x: ((v.x + 1) / 2) * this.width, y: ((1 - v.y) / 2) * this.height, ok: v.z < 1 && v.z > -1 };
   }
 
+  private stormK = 0;
+
+  /** Sand, snow, acid rain, embers or lightning around the camera while a storm blows. */
+  private stormParticles(g: Game, dt: number): void {
+    const w = g.weather;
+    if (g.mode !== 'world' || w.phase !== 'active' || !w.kind || this.stormK < 0.1) return;
+    const R = this.cam.zoom * 1.3;
+    const n = Math.min(40, Math.round(dt * 900 * this.stormK));
+    const col = new Color(STORMS[w.kind].color);
+    for (let i = 0; i < n; i++) {
+      const x = this.cam.x + (Math.random() - 0.5) * R * 2, y = this.cam.y + (Math.random() - 0.5) * R * 2;
+      switch (w.kind) {
+        case 'sand':
+        case 'dust':
+          this.normP.emit(x, y, 0.5 + Math.random() * 5, 14 + Math.random() * 8, 3 + Math.random() * 3, 0, 0.8, 0.35, col, 0, 1, 0.2);
+          break;
+        case 'blizzard':
+          this.normP.emit(x, y, 4 + Math.random() * 8, 5 + Math.random() * 3, 1, -3, 1.4, 0.22, new Color('#ffffff'), 0.2, 1, 0);
+          break;
+        case 'acid':
+          this.addP.emit(x, y, 6 + Math.random() * 6, 0.5, 0.5, -16, 0.5, 0.12, col, 0, 1, 0);
+          break;
+        case 'fire':
+          this.addP.emit(x, y, 0.3 + Math.random() * 4, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2 + Math.random() * 2, 1.2, 0.16, new Color(Math.random() < 0.5 ? '#ff6d00' : '#ffab40'), -1, 0.9, 0);
+          break;
+        case 'ion':
+          if (i === 0 && Math.random() < dt * 3) this.trans.flash(x, y, 8, 12, '#b388ff', 0.1);
+          this.addP.emit(x, y, 3 + Math.random() * 6, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0, 0.4, 0.15, col, 0, 1, 0);
+          break;
+      }
+    }
+  }
+
   private applyZoneLight(g: Game, dt: number): void {
     const zd = g.mode === 'raid' ? DEAD_ZONE : ZONES[g.map.zoneAt(this.cam.x, this.cam.y)] ?? ZONES[0];
     const k = Math.min(1, dt * 1.5);
@@ -336,13 +386,22 @@ export class View {
     this.groundCol.lerp(new Color(zd.ground), k);
     this.sunCol.lerp(new Color(zd.sun), k);
     this.fogCol.lerp(new Color(zd.fog), k);
+    // Storms close in: the air takes the storm's colour and the fog comes nearer.
+    const w = g.mode === 'world' ? g.weather : null;
+    const stormy = !!w && w.phase === 'active' && !!w.kind;
+    this.stormK += ((stormy ? 1 : 0) - this.stormK) * Math.min(1, dt * 0.8);
+    if (this.stormK > 0.01 && w?.kind) {
+      const sc = new Color(STORMS[w.kind].color);
+      this.fogCol.lerp(sc, 0.45 * this.stormK);
+      this.sunCol.lerp(new Color('#6a6a70'), 0.4 * this.stormK);
+    }
     this.hemi.color.copy(this.skyCol);
     this.hemi.groundColor.copy(this.groundCol);
     this.sun.color.copy(this.sunCol);
     const fog = this.scene.fog as Fog;
     fog.color.copy(this.fogCol);
-    fog.near = this.cam.zoom * 1.5;
-    fog.far = this.cam.zoom * 3.4;
+    fog.near = this.cam.zoom * (1.5 - 0.9 * this.stormK);
+    fog.far = this.cam.zoom * (3.4 - 1.6 * this.stormK);
     this.renderer.setClearColor(this.fogCol);
   }
 
@@ -359,6 +418,7 @@ export class View {
       this.fogCol.set(zd.fog);
     }
     this.applyZoneLight(g, dt);
+    this.stormParticles(g, dt);
     this.placeCamera();
     if (g.dirtyChunks.size) {
       for (const k of g.dirtyChunks) this.terrain?.invalidate(k % 1000, Math.floor(k / 1000));
@@ -398,6 +458,7 @@ export class View {
       this.rangeRing.root.scale.setScalar(this.rangeR);
     }
     this.addP.update(dt);
+    this.debris.update(dt);
     this.normP.update(dt);
     this.trans.update(dt);
     this.postMat.uniforms.cNear.value = this.camera.near;
@@ -503,6 +564,15 @@ export class View {
     }
     // The world streams: let go of features we've driven away from.
     this.pruneFeatures(g, R + 60);
+    if (this.mothershipVis) {
+      const c = this.mothershipVis.core;
+      c.rotation.y = this.time * 0.6;
+      c.rotation.x = this.time * 0.3;
+      const k = g.campaign.installed.length / 6;
+      (c.material as MeshBasicMaterial).opacity = 0.35 + 0.6 * k + 0.05 * Math.sin(this.time * 3);
+      c.scale.setScalar(0.6 + 0.6 * k);
+      this.mothershipVis.root.visible = this.near(g.gen.mothership!.x, g.gen.mothership!.y, 700);
+    }
     if (this.gateVis) {
       this.gateVis.disc.rotation.y = this.time * 0.8;
       (this.gateVis.disc.material as MeshBasicMaterial).opacity = 0.4 + 0.2 * Math.sin(this.time * 3);
@@ -622,7 +692,7 @@ export class View {
       const cell = this.creatures.cellFor(e.kind, ENEMIES[e.kind].color, frame, variant);
       const bob = e.flying ? 1.4 + Math.sin(e.anim * 0.8) * 0.2 : 0;
       // Creatures on a hull (or mid-leap) stand on the deck; their shadow falls on it too.
-      const h = bob + e.z * (e.flying ? 0 : 1) + (e.stun > 0 ? 0.05 : 0);
+      const h = (e.flying ? Math.max(bob, e.z) : e.z) + (e.stun > 0 ? 0.05 : 0);
       this.creatures.add(e.x, e.y, h, size, cell, e.face < 0, e.r * 1.2, e.latch ? h + 0.04 : 0.04);
     }
     this.creatures.flush();
@@ -644,7 +714,7 @@ export class View {
       this.titanVis.set(e.id, m);
     }
     m.root.visible = visible && !e.burrowed;
-    m.root.position.set(e.x, 0, e.y);
+    m.root.position.set(e.x, e.flying ? 0.8 + Math.sin(e.anim * 0.3) * 0.4 : 0, e.y);
     const tx = this.worldGame?.player.x ?? e.x, ty = this.worldGame?.player.y ?? e.y;
     const want = -Math.atan2(ty - e.y, tx - e.x);
     let cur = m.root.rotation.y;
@@ -701,7 +771,7 @@ export class View {
       }
       m.root.position.set(a.x, a.z, a.y);
       m.root.rotation.y = -a.rot;
-      const size = a.kind === 'dragon' ? 3.5 : a.kind === 'mech' ? 2.2 : a.kind === 'jet' ? 1.2 : a.kind === 'buggy' ? 1.3 : 0.6;
+      const size = a.kind === 'dragon' ? 3.5 : a.kind === 'mech' ? 2.2 : a.kind === 'jet' ? 1.2 : a.kind === 'buggy' ? 1.3 : a.kind === 'minitank' ? 1.5 : 0.6;
       m.shadow.position.set(a.x, 0.04, a.y);
       m.shadow.scale.set(size, 1, size * 0.7);
       if (a.kind === 'jet') {
@@ -917,6 +987,11 @@ export class View {
 
   private handleFx(e: FxEvent): void {
     switch (e.t) {
+      case 'debris':
+        if (!this.near(e.x, e.y, this.cam.zoom * 2)) return;
+        this.debris.burst(e.x, e.y, e.h, e.color, e.n, e.fx, e.fy, e.push);
+        if (Math.random() < 0.5) this.normP.emit(e.x, e.y, e.h * 0.5, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0.5, 2.5, 2 + e.h * 0.2, new Color('#8a8680'), -0.3, 0.6, 1.2);
+        return;
       case 'boom': {
         if (!this.near(e.x, e.y, this.cam.zoom * 2)) return;
         const n = Math.min(60, 8 + Math.floor(e.r * 10));
