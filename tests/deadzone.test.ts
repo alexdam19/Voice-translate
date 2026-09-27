@@ -39,13 +39,15 @@ describe('dead zone server', () => {
     const s = new WarzoneServer(43, 0);
     const a = join(s, 'A');
     const b = join(s, 'B', { vault: 1, hp: 3000 });
-    // Put them next to each other and wait out spawn protection.
-    a.session.message({ t: 'state', x: 80, y: 80, rot: 0, aims: [0] });
-    for (let i = 0; i < 60; i++) s.tick(0.1);
-    a.session.message({ t: 'state', x: 80, y: 80, rot: 0, aims: [0] });
-    b.session.message({ t: 'state', x: 88, y: 80, rot: 0, aims: [0] });
-    for (let i = 0; i < 20; i++) s.tick(0.1);
-    b.session.message({ t: 'state', x: 88, y: 80, rot: 0, aims: [0] });
+    // Put them next to each other in the plaza and wait out spawn protection (and the drive there).
+    const C = s.arena.gen.map.size / 2;
+    const X = C, Y = C, BX = C + 8;
+    a.session.message({ t: 'state', x: X, y: Y, rot: 0, aims: [0] });
+    for (let i = 0; i < 150; i++) s.tick(0.1);
+    a.session.message({ t: 'state', x: X, y: Y, rot: 0, aims: [0] });
+    b.session.message({ t: 'state', x: BX, y: Y, rot: 0, aims: [0] });
+    for (let i = 0; i < 150; i++) s.tick(0.1);
+    b.session.message({ t: 'state', x: BX, y: Y, rot: 0, aims: [0] });
     // Absurd damage gets clamped; wrong weapon key is capped hard.
     a.session.message({ t: 'hit', target: b.id, dmg: 99999, key: 'main_battery', rarity: 2 });
     const after1 = s.debugPlayer(b.id)!;
@@ -53,8 +55,8 @@ describe('dead zone server', () => {
     expect(after1.hp).toBeLessThan(3000);
     for (let i = 0; i < 12; i++) {
       s.tick(1.1);
-      a.session.message({ t: 'state', x: 80, y: 80, rot: 0, aims: [0] });
-      b.session.message({ t: 'state', x: 88, y: 80, rot: 0, aims: [0] });
+      a.session.message({ t: 'state', x: X, y: Y, rot: 0, aims: [0] });
+      b.session.message({ t: 'state', x: BX, y: Y, rot: 0, aims: [0] });
       a.session.message({ t: 'hit', target: b.id, dmg: 400, key: 'main_battery', rarity: 2 });
     }
     const died = b.inbox.find((m) => m.t === 'died') as Extract<S2C, { t: 'died' }>;
@@ -67,7 +69,7 @@ describe('dead zone server', () => {
     const wreck = s.debugCrates().find((c) => c.kind === 'wreck')!;
     expect(wreck).toBeTruthy();
     s.tick(0.5);
-    a.session.message({ t: 'state', x: 86, y: 80, rot: 0, aims: [0] });
+    a.session.message({ t: 'state', x: C + 6, y: Y, rot: 0, aims: [0] });
     a.session.message({ t: 'loot', crate: wreck.id });
     const loot = a.inbox.find((m) => m.t === 'loot') as Extract<S2C, { t: 'loot' }>;
     expect(loot.weapons.some((w) => w.key === 'laser')).toBe(true);

@@ -113,7 +113,8 @@ export function updateSites(g: Game, dt: number): void {
     // Start scavenging when parked in a ready site.
     for (const k of g.gen.sites) {
       if (k.readyAt > g.time) continue;
-      if (Math.hypot(k.x - p.x, k.y - p.y) < SITE_RADIUS) {
+      // Measured from the hull: a Titan parks right over a site.
+      if (p.edgeDist(k.x, k.y) < SITE_RADIUS) {
         g.site = { id: k.id, t: 0, wave: 0 };
         g.hooks.toast(`Scavenging ${k.name}... hold position!`, '#ffd740');
         g.hooks.sound('alarm');
@@ -122,7 +123,7 @@ export function updateSites(g: Game, dt: number): void {
     }
     return;
   }
-  if (Math.hypot(s.x - p.x, s.y - p.y) > SITE_RADIUS + 1 || p.dead) {
+  if (p.edgeDist(s.x, s.y) > SITE_RADIUS + 1 || p.dead) {
     g.site = { id: 0, t: 0, wave: 0 };
     g.hooks.toast('Scavenging interrupted. Drive back in to resume.', '#ff8a80');
     return;
@@ -193,7 +194,7 @@ export function updateRunes(g: Game, dt: number): void {
     const d = Math.hypot(r.x - p.x, r.y - p.y);
     if (r.readyAt > g.time) continue;
     const camp = g.runeCamps.get(r.id);
-    if (!camp && d < 34) {
+    if (!camp && (p.fortress ? p.edgeDist(r.x, r.y) < 70 : d < 34)) {
       // Spawn the guardian camp.
       const ids: number[] = [];
       const threat = r.threat + 0.4;

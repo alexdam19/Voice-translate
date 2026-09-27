@@ -96,6 +96,9 @@ export type PropKind =
 /* ---------------------------------------------------------------------- */
 
 export type Faction = 'monster' | 'zombie' | 'necro' | 'cyborg' | 'military' | 'raider';
+/** Regions (cities, bases, towns) are laid out at this scale, so their buildings stand up to a Titan. */
+export const REGION_SCALE = 2;
+
 /** The Mothership is built at 1x and shown (and collides) at this scale: a ship the size of a city, dwarfing a Titan. */
 export const MS_SCALE = 3;
 /** Radius of its hull (collision) and of the ring of defense pylons around its landing field. */
@@ -267,13 +270,13 @@ export class OpenWorld implements WorldGen {
       return reg;
     };
     const jit = (): number => (rng.next() - 0.5) * 0.7;
-    major('city', Math.PI * 0.75 + jit(), 520, 115);
-    major('military', 0 + jit(), 1550, 120);
-    major('zombie', -Math.PI / 2 + jit(), 1850, 130);
-    major('cyborg', Math.PI / 2 + jit(), 2250, 120);
-    major('necro', Math.PI + jit(), 2650, 130);
+    major('city', Math.PI * 0.75 + jit(), 820, 115 * REGION_SCALE);
+    major('military', 0 + jit(), 1650, 120 * REGION_SCALE);
+    major('zombie', -Math.PI / 2 + jit(), 1950, 130 * REGION_SCALE);
+    major('cyborg', Math.PI / 2 + jit(), 2350, 120 * REGION_SCALE);
+    major('necro', Math.PI + jit(), 2750, 130 * REGION_SCALE);
     const nestA = Math.PI * 0.25 + jit();
-    major('monster', nestA, 4380, 150);
+    major('monster', nestA, 4250, 150 * REGION_SCALE);
     // The Mothership: at the very edge of the world, opposite the brood it's at war with.
     const ma = -Math.PI * 0.75 + jit() * 0.5;
     const ms = major('mothership', ma, 4520 - 190 * (MS_SCALE - 1) * 0.55, 190 * MS_SCALE);
@@ -400,7 +403,7 @@ export class OpenWorld implements WorldGen {
     const kind = kinds[Math.floor(r.next() * kinds.length)];
     const info = REGION_INFO[kind];
     return {
-      id: 1000 + sy * this.sps + sx, kind, name: info.names[Math.floor(r.next() * info.names.length)], x, y, r: 36 + r.next() * 30, major: false, threat: threatAt(x, y),
+      id: 1000 + sy * this.sps + sx, kind, name: info.names[Math.floor(r.next() * info.names.length)], x, y, r: (36 + r.next() * 30) * REGION_SCALE, major: false, threat: threatAt(x, y),
     };
   }
 
@@ -670,10 +673,11 @@ export class OpenWorld implements WorldGen {
           for (const reg of regions) {
             const d = Math.hypot(x + 0.5 - reg.x, y + 0.5 - reg.y) + p.noise2(x / 18, y / 18) * 10;
             if (d > reg.r) continue;
-            const res = paintRegion(reg, x, y, d, seed, p2);
+            // Architecture is laid out at half resolution and built twice as tall: city blocks a Titan can plough into.
+            const res = paintRegion(reg, Math.floor(x / REGION_SCALE), Math.floor(y / REGION_SCALE), d / REGION_SCALE, reg.r / REGION_SCALE, seed, p2);
             t = res.t;
             o = res.o;
-            h = res.h;
+            h = res.o ? res.h * REGION_SCALE : res.h;
             break;
           }
         }
@@ -792,8 +796,8 @@ function segDist(px: number, py: number, s: Seg): number {
  * Region architecture for one tile, `d` tiles from the region centre. Cities get street grids with skyscrapers that
  * rise toward downtown; bases get hangars, bunkers and a perimeter; necropolises get grave rows and obelisks.
  */
-function paintRegion(reg: Region, x: number, y: number, d: number, seed: number, p2: Perlin): { t: number; o: number; h: number } {
-  const k = 1 - d / reg.r;
+function paintRegion(reg: Region, x: number, y: number, d: number, R: number, seed: number, p2: Perlin): { t: number; o: number; h: number } {
+  const k = 1 - d / R;
   const hs = hash2(x, y, seed + reg.id);
   switch (reg.kind) {
     case 'city': {
@@ -815,7 +819,7 @@ function paintRegion(reg: Region, x: number, y: number, d: number, seed: number,
       return { t: TER.CONCRETE, o: inner ? OBS.RUIN : 0, h: inner ? tall : 0 };
     }
     case 'military': {
-      const perim = Math.abs(d - (reg.r - 6)) < 0.8;
+      const perim = Math.abs(d - (R - 6)) < 0.8;
       if (perim) return { t: TER.CONCRETE, o: hs < 0.08 ? 0 : OBS.WALL, h: 5 };
       // Hangars (big long blocks), bunkers, runway strips and wrecked vehicles.
       const gx = Math.floor((x + 2000) / 30), gy = Math.floor((y + 2000) / 22);

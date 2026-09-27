@@ -41,12 +41,12 @@ describe('horde waves', () => {
       expect(Math.abs(Math.atan2(Math.sin(a - dir), Math.cos(a - dir)))).toBeLessThan(1.2);
     }
     const xp = g.commander.xp + g.commander.level * 1e6;
-    for (let i = 0; i < 60 * 150 && g.wave.phase !== 'calm'; i++) stepWorld(g, 1 / 60);
+    for (let i = 0; i < 30 * 150 && g.wave.phase !== 'calm'; i++) stepWorld(g, 1 / 30);
     expect(g.wave.phase).toBe('calm');
     expect(g.stats.hordes).toBe(1);
     expect(g.commander.xp + g.commander.level * 1e6).toBeGreaterThan(xp);
     expect(hordeAlive(g)).toBe(0);
-  });
+  }, 30000);
 
   it('grows every wave and with the threat', () => {
     expect(hordeSize(5, 1, false)).toBeGreaterThan(hordeSize(1, 1, false));

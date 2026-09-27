@@ -6,7 +6,9 @@ import { hexToRgb } from './pixel';
 import type { View } from './view';
 
 /** How far the corner radar reaches (tiles from the fortress). */
-export const RADAR_R = 150;
+/** The corner radar covers this many metres each way (sampled every RADAR_STEP tiles): a Titan sees a long way. */
+export const RADAR_R = 360;
+const RADAR_STEP = 2;
 
 type Pt = [number, number];
 
@@ -30,7 +32,7 @@ export class Minimap {
   /* ---------------- corner radar ---------------- */
 
   private composeLocal(g: Game): void {
-    const n = RADAR_R * 2;
+    const n = (RADAR_R * 2) / RADAR_STEP;
     if (!this.data) {
       this.img.width = n;
       this.img.height = n;
@@ -42,9 +44,9 @@ export class Minimap {
     const map = g.map;
     const world = g.mode === 'world';
     for (let y = 0; y < n; y++) {
-      const ty = oy + y;
+      const ty = oy + y * RADAR_STEP;
       for (let x = 0; x < n; x++) {
-        const tx = ox + x;
+        const tx = ox + x * RADAR_STEP;
         const k = (y * n + x) * 4;
         const c = map.inside(tx, ty) ? map.peek(tx >> 5, ty >> 5) : undefined;
         const seen = !world || g.revealAll || g.fog.isExplored(tx, ty);
@@ -110,7 +112,7 @@ export class Minimap {
       this.drawWorld(ctx, w, h, g);
       return;
     }
-    const moved = Math.abs(g.player.x - (this.origin[0] + RADAR_R)) > 12 || Math.abs(g.player.y - (this.origin[1] + RADAR_R)) > 12;
+    const moved = Math.abs(g.player.x - (this.origin[0] + RADAR_R)) > 24 || Math.abs(g.player.y - (this.origin[1] + RADAR_R)) > 24;
     if (moved || g.fogVersion - this.lastFog >= 3 || this.lastFog < 0) {
       this.composeLocal(g);
       this.lastFog = g.fogVersion;

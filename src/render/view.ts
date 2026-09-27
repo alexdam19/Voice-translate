@@ -76,6 +76,8 @@ const GLOW_KINDS: Partial<Record<string, number>> = {
 const ROUND_KINDS = new Set(['plasma', 'orb', 'soul', 'chrono', 'gravity', 'fireball', 'acid', 'ink', 'grenade', 'meteor', 'boulder']);
 const ZONE_COLOR: Record<string, string> = { fire: '#ff6d00', acid: '#76ff03', well: '#d500f9', chrono: '#18ffff', rad: '#c6ff00', frost: '#80deea', smoke: '#9e9e9e' };
 
+const COARSE_POINTER = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
 export class View {
   renderer: WebGLRenderer;
   scene = new Scene();
@@ -124,7 +126,9 @@ export class View {
   cam = { x: 320, y: 320, zoom: 38, yaw: -Math.PI / 2, pitch: 56, fov: 32 };
   /** Ground radius around the camera target that can be on screen (terrain, features and creatures stream in it). */
   get groundR(): number {
-    return this.cam.zoom * (this.cam.fov > 40 ? 1.2 : 1.6) + 10;
+    const r = this.cam.zoom * (this.cam.fov > 40 ? 1.2 : 1.6) + 10;
+    // Phones draw less of the far distance (the fog hides the edge).
+    return COARSE_POINTER ? Math.min(r, 380) : Math.min(r, 900);
   }
   /** How much larger than life small things are drawn at the current camera distance. */
   get unitScale(): number {
@@ -424,8 +428,10 @@ export class View {
     this.sun.color.copy(this.sunCol);
     const fog = this.scene.fog as Fog;
     fog.color.copy(this.fogCol);
-    fog.near = this.cam.zoom * (1.5 - 0.9 * this.stormK);
-    fog.far = this.cam.zoom * (3.4 - 1.6 * this.stormK);
+    // Fade out before the edge of the streamed ground (when that's nearer than the usual haze).
+    const edge = Math.hypot(this.groundR + this.cam.zoom * 0.5, this.cam.zoom * 0.83);
+    fog.far = Math.min(this.cam.zoom * 3.4, edge) * (1 - (1.6 / 3.4) * this.stormK);
+    fog.near = Math.min(this.cam.zoom * 1.5, fog.far * 0.6) * (1 - 0.6 * this.stormK);
     this.renderer.setClearColor(this.fogCol);
   }
 

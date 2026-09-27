@@ -1,3 +1,4 @@
+import { ARENA_SCALE } from './constants';
 import { generateArena, type ArenaGen } from './arena';
 import { mergeStacks, type Slot, type Stack } from './inventory';
 import { rollDropRarity, rollLoot, rollWeaponKey } from './loot';
@@ -64,15 +65,13 @@ interface SCrate extends NetCrate {
 
 const BOT_NAMES = ['Scav-117', 'Rattler', 'Hollow Jack', 'Grinder', 'Mother Rust', 'Voltface', 'Nine-Toes', 'Carrion', 'Dust Baron', 'Gutterking'];
 const SPAWN_PROTECTION = 5;
-/** Player fortresses are full facilities: one world unit per deck cell. */
-const CELL = 1;
+/** Every fortress in the Dead Zone is a Titan Crawler: 90 m across the crawlers. Guns reach like ship's guns. */
+const TITAN_R = 45;
+const GUN_REACH = 4;
 
 function sizeOf(bp: Blueprint): { radius: number } {
-  const dims: Record<string, [number, number]> = {
-    crawler: [10, 14], assault: [12, 17], siege: [14, 20], dread: [16, 23], colossus: [18, 27], citadel: [20, 31], scout: [5, 7], outrider: [4, 6], outpost: [12, 12],
-  };
-  const [c] = dims[bp.chassis] ?? [10, 14];
-  return { radius: (c * CELL + 2 * CELL) / 2 };
+  void bp;
+  return { radius: TITAN_R };
 }
 
 function weaponsOf(bp: Blueprint): WeaponItem[] {
@@ -235,7 +234,7 @@ export class WarzoneServer {
         // Accept moves no faster than 30 units/s since the last accepted one (dashes catch up a moment later).
         const dt = Math.max(0.05, this.time - p.lastAccept);
         const d = Math.hypot(msg.x - p.x, msg.y - p.y);
-        if (Number.isFinite(msg.x) && Number.isFinite(msg.y) && d <= 30 * dt + 2) {
+        if (Number.isFinite(msg.x) && Number.isFinite(msg.y) && d <= 30 * dt + 2 * ARENA_SCALE) {
           p.x = msg.x;
           p.y = msg.y;
           p.lastAccept = this.time;
@@ -247,7 +246,7 @@ export class WarzoneServer {
       }
       case 'shot':
         if (p.dead) return;
-        this.broadcast({ t: 'shot', from: p.id, kind: String(msg.kind), x: p.x, y: p.y, a: Number(msg.a) || 0, color: String(msg.color).slice(0, 9), speed: clampNum(msg.speed, 0, 80), range: clampNum(msg.range, 0, 60), pellets: clampNum(msg.pellets, 1, 12) }, p.id);
+        this.broadcast({ t: 'shot', from: p.id, kind: String(msg.kind), x: p.x, y: p.y, a: Number(msg.a) || 0, color: String(msg.color).slice(0, 9), speed: clampNum(msg.speed, 0, 80 * 2.5), range: clampNum(msg.range, 0, 60 * GUN_REACH), pellets: clampNum(msg.pellets, 1, 12) }, p.id);
         return;
       case 'hit': {
         if (p.dead) return;
@@ -256,7 +255,7 @@ export class WarzoneServer {
         const w = weaponsOf(p.bp).find((k) => k.key === msg.key && k.rarity === msg.rarity);
         const cap = w ? maxHitDamage(w.key, w.rarity) : 700; // abilities have no weapon key
         const dmg = Math.min(clampNum(msg.dmg, 0, 5000), cap);
-        const range = w ? weaponStats(w).range * 1.6 : 45;
+        const range = w ? weaponStats(w).range * 1.6 * GUN_REACH + TITAN_R : 45 * ARENA_SCALE;
         if (Math.hypot(target.x - p.x, target.y - p.y) > range + target.radius + 6) return;
         if (this.time - p.dmgWindow.t > 1) p.dmgWindow = { t: this.time, dmg: 0 };
         // Anything past this attacker's per-second budget is dropped.
@@ -380,7 +379,7 @@ export class WarzoneServer {
     if (this.supplyT <= 0) {
       this.supplyT = 75;
       const C = this.arena.gen.map.size / 2;
-      this.spawnCrate(C + (this.rng() - 0.5) * 12, C + (this.rng() - 0.5) * 12, 'supply');
+      this.spawnCrate(C + (this.rng() - 0.5) * 12 * ARENA_SCALE, C + (this.rng() - 0.5) * 12 * ARENA_SCALE, 'supply');
       this.broadcast({ t: 'event', text: 'Supply drop landed in the plaza!', color: '#ffd740' });
     }
     for (let i = this.crateRespawn.length - 1; i >= 0; i--) {
@@ -398,7 +397,7 @@ export class WarzoneServer {
     s.think -= dt;
     // Pick a target.
     let target: SPlayer | null = null;
-    let td = 46;
+    let td = 46 * GUN_REACH + TITAN_R * 2;
     for (const o of this.players.values()) {
       if (o === b || o.dead || o.safeUntil > this.time) continue;
       const d = Math.hypot(o.x - b.x, o.y - b.y);
@@ -412,10 +411,10 @@ export class WarzoneServer {
       s.think = 1.5 + this.rng();
       if (target) {
         const a = Math.atan2(b.y - target.y, b.x - target.x) + s.strafe * 0.6;
-        s.goal = { x: target.x + Math.cos(a) * 14, y: target.y + Math.sin(a) * 14 };
+        s.goal = { x: target.x + Math.cos(a) * (14 * GUN_REACH + TITAN_R * 2), y: target.y + Math.sin(a) * (14 * GUN_REACH + TITAN_R * 2) };
       } else {
         let best: SCrate | null = null;
-        let bd = 60;
+        let bd = 60 * ARENA_SCALE;
         for (const c of this.crates.values()) {
           const d = Math.hypot(c.x - b.x, c.y - b.y);
           if (d < bd) {
@@ -424,15 +423,15 @@ export class WarzoneServer {
           }
         }
         if (best) s.goal = { x: best.x, y: best.y };
-        else if (!s.goal || Math.hypot(s.goal.x - b.x, s.goal.y - b.y) < 3) {
+        else if (!s.goal || Math.hypot(s.goal.x - b.x, s.goal.y - b.y) < 3 * ARENA_SCALE) {
           const C = map.size / 2;
-          s.goal = { x: C + (this.rng() - 0.5) * 100, y: C + (this.rng() - 0.5) * 100 };
+          s.goal = { x: C + (this.rng() - 0.5) * 100 * ARENA_SCALE, y: C + (this.rng() - 0.5) * 100 * ARENA_SCALE };
         }
       }
       // Unstick.
-      if (Math.hypot(b.x - s.lastPos.x, b.y - s.lastPos.y) < 0.8 && this.time - s.lastPos.t > 2) {
+      if (Math.hypot(b.x - s.lastPos.x, b.y - s.lastPos.y) < 2 && this.time - s.lastPos.t > 3) {
         const a = this.rng() * Math.PI * 2;
-        s.goal = { x: b.x + Math.cos(a) * 15, y: b.y + Math.sin(a) * 15 };
+        s.goal = { x: b.x + Math.cos(a) * 15 * ARENA_SCALE, y: b.y + Math.sin(a) * 15 * ARENA_SCALE };
         s.strafe *= -1;
       }
       s.lastPos = { x: b.x, y: b.y, t: this.time };
@@ -440,13 +439,14 @@ export class WarzoneServer {
     if (s.goal) {
       const dx = s.goal.x - b.x, dy = s.goal.y - b.y;
       const d = Math.hypot(dx, dy);
-      if (d > 1.5) {
+      if (d > TITAN_R * 0.3) {
         const want = Math.atan2(dy, dx);
         let diff = want - b.rot;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        b.rot += Math.max(-1.6 * dt, Math.min(1.6 * dt, diff));
-        const sp = (Math.abs(diff) > 1 ? 0.5 : 4.2) * dt;
+        // Bot Titans handle like yours: wide, slow turns.
+        b.rot += Math.max(-0.12 * dt, Math.min(0.12 * dt, diff));
+        const sp = (Math.abs(diff) > 1 ? 2 : 6.5) * dt;
         // Bot fortresses roll over rubble like players do.
         const r = moveCircle(map, b.x, b.y, b.radius * 0.8, Math.cos(b.rot) * sp, Math.sin(b.rot) * sp, 'crush');
         b.x = r.x;
@@ -473,14 +473,14 @@ export class WarzoneServer {
       }
       const a = Math.atan2(target.y - b.y, target.x - b.x);
       b.aims[idx] = a;
-      if (s.cds[k] > 0 || td > st.range + target.radius) return;
+      if (s.cds[k] > 0 || td > st.range * GUN_REACH + target.radius + b.radius) return;
       s.cds[k] = 1 / st.rate;
       const d = WEAPONS[m.weapon.key];
       if (!d.arc && !losClear(map, b.x, b.y, target.x, target.y)) return;
-      const chance = Math.max(0.35, 0.85 - td / 60);
+      const chance = Math.max(0.35, 0.85 - td / (60 * GUN_REACH));
       const hit = this.rng() < chance;
       const dmg = st.dmg * st.pellets * 0.55;
-      this.broadcast({ t: 'shot', from: b.id, kind: d.kind, x: b.x, y: b.y, a, color: d.color, speed: st.speed, range: Math.min(td, st.range), pellets: Math.min(4, st.pellets), hit: hit ? { x: target.x, y: target.y } : undefined });
+      this.broadcast({ t: 'shot', from: b.id, kind: d.kind, x: b.x, y: b.y, a, color: d.color, speed: st.speed, range: Math.min(td, st.range * GUN_REACH), pellets: Math.min(4, st.pellets), hit: hit ? { x: target.x, y: target.y } : undefined });
       if (hit) this.damage(target, dmg, b.name);
     });
   }

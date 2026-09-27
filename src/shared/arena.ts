@@ -1,4 +1,4 @@
-import { ARENA_SIZE } from './constants';
+import { ARENA_SCALE as S, ARENA_SIZE } from './constants';
 import { GameMap, OBS, TER, ZONE } from './map';
 import { staticWorld, type Prop, type WorldGen } from './mapgen';
 import { Perlin } from './noise';
@@ -20,20 +20,21 @@ export function generateArena(seed: number): ArenaGen {
   const C = n / 2;
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
-      const r = Math.hypot(x - C, y - C) + p.fbm2(x / 20, y / 20, 3) * 8;
-      map.set(x, y, { zone: r > 74 ? ZONE.EDGE : ZONE.RUSTBELT });
-      const nv = p.fbm2(x / 16 + 40, y / 16, 3);
+      const r = Math.hypot(x - C, y - C) + p.fbm2(x / (20 * S), y / (20 * S), 3) * 8 * S;
+      map.set(x, y, { zone: r > 74 * S ? ZONE.EDGE : ZONE.RUSTBELT });
+      const nv = p.fbm2(x / (16 * S) + 40, y / (16 * S), 3);
       map.set(x, y, { ter: nv > 0.18 ? TER.CONCRETE : nv < -0.2 ? TER.ASH : TER.RUST });
-      if (r > 74) {
+      if (r > 74 * S) {
         map.set(x, y, { obs: OBS.CLIFF, oh: 7 + Math.floor(hash2(x, y, seed) * 6) });
         continue;
       }
-      // City blocks: broken walls on a 12-tile grid.
-      const bx = Math.floor(x / 12), by = Math.floor(y / 12);
-      const onX = x % 12 === 0, onY = y % 12 === 0;
+      // City blocks: broken walls on a grid.
+      const G = 12 * (S > 1 ? 3 : 1);
+      const bx = Math.floor(x / G), by = Math.floor(y / G);
+      const onX = x % G === 0, onY = y % G === 0;
       if (nv > 0.05 && ((onX && hash2(bx, by * 3 + 1, seed) > 0.45) || (onY && hash2(bx * 3 + 2, by, seed) > 0.45))) {
-        map.set(x, y, { obs: OBS.RUIN, oh: 3 + Math.floor(hash2(bx, by, seed + 9) * 4) });
-      } else if (p.fbm2(x / 9, y / 9, 2) > 0.4) {
+        map.set(x, y, { obs: OBS.RUIN, oh: (3 + Math.floor(hash2(bx, by, seed + 9) * 4)) * (S > 1 ? 3 : 1) });
+      } else if (p.fbm2(x / (9 * S), y / (9 * S), 2) > 0.4) {
         map.set(x, y, { obs: OBS.ROCK, oh: 2 + Math.floor(hash2(x, y, seed + 2) * 3) });
       } else if (hash2(x, y, seed + 5) < 0.006) {
         map.set(x, y, { obs: OBS.WRECK, oh: 2 });
@@ -50,19 +51,19 @@ export function generateArena(seed: number): ArenaGen {
     }
   };
   // Plaza in the middle for supply drops, spawns around the ring, extraction at the edges.
-  clear(C, C, 12, TER.METAL);
+  clear(C, C, 12 * S, TER.METAL);
   const spawns: { x: number; y: number }[] = [];
   for (let k = 0; k < 8; k++) {
     const a = (k / 8) * Math.PI * 2 + 0.2;
-    const s = { x: C + Math.cos(a) * 52, y: C + Math.sin(a) * 52 };
-    clear(s.x, s.y, 7);
+    const s = { x: C + Math.cos(a) * 52 * S, y: C + Math.sin(a) * 52 * S };
+    clear(s.x, s.y, 7 * S);
     spawns.push(s);
   }
   const extracts: { x: number; y: number; r: number }[] = [];
   for (let k = 0; k < 3; k++) {
     const a = (k / 3) * Math.PI * 2 + 1.1;
-    const e = { x: C + Math.cos(a) * 64, y: C + Math.sin(a) * 64, r: 6 };
-    clear(e.x, e.y, 8, TER.METAL);
+    const e = { x: C + Math.cos(a) * 64 * S, y: C + Math.sin(a) * 64 * S, r: 6 * S };
+    clear(e.x, e.y, 8 * S, TER.METAL);
     extracts.push(e);
   }
   // Roads from each spawn to the plaza so big tanks can get around.
@@ -71,17 +72,17 @@ export function generateArena(seed: number): ArenaGen {
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const x = s.x + (C - s.x) * t, y = s.y + (C - s.y) * t;
-      clear(x, y, 4);
-      clear(x, y, 1.6, TER.ROAD);
+      clear(x, y, 4 * S);
+      clear(x, y, 1.6 * S, TER.ROAD);
     }
   }
   const crates: { x: number; y: number }[] = [];
   for (let tries = 0; tries < 2000 && crates.length < 26; tries++) {
     const x = 12 + rng.next() * (n - 24), y = 12 + rng.next() * (n - 24);
-    if (Math.hypot(x - C, y - C) > 66) continue;
+    if (Math.hypot(x - C, y - C) > 66 * S) continue;
     if (map.blocked(Math.floor(x), Math.floor(y), 'ground')) continue;
-    if (crates.some((c) => Math.hypot(c.x - x, c.y - y) < 9)) continue;
-    if (spawns.some((s) => Math.hypot(s.x - x, s.y - y) < 10)) continue;
+    if (crates.some((c) => Math.hypot(c.x - x, c.y - y) < 9 * S)) continue;
+    if (spawns.some((s) => Math.hypot(s.x - x, s.y - y) < 10 * S)) continue;
     crates.push({ x, y });
   }
   const props: Prop[] = [];

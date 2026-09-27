@@ -16,4 +16,6 @@ export const MAX_BASE_CREW = 15;
 export const KIT_KEY = 'Digit5';
 
 /** The Dead Zone arena, in tiles. */
-export const ARENA_SIZE = 160;
+/** The Dead Zone is scaled up so Titan Crawlers (200 m) can fight in it. */
+export const ARENA_SCALE = 6;
+export const ARENA_SIZE = 160 * ARENA_SCALE;
