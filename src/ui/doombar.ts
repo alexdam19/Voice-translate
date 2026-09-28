@@ -1,6 +1,7 @@
 import type { Game } from '../game/game';
 import { FUEL_MAX, WATER_MAX } from '../game/systems/titan';
 import { h } from './dom';
+import { pxText as text } from './pixfont';
 
 /**
  * The status bar along the bottom of the screen, in the spirit of an old corridor shooter: a slab of worn grey
@@ -8,62 +9,6 @@ import { h } from './dom';
  * middle reacting to how the ship is doing and where the hits come from, and a table of the ship's supplies.
  * Everything is drawn as pixel art on small canvases.
  */
-
-/* ---------------------------------------------------------------------- */
-/* A 5 x 7 bitmap font                                                     */
-/* ---------------------------------------------------------------------- */
-
-const GLYPHS: Record<string, string> = {
-  '0': '01110 10001 10011 10101 11001 10001 01110', '1': '00100 01100 00100 00100 00100 00100 01110', '2': '01110 10001 00001 00110 01000 10000 11111',
-  '3': '11110 00001 00001 01110 00001 00001 11110', '4': '00010 00110 01010 10010 11111 00010 00010', '5': '11111 10000 11110 00001 00001 10001 01110',
-  '6': '00110 01000 10000 11110 10001 10001 01110', '7': '11111 00001 00010 00100 01000 01000 01000', '8': '01110 10001 10001 01110 10001 10001 01110',
-  '9': '01110 10001 10001 01111 00001 00010 01100', '%': '11001 11010 00010 00100 01000 01011 10011', '/': '00001 00010 00010 00100 01000 01000 10000',
-  '.': '00000 00000 00000 00000 00000 01100 01100', ':': '00000 01100 01100 00000 01100 01100 00000', '-': '00000 00000 00000 11111 00000 00000 00000',
-  '+': '00000 00100 00100 11111 00100 00100 00000', ' ': '00000 00000 00000 00000 00000 00000 00000',
-  A: '01110 10001 10001 11111 10001 10001 10001', B: '11110 10001 10001 11110 10001 10001 11110', C: '01110 10001 10000 10000 10000 10001 01110',
-  D: '11100 10010 10001 10001 10001 10010 11100', E: '11111 10000 10000 11110 10000 10000 11111', F: '11111 10000 10000 11110 10000 10000 10000',
-  G: '01110 10001 10000 10111 10001 10001 01111', H: '10001 10001 10001 11111 10001 10001 10001', I: '01110 00100 00100 00100 00100 00100 01110',
-  J: '00111 00010 00010 00010 00010 10010 01100', K: '10001 10010 10100 11000 10100 10010 10001', L: '10000 10000 10000 10000 10000 10000 11111',
-  M: '10001 11011 10101 10101 10001 10001 10001', N: '10001 10001 11001 10101 10011 10001 10001', O: '01110 10001 10001 10001 10001 10001 01110',
-  P: '11110 10001 10001 11110 10000 10000 10000', Q: '01110 10001 10001 10001 10101 10010 01101', R: '11110 10001 10001 11110 10100 10010 10001',
-  S: '01111 10000 10000 01110 00001 00001 11110', T: '11111 00100 00100 00100 00100 00100 00100', U: '10001 10001 10001 10001 10001 10001 01110',
-  V: '10001 10001 10001 10001 10001 01010 00100', W: '10001 10001 10001 10101 10101 10101 01010', X: '10001 10001 01010 00100 01010 10001 10001',
-  Y: '10001 10001 01010 00100 00100 00100 00100', Z: '11111 00001 00010 00100 01000 10000 11111',
-};
-const ROWS: Record<string, number[][]> = {};
-for (const [k, v] of Object.entries(GLYPHS)) ROWS[k] = v.split(' ').map((r) => r.split('').map(Number));
-
-type Style = 'big' | 'label' | 'small' | 'lit';
-
-/** Draws text in the bitmap font; big red numbers get a highlight, a shaded base and a drop shadow. */
-function text(x: CanvasRenderingContext2D, s: string, px: number, py: number, u: number, style: Style, align: 'left' | 'center' | 'right' = 'left'): void {
-  // Big numbers are bold: every stroke two units wide.
-  const bold = style === 'big';
-  const gw = bold ? 6 : 5;
-  const adv = (gw + 1) * u;
-  const w = s.length * adv - u;
-  let ox = align === 'center' ? px - w / 2 : align === 'right' ? px - w : px;
-  ox = Math.round(ox);
-  const colors: Record<Style, string[]> = {
-    big: ['#ff6a4a', '#e0200e', '#a40c04', '#5c0400'],
-    label: ['#d8d8d8', '#b0b0b0', '#8a8a8a', '#6a6a6a'],
-    small: ['#fff0b0', '#ffd24a', '#e0a020', '#9a6a10'],
-    lit: ['#c8ffc0', '#6aff5a', '#22c030', '#0e7a1a'],
-  };
-  const col = colors[style];
-  for (let i = 0; i < s.length; i++) {
-    const g0 = ROWS[s[i].toUpperCase()] ?? ROWS[' '];
-    const g = bold ? g0.map((row) => [...row, 0].map((v, c) => (v || (c > 0 && row[c - 1]) ? 1 : 0))) : g0;
-    const gx = ox + i * adv;
-    // Shadow first, then the glyph in bands top to bottom.
-    x.fillStyle = 'rgba(0,0,0,0.75)';
-    for (let r = 0; r < 7; r++) for (let c = 0; c < gw; c++) if (g[r][c]) x.fillRect(gx + c * u + Math.max(1, u / 3), py + r * u + Math.max(1, u / 3), u, u);
-    for (let r = 0; r < 7; r++) {
-      x.fillStyle = col[r < 2 ? 0 : r < 4 ? 1 : r < 6 ? 2 : 3];
-      for (let c = 0; c < gw; c++) if (g[r][c]) x.fillRect(gx + c * u, py + r * u, u, u);
-    }
-  }
-}
 
 /* ---------------------------------------------------------------------- */
 /* Worn metal                                                              */

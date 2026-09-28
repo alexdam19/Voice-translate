@@ -23,6 +23,7 @@ import { updateTroops } from './troops';
 import { updateCrewLife } from './crewlife';
 import { FUEL_MAX, newTitanState, updateTitan, WATER_MAX } from './titan';
 import { updateCamp } from './camp';
+import { updateHelm } from './helm';
 import { stormSpeed, updateWeather } from './weather';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
 
@@ -135,7 +136,9 @@ export function stepWorld(g: Game, dt: number): void {
     }
     healPlayer(g, p.stats.repair * dt, false);
     p.shieldDelay -= dt;
-    if (p.shieldDelay <= 0 && p.shield < p.stats.shield) p.shield = Math.min(p.stats.shield, p.shield + p.stats.shieldRegen * dt);
+    // With the shield generator's power diverted to the drive, the shield bleeds away instead of recharging.
+    if (helm.divert) p.shield = Math.max(0, p.shield - p.stats.shield * 0.25 * dt);
+    else if (p.shieldDelay <= 0 && p.shield < p.stats.shield) p.shield = Math.min(p.stats.shield, p.shield + p.stats.shieldRegen * dt);
     p.hitFlash = Math.max(0, p.hitFlash - dt);
     if (p.speed > 1 && Math.random() < dt * p.speed * 0.8) {
       const b = p.toWorld(-p.stats.length / 2, (Math.random() < 0.5 ? -1 : 1) * p.stats.width * 0.45);
@@ -149,7 +152,8 @@ export function stepWorld(g: Game, dt: number): void {
   updateTelegraphs(g, dt);
   updateAllies(g, dt);
   if (!p.dead) {
-    updateTankWeapons(g, p, dt);
+    // The master arm switch in the cabin: SAFE holds the ship's guns.
+    if (!g.helm.safe) updateTankWeapons(g, p, dt);
     updateTesla(g, p, dt);
     updateSoldiers(g, p, dt);
   }
@@ -184,6 +188,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateCrewLife(g, dt);
       updateStations(g, dt);
       updateTitan(g, dt);
+      updateHelm(g, dt);
     }
     updateCamp(g, dt);
     updateWeather(g, dt);

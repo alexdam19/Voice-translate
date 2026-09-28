@@ -282,7 +282,7 @@ export function updateTitan(g: Game, dt: number): void {
 
   // Flooding: a breached hull in mud or acid lets it in at the bottom; the pumps (engineers, and power) get it out.
   const wet = ter === TER.MUD || ter === TER.ACID;
-  const pumps = (0.01 + 0.004 * (p.stats.depts.engine?.[0] ?? 0)) * power;
+  const pumps = (0.01 + 0.004 * (p.stats.depts.engine?.[0] ?? 0)) * power * (g.helm.pumps ? 3 : 1);
   for (let sec = 0; sec < 3; sec++) {
     const z: ArmorZone = sec === 0 ? 'bow' : sec === 2 ? 'stern' : Math.min(s.zones.port, s.zones.starboard) === s.zones.port ? 'port' : 'starboard';
     const breach = wet && s.zones[z] < 0.45 ? (0.45 - s.zones[z]) * 0.12 : 0;
@@ -303,7 +303,7 @@ export function updateTitan(g: Game, dt: number): void {
 
   // Fuel: the diesels burn it in proportion to how hard they work (a full tank is about 40 minutes flat out).
   const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
-  const burnRate = (p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1) * g.statMods.fuel;
+  const burnRate = ((p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
   const hadFuel = s.fuel > 0;
   s.fuel = Math.max(0, s.fuel - burnRate * dt);
   if (hadFuel && s.fuel <= 0) g.hooks.toast('OUT OF FUEL: running on the reactors alone at a crawl. Refinery, the Mothership, or burn scrap.', '#ff1744');
@@ -386,7 +386,9 @@ export function updateTitan(g: Game, dt: number): void {
   m.speed *= st.speed;
   m.steering *= st.turn;
   m.weapons *= st.dmg;
-  m.sensors *= st.vision;
+  m.sensors *= st.vision * (g.helm.lights ? 1.12 : 1);
+  // Shield generator power diverted to the drive.
+  if (g.helm.divert && p.stats.shield > 0) m.speed *= 1.08;
   m.power *= st.power;
   const t = p.titanMods;
   if (Math.abs(t.power - m.power) > 0.01 || Math.abs(t.speed - m.speed) > 0.01 || Math.abs(t.sensors - m.sensors) > 0.01 || Math.abs(t.weapons - m.weapons) > 0.01) {

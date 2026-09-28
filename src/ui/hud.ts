@@ -61,6 +61,8 @@ export interface HudActions {
   camp(): void;
   /** The helm: throttle lever steps, all stop, overdrive. */
   helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp'): void;
+  /** Into the captain's cabin (first person). */
+  cabin(): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -78,7 +80,8 @@ function setHTML(el: HTMLElement, s: string): void {
 const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls?: string }[] = [
   { key: 'base', label: 'BASE', sub: 'B', cls: 'big base' },
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
-  { key: 'bridge', label: 'BRIDGE', sub: 'Y', cls: 'bridge' },
+  { key: 'cabin', label: 'CABIN', sub: 'F', cls: 'cabin' },
+  { key: 'bridge', label: 'VITALS', sub: 'Y', cls: 'bridge' },
   { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
   { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
   { key: 'shipyard', label: 'SHIPYARD', sub: 'U', cls: 'shipyard' },
@@ -208,6 +211,7 @@ export class Hud {
         e.stopPropagation();
         if (m.key === 'base') act.village(!this.village);
         else if (m.key === 'camp') act.camp();
+        else if (m.key === 'cabin') act.cabin();
         else act.openPanel(m.key);
       });
       this.menu.appendChild(b);
@@ -403,7 +407,11 @@ export class Hud {
 
   /* ---------------- messages ---------------- */
 
+  /** Someone else who wants the messages too (the cabin's teletype). */
+  onToast: ((text: string, color: string) => void) | null = null;
+
   toast(text: string, color = '#fff'): void {
+    this.onToast?.(text, color);
     const t = h('div', 'toast', esc(text));
     t.style.borderLeftColor = color;
     this.toasts.appendChild(t);
@@ -514,7 +522,7 @@ export class Hud {
       b.style.display = !f || c.level >= f.level || (m.key === 'arsenal' && g.armory.length > 0) ? '' : 'none';
       b.classList.toggle('on', (m.key === 'base' && village) || (m.key === 'camp' && g.deploy.state !== 'mobile'));
       if (m.key === 'shipyard') b.style.display = g.mode === 'world' && isDocked(g) ? '' : 'none';
-      if (m.key === 'bridge') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
+      if (m.key === 'bridge' || m.key === 'cabin') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
       if (m.key === 'camp') {
         b.style.display = g.mode === 'world' ? '' : 'none';
         setHTML(b.querySelector('b')!, g.deploy.state === 'up' ? 'PACK UP' : g.deploy.state === 'deploying' ? 'DEPLOYING' : g.deploy.state === 'packing' ? 'PACKING' : 'CAMP');

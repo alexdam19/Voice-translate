@@ -1375,3 +1375,8 @@ html.touch .joy { display: block; }
 .panel-head { background: linear-gradient(rgba(60, 10, 6, 0.85), rgba(24, 8, 6, 0.9)), var(--metal); background-size: auto, 256px 128px; border-bottom-color: #3a0a06; }
 .panel-head .pt { color: #ff5a3c; text-shadow: 3px 3px 0 #000; letter-spacing: 1px; }
 .bossbar { border-color: #7a0a04; }
+
+/* ---------------- The captain's cabin (first person) ---------------- */
+.cabin { position: fixed; inset: 0; z-index: 15; display: none; background: #000; overflow: hidden; pointer-events: auto; touch-action: none; }
+.cabin canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.menu-btn.cabin b { color: #ffb030; }
