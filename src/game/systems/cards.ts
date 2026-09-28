@@ -1,5 +1,5 @@
 import { nearestClear } from '../../shared/motion';
-import { CARDS, type CardDef } from '../cards';
+import { CARD_AREA, CARDS, type CardDef } from '../cards';
 import { eid, type Projectile } from '../entities';
 import type { Game } from '../game';
 import { layMines, spawnDragon, spawnDrones, spawnJet, spawnMarines, spawnMech } from './allies';
@@ -13,8 +13,9 @@ import { revealFeatures } from './world';
  * area cards land where you drop them, self cards affect your fortress. Energy refills over time.
  */
 
-/** How far from the fortress an area card can land. */
+/** How far from the fortress an area card can land (a Titan reaches anywhere on screen). */
 export const CAST_RANGE = 70;
+export const castRange = (g: Game): number => (g.player.fortress ? 1400 : CAST_RANGE);
 
 export type PlayResult = { ok: true } | { ok: false; msg: string };
 
@@ -42,8 +43,9 @@ export function cardBlock(g: Game, slot: number): string | null {
 export function clampCast(g: Game, x: number, y: number): [number, number] {
   const p = g.player;
   const d = Math.hypot(x - p.x, y - p.y);
-  if (d <= CAST_RANGE) return [x, y];
-  const k = CAST_RANGE / d;
+  const range = castRange(g);
+  if (d <= range) return [x, y];
+  const k = range / d;
   return [p.x + (x - p.x) * k, p.y + (y - p.y) * k];
 }
 
@@ -115,40 +117,50 @@ function tanksIn(g: Game, x: number, y: number, r: number) {
 /* Card effects                                                            */
 /* ---------------------------------------------------------------------- */
 
-/** Returns false if the card fizzled (it isn't spent). */
+/**
+ * Returns false if the card fizzled (it isn't spent). Everything is at Titan scale: areas are CARD_AREA times the
+ * old base size and damage is four times what it was, so a card clears a real piece of a horde.
+ */
 function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean {
   const p = g.player;
   const heal = (frac: number, over: number): void => p.addBuff('regen', over, (p.stats.maxHp * frac) / over);
   const R = d.radius;
+  const A = CARD_AREA;
+  const K = 4;
+  const scatter = (r: number): [number, number] => {
+    const a = Math.random() * Math.PI * 2, k = Math.sqrt(Math.random()) * r;
+    return [x + Math.cos(a) * k, y + Math.sin(a) * k];
+  };
   switch (d.id) {
     /* ---------------- Iron ---------------- */
     case 'artillery':
-      for (let i = 0; i < 6; i++) {
-        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
-        strikeAt(g, x + Math.cos(a) * r, y + Math.sin(a) * r, 2.2, 0.9 + i * 0.14, 60 * P, '#ffab40', i % 2 === 1);
+      for (let i = 0; i < 18; i++) {
+        const [sx, sy] = scatter(R);
+        strikeAt(g, sx, sy, 2.2 * A * 0.7, 0.8 + i * 0.09, 60 * K * P, '#ffab40', i % 3 !== 0);
       }
       g.hooks.sound('mortar', x, y, 1);
       break;
     case 'salvo':
-      for (let i = 0; i < 12; i++) {
-        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
-        lob(g, 'missile', p.x, p.y, x + Math.cos(a) * r, y + Math.sin(a) * r, 0.8 + i * 0.05, 40 * P, 1.8, '#ff9100', 0.22, 2.4);
+      for (let i = 0; i < 30; i++) {
+        const [sx, sy] = scatter(R);
+        lob(g, 'missile', p.x, p.y, sx, sy, 0.9 + i * 0.04, 40 * K * P, 1.8 * A * 0.6, '#ff9100', 0.5, 12);
       }
       g.hooks.sound('rocket', p.x, p.y, 1);
       break;
     case 'fireball':
-      lob(g, 'fireball', p.x, p.y, x, y, 0.9, 0, 0, '#ff3d00', 0.7, 2.4);
-      strikeAt(g, x, y, R, 0.9, 220 * P, '#ff3d00', false, () => g.zones.push({ id: eid(), x, y, r: R, t: 5, kind: 'fire', dps: 30 * P, team: 'player' }));
+      lob(g, 'fireball', p.x, p.y, x, y, 1, 0, 0, '#ff3d00', 3, 12);
+      strikeAt(g, x, y, R, 1, 220 * K * P, '#ff3d00', false, () => g.zones.push({ id: eid(), x, y, r: R, t: 6, kind: 'fire', dps: 30 * K * P, team: 'player' }));
       break;
     case 'carpet_bomb': {
-      const n = Math.round(14 * Math.min(1.6, P));
+      const n = Math.round(30 * Math.min(1.6, P));
       const a = Math.atan2(y - p.y, x - p.x);
-      const x0 = x - Math.cos(a) * 9, y0 = y - Math.sin(a) * 9;
-      spawnJet(g, x0 - Math.cos(a) * 12, y0 - Math.sin(a) * 12, a, x0 + Math.cos(a) * 70, y0 + Math.sin(a) * 70, 0, 3);
+      const len = 18 * A;
+      const x0 = x - Math.cos(a) * len / 2, y0 = y - Math.sin(a) * len / 2;
+      spawnJet(g, x0 - Math.cos(a) * 12 * A, y0 - Math.sin(a) * 12 * A, a, x0 + Math.cos(a) * 70 * A, y0 + Math.sin(a) * 70 * A, 0, 3);
       for (let i = 0; i < n; i++) {
-        const k = (i / Math.max(1, n - 1)) * 18;
-        const bx = x0 + Math.cos(a) * k + (Math.random() - 0.5) * 1.5, by = y0 + Math.sin(a) * k + (Math.random() - 0.5) * 1.5;
-        strikeAt(g, bx, by, 2.4, 0.9 + i * 0.07, 90 * P, '#ff6e40', i % 3 !== 0);
+        const k = (i / Math.max(1, n - 1)) * len;
+        const bx = x0 + Math.cos(a) * k + (Math.random() - 0.5) * 1.5 * A, by = y0 + Math.sin(a) * k + (Math.random() - 0.5) * 1.5 * A;
+        strikeAt(g, bx, by, 2.4 * A * 0.7, 0.9 + i * 0.05, 90 * K * P, '#ff6e40', i % 3 !== 0);
       }
       break;
     }
@@ -160,37 +172,36 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       p.addBuff('meltdown', 7, 0.8 * P);
       break;
     case 'jets': {
-      const n = Math.round(3 * Math.min(1.7, P));
+      const n = Math.round(6 * Math.min(1.7, P));
       const a = Math.atan2(y - p.y, x - p.x);
-      for (let i = 0; i < n; i++) spawnJet(g, p.x, p.y, a + (i - (n - 1) / 2) * 0.4, x, y, 40 * P, 14);
+      for (let i = 0; i < n; i++) spawnJet(g, p.x, p.y, a + (i - (n - 1) / 2) * 0.3, x, y, 40 * K * P, 14);
       break;
     }
     case 'meteor': {
-      const n = Math.round(16 * Math.min(1.8, P));
+      const n = Math.round(30 * Math.min(1.8, P));
       for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * R;
-        const mx = x + Math.cos(a) * r, my = y + Math.sin(a) * r;
+        const [mx, my] = scatter(R);
         const t = 0.8 + (i / n) * 4;
-        fallFromSky(g, 'meteor', mx, my, t, '#ff9100', 0.7, 26);
-        strikeAt(g, mx, my, 3, t, 240 * P, '#ff6d00', i % 2 === 1, () => {
-          if (i % 3 === 0) g.zones.push({ id: eid(), x: mx, y: my, r: 2.2, t: 4, kind: 'fire', dps: 40 * P, team: 'player' });
+        fallFromSky(g, 'meteor', mx, my, t, '#ff9100', 3, 26 * A);
+        strikeAt(g, mx, my, 3 * A * 0.6, t, 240 * K * P, '#ff6d00', i % 2 === 1, () => {
+          if (i % 3 === 0) g.zones.push({ id: eid(), x: mx, y: my, r: 2.2 * A * 0.6, t: 4, kind: 'fire', dps: 40 * K * P, team: 'player' });
         });
       }
       break;
     }
     case 'nuke': {
-      const dmg = 2500 * P;
+      const dmg = 12000 * P;
       g.hooks.toast('☢ NUCLEAR LAUNCH DETECTED ☢', '#ffea00');
       g.hooks.sound('alarm');
       setTimeout(() => g.hooks.sound('alarm'), 900);
-      fallFromSky(g, 'nuke', x, y, 3.2, '#eceff1', 0.9, 48);
+      fallFromSky(g, 'nuke', x, y, 3.2, '#eceff1', 4, 48 * A);
       g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 3.2, color: '#ffea00', team: 'player', dmg: 0,
         onDone: () => {
           g.fx.push({ t: 'nuke', x, y, r: R });
           g.fx.push({ t: 'shake', amt: 2.5 });
           g.hooks.sound('bigboom');
-          explode(g, x, y, R, dmg, 'player', { srcTank: p.id, burn: 60 * P }, '#ffea00');
-          g.zones.push({ id: eid(), x, y, r: R * 0.8, t: 12, kind: 'rad', dps: 60 * P, team: 'player' });
+          explode(g, x, y, R, dmg, 'player', { srcTank: p.id, burn: 60 * K * P }, '#ffea00');
+          g.zones.push({ id: eid(), x, y, r: R * 0.8, t: 12, kind: 'rad', dps: 60 * K * P, team: 'player' });
         } });
       break;
     }
@@ -198,10 +209,11 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
     /* ---------------- Volt ---------------- */
     case 'emp': {
       g.fx.push({ t: 'ring', x, y, r: R, color: '#ea80fc' });
+      g.fx.push({ t: 'ring', x, y, r: R * 0.6, color: '#ea80fc' });
       g.hooks.sound('tesla', x, y, 1);
       for (const e of enemiesIn(g, x, y, R)) {
         e.stun = Math.max(e.stun, Math.min(4, 2 * P) * (e.titan ? 0.4 : 1));
-        damageEnemy(g, e, 40 * P, { srcTank: p.id });
+        damageEnemy(g, e, 40 * K * P, { srcTank: p.id });
       }
       for (const t of tanksIn(g, x, y, R)) {
         t.addBuff('stun', 2 * P);
@@ -210,38 +222,39 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       break;
     }
     case 'lightning': {
-      const n = Math.round(10 * Math.min(1.7, P));
+      const n = Math.round(24 * Math.min(1.7, P));
       for (let i = 0; i < n; i++) {
         setTimeout(() => {
           const pool = [...enemiesIn(g, x, y, R).map((e) => ({ x: e.x, y: e.y })), ...tanksIn(g, x, y, R).map((t) => ({ x: t.x, y: t.y }))];
           const tgt = pool.length ? pool[Math.floor(Math.random() * pool.length)] : { x: x + (Math.random() - 0.5) * R * 2, y: y + (Math.random() - 0.5) * R * 2 };
-          skyStrike(g, 'player', tgt.x, tgt.y, 120 * P, { srcTank: p.id, fx: { slow: 0, stun: 0.35, stunTime: 1.2, knock: 0, split: 0, pull: false, execute: false, volatile: false, specials: [], base: 120 * P } }, '#82b1ff', 1.8);
-        }, i * 180);
+          skyStrike(g, 'player', tgt.x, tgt.y, 120 * K * P, { srcTank: p.id, fx: { slow: 0, stun: 0.35, stunTime: 1.2, knock: 0, split: 0, pull: false, execute: false, volatile: false, specials: [], base: 120 * K * P } }, '#82b1ff', 1.8 * A * 0.6);
+        }, i * 110);
       }
       break;
     }
     case 'orbital': {
-      const dmg = 600 * P;
+      const dmg = 600 * K * P;
       g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 1.2, color: '#ff3d00', team: 'player', dmg,
         onDone: () => {
-          g.fx.push({ t: 'beam', x0: x, y0: y - 0.01, x1: x, y1: y, color: '#ff3d00', w: 3, life: 0.6 });
+          g.fx.push({ t: 'beam', x0: x, y0: y - 0.01, x1: x, y1: y, color: '#ff3d00', w: 3 * A, life: 0.6 });
           explode(g, x, y, R, dmg, 'player', { srcTank: p.id }, '#ff3d00');
-          g.zones.push({ id: eid(), x, y, r: R * 0.8, t: 5, kind: 'fire', dps: 40 * P, team: 'player' });
+          g.zones.push({ id: eid(), x, y, r: R * 0.8, t: 5, kind: 'fire', dps: 40 * K * P, team: 'player' });
         } });
       g.hooks.sound('rail');
       break;
     }
     case 'orbital_laser':
-      g.orbital = { x, y, t: 7, dps: 350 * P };
+      g.orbital = { x, y, t: 7, dps: 350 * K * P };
       g.hooks.sound('rail');
       break;
     case 'timestop': {
       const dur = 6 * Math.min(1.6, P);
+      const reach = 45 * A;
       g.timeStop = dur;
-      for (const e of g.enemies) if (Math.hypot(e.x - p.x, e.y - p.y) < 45) e.stun = Math.max(e.stun, dur);
-      for (const t of g.tanks) if (!t.dead && t.team === 'enemy' && Math.hypot(t.x - p.x, t.y - p.y) < 45) t.addBuff('stun', dur);
-      g.fx.push({ t: 'ring', x: p.x, y: p.y, r: 45, color: '#18ffff' });
-      g.fx.push({ t: 'ring', x: p.x, y: p.y, r: 20, color: '#18ffff' });
+      for (const e of g.enemies) if (Math.hypot(e.x - p.x, e.y - p.y) < reach) e.stun = Math.max(e.stun, dur);
+      for (const t of g.tanks) if (!t.dead && t.team === 'enemy' && Math.hypot(t.x - p.x, t.y - p.y) < reach) t.addBuff('stun', dur);
+      g.fx.push({ t: 'ring', x: p.x, y: p.y, r: reach, color: '#18ffff' });
+      g.fx.push({ t: 'ring', x: p.x, y: p.y, r: reach * 0.5, color: '#18ffff' });
       g.hooks.toast('Time stands still...', '#18ffff');
       break;
     }
@@ -257,13 +270,13 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       p.path = [];
       p.goal = null;
       g.fx.push({ t: 'teleport', x: p.x, y: p.y });
-      const r = p.stats.length / 2 + 5;
+      const r = p.stats.length / 2 + 5 * A;
       for (const e of g.enemies) if (Math.hypot(e.x - p.x, e.y - p.y) < r + e.r) e.stun = Math.max(e.stun, 1.5 * P * (e.titan ? 0.3 : 1));
-      explode(g, p.x, p.y, r, 80 * P, 'player', { srcTank: p.id }, '#18ffff');
+      explode(g, p.x, p.y, r, 80 * K * P, 'player', { srcTank: p.id }, '#18ffff');
       break;
     }
     case 'drones':
-      spawnDrones(g, Math.round(4 * Math.min(1.8, P)), 22 * P, 18, 120 * P, x, y);
+      spawnDrones(g, Math.round(8 * Math.min(1.8, P)), 22 * K * P, 18, 120 * K * P, x, y);
       break;
     case 'cataclysm':
       g.storm = { t: 10, P, cd: 0 };
@@ -285,13 +298,13 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       g.fx.push({ t: 'heal', x: p.x, y: p.y });
       break;
     case 'acid_rain':
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2, r = i === 0 ? 0 : R * 0.55;
-        g.zones.push({ id: eid(), x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, r: R * 0.5, t: 6, kind: 'acid', dps: 30 * P, team: 'player' });
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 6) * Math.PI * 2, r = i === 0 ? 0 : R * 0.6;
+        g.zones.push({ id: eid(), x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, r: R * 0.45, t: 6, kind: 'acid', dps: 30 * K * P, team: 'player' });
       }
       break;
     case 'magnet':
-      p.addBuff('magnet', 1.5, 30);
+      p.addBuff('magnet', 1.5, 30 * A);
       p.addBuff('harvestUp', 8, 0.6 * P);
       break;
     case 'frenzy':
@@ -299,39 +312,39 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       g.applyCrew();
       break;
     case 'mines':
-      layMines(g, Math.round(8 * Math.min(1.8, P)), 120 * P, x, y, R);
+      layMines(g, Math.round(24 * Math.min(1.8, P)), 120 * K * P, x, y, R);
       break;
     case 'kraken':
       g.fx.push({ t: 'ring', x, y, r: R, color: '#26a69a' });
       for (const e of enemiesIn(g, x, y, R)) {
         e.stun = Math.max(e.stun, 3 * Math.min(1.6, P) * (e.titan ? 0.3 : 1));
-        damageEnemy(g, e, 80 * P, { srcTank: p.id });
+        damageEnemy(g, e, 80 * K * P, { srcTank: p.id });
         g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#26a69a', n: 6 });
       }
       for (const t of tanksIn(g, x, y, R)) {
         t.addBuff('stun', 2.5);
-        damageTank(g, t, 80 * P, { srcTank: p.id });
+        damageTank(g, t, 80 * K * P, { srcTank: p.id });
       }
       g.hooks.sound('roar', x, y, 0.5);
       break;
 
     /* ---------------- Void ---------------- */
     case 'singularity':
-      g.zones.push({ id: eid(), x, y, r: R + 3, t: 3, kind: 'well', dps: 60 * P, team: 'player' });
-      g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 3, color: '#d500f9', team: 'player', dmg: 250 * P,
-        onDone: () => explode(g, x, y, R, 250 * P, 'player', { srcTank: p.id }, '#d500f9') });
+      g.zones.push({ id: eid(), x, y, r: R * 1.4, t: 3, kind: 'well', dps: 60 * K * P, team: 'player' });
+      g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 3, color: '#d500f9', team: 'player', dmg: 250 * K * P,
+        onDone: () => explode(g, x, y, R, 250 * K * P, 'player', { srcTank: p.id }, '#d500f9') });
       break;
     case 'soul_harvest':
       p.addBuff('soul', 10, 0.1 * P);
       break;
     case 'dragon':
-      spawnDragon(g, x, y, P);
+      spawnDragon(g, x, y, P * K);
       g.hooks.toast('A dragon answers the call!', '#ff3d00');
       break;
     case 'void_rift':
-      g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 0.8, color: '#b388ff', team: 'player', dmg: 700 * P,
+      g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 0.8, color: '#b388ff', team: 'player', dmg: 700 * K * P,
         onDone: () => {
-          explode(g, x, y, R, 700 * P, 'player', { srcTank: p.id }, '#b388ff');
+          explode(g, x, y, R, 700 * K * P, 'player', { srcTank: p.id }, '#b388ff');
           for (const e of enemiesIn(g, x, y, R)) {
             if (e.hp > 0 && e.hp < e.maxHp * (e.titan ? 0.06 : 0.2)) {
               g.float(e.x, e.y + 0.5, 'ERASED', '#b388ff', true);
@@ -358,16 +371,16 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       g.fx.push({ t: 'ring', x: p.x, y: p.y, r: p.stats.length * 0.8, color: '#69f0ae' });
       break;
     case 'squad':
-      spawnMarines(g, Math.round(3 * Math.min(1.7, P)) + p.crew.extraMarines, false, 20, P, x, y);
-      fallFromSky(g, 'boulder', x, y, 0.6, '#90a4ae', 0.6, 20);
+      spawnMarines(g, Math.round(9 * Math.min(1.7, P)) + p.crew.extraMarines, false, 20, P * K, x, y);
+      fallFromSky(g, 'boulder', x, y, 0.6, '#90a4ae', 3, 20 * A);
       break;
     case 'legion':
-      spawnMarines(g, Math.round(5 * Math.min(1.6, P)) + p.crew.extraMarines, true, 25, P, x, y);
-      fallFromSky(g, 'boulder', x, y, 0.6, '#90a4ae', 0.8, 20);
+      spawnMarines(g, Math.round(15 * Math.min(1.6, P)) + p.crew.extraMarines, true, 25, P * K, x, y);
+      fallFromSky(g, 'boulder', x, y, 0.6, '#90a4ae', 4, 20 * A);
       break;
     case 'mech':
-      g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 1.2, color: '#ffab40', team: 'player', dmg: 0, onDone: () => spawnMech(g, x, y, P) });
-      fallFromSky(g, 'boulder', x, y, 1.2, '#ffab40', 1.2, 30);
+      g.telegraphs.push({ id: eid(), x, y, shape: 'circle', r: R, a: 0, len: 0, t: 0, total: 1.2, color: '#ffab40', team: 'player', dmg: 0, onDone: () => spawnMech(g, x, y, P * K) });
+      fallFromSky(g, 'boulder', x, y, 1.2, '#ffab40', 5, 30 * A);
       break;
     case 'miracle':
       p.addBuff('invuln', 3 * Math.min(1.5, P));
@@ -380,7 +393,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       g.fx.push({ t: 'heal', x: p.x, y: p.y });
       break;
     case 'treasure':
-      p.addBuff('magnet', 2, 60);
+      p.addBuff('magnet', 2, 60 * A);
       g.chestBonus = Math.max(g.chestBonus, 1);
       revealFeatures(g);
       g.hooks.toast('Every loot area and rune is now on your map (M). The next chest is one rarity better.', '#ffd23f');
@@ -389,23 +402,24 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       const dx = x - p.x, dy = y - p.y;
       const d = Math.hypot(dx, dy) || 1;
       p.rot = Math.atan2(dy, dx);
-      const steps = Math.ceil(d / 0.5);
+      const steps = Math.ceil(d / 1);
       const hit = new Set<number>();
+      const wide = p.stats.width / 2 + 3 * A;
       for (let i = 0; i < steps; i++) {
-        p.x += (dx / d) * 0.5;
-        p.y += (dy / d) * 0.5;
+        p.x += dx / d;
+        p.y += dy / d;
         if (resolveTank(g, p)) break;
         for (const e of g.enemies) {
-          if (hit.has(e.id) || p.edgeDist(e.x, e.y) > e.r + 0.5) continue;
+          if (hit.has(e.id) || p.edgeDist(e.x, e.y) > e.r + 3 * A * 0.3) continue;
           hit.add(e.id);
-          damageEnemy(g, e, 150 * P, { srcTank: p.id, knock: 14, kx: -dy / d, ky: dx / d });
+          damageEnemy(g, e, 150 * K * P, { srcTank: p.id, knock: 14 * 3, kx: -dy / d, ky: dx / d });
         }
         for (const t of g.tanks) {
-          if (hit.has(t.id) || t.dead || Math.hypot(t.x - p.x, t.y - p.y) > p.stats.radius + t.stats.radius) continue;
+          if (hit.has(t.id) || t.dead || Math.hypot(t.x - p.x, t.y - p.y) > wide + t.stats.radius) continue;
           hit.add(t.id);
-          explode(g, t.x, t.y, 1, 150 * P, 'player', { srcTank: p.id });
+          explode(g, t.x, t.y, 1, 150 * K * P, 'player', { srcTank: p.id });
         }
-        if (i % 3 === 0) g.fx.push({ t: 'dust', x: p.x, y: p.y, color: '#18ffff' });
+        if (i % 8 === 0) g.fx.push({ t: 'dust', x: p.x, y: p.y, color: '#18ffff' });
       }
       p.path = [];
       p.goal = null;
@@ -415,7 +429,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
     case 'smoke':
       p.addBuff('smoke', 5 * Math.min(1.6, P));
       g.zones.push({ id: eid(), x: p.x, y: p.y, r: p.stats.length * 0.8, t: 5, kind: 'smoke', dps: 0, team: 'player' });
-      for (const e of g.enemies) if (Math.hypot(e.x - p.x, e.y - p.y) < 30) e.aggro = false;
+      for (const e of g.enemies) if (Math.hypot(e.x - p.x, e.y - p.y) < 30 * A) e.aggro = false;
       break;
     default:
       return false;
@@ -438,12 +452,12 @@ function updateOrbital(g: Game, dt: number): void {
   // The beam drifts toward the cursor.
   const dx = g.aim.x - o.x, dy = g.aim.y - o.y;
   const d = Math.hypot(dx, dy);
-  const step = Math.min(d, 9 * dt);
+  const step = Math.min(d, 9 * CARD_AREA * dt);
   if (d > 0.01) {
     o.x += (dx / d) * step;
     o.y += (dy / d) * step;
   }
-  const r = 3.5;
+  const r = 3.5 * CARD_AREA;
   for (const e of g.enemies) {
     if (e.hp <= 0 || e.burrowed || Math.hypot(e.x - o.x, e.y - o.y) > r + e.r) continue;
     damageEnemy(g, e, o.dps * dt, { srcTank: g.player.id, silent: Math.random() > dt * 4, burn: 30 });
@@ -452,9 +466,9 @@ function updateOrbital(g: Game, dt: number): void {
     if (t.dead || t.team !== 'enemy' || t.edgeDist(o.x, o.y) > r) continue;
     damageTank(g, t, o.dps * dt, { srcTank: g.player.id, silent: Math.random() > dt * 4 });
   }
-  g.fx.push({ t: 'beam', x0: o.x, y0: o.y, x1: o.x, y1: o.y, color: '#ff1744', w: 2.2, life: 0.06 });
-  if (Math.random() < dt * 6) g.zones.push({ id: eid(), x: o.x, y: o.y, r: 2, t: 2.5, kind: 'fire', dps: 25, team: 'player' });
-  if (Math.random() < dt * 20) g.fx.push({ t: 'spark', x: o.x + (Math.random() - 0.5) * 3, y: o.y + (Math.random() - 0.5) * 3, color: '#ff5252', n: 3 });
+  g.fx.push({ t: 'beam', x0: o.x, y0: o.y, x1: o.x, y1: o.y, color: '#ff1744', w: 2.2 * CARD_AREA, life: 0.06 });
+  if (Math.random() < dt * 6) g.zones.push({ id: eid(), x: o.x, y: o.y, r: 2 * CARD_AREA, t: 2.5, kind: 'fire', dps: 100, team: 'player' });
+  if (Math.random() < dt * 20) g.fx.push({ t: 'spark', x: o.x + (Math.random() - 0.5) * 3 * CARD_AREA, y: o.y + (Math.random() - 0.5) * 3 * CARD_AREA, color: '#ff5252', n: 3 });
 }
 
 function updateStorm(g: Game, dt: number): void {
@@ -467,13 +481,13 @@ function updateStorm(g: Game, dt: number): void {
     return;
   }
   const p = g.player;
-  const reach = p.stats.length / 2 + 22;
+  const reach = p.stats.length / 2 + 200;
   while (s.cd <= 0) {
-    s.cd += 1 / 6;
+    s.cd += 1 / 14;
     const near = g.enemies.filter((e) => e.hp > 0 && !e.burrowed && Math.hypot(e.x - p.x, e.y - p.y) < reach);
     const tanks = g.tanks.filter((t) => !t.dead && t.team === 'enemy' && Math.hypot(t.x - p.x, t.y - p.y) < reach + 2);
     const pool = [...near.map((e) => ({ x: e.x, y: e.y })), ...tanks.map((t) => ({ x: t.x, y: t.y }))];
     const tgt = pool.length ? pool[Math.floor(Math.random() * pool.length)] : { x: p.x + (Math.random() - 0.5) * reach * 2, y: p.y + (Math.random() - 0.5) * reach * 2 };
-    skyStrike(g, 'player', tgt.x, tgt.y, 200 * s.P, { srcTank: p.id, fx: { slow: 0, stun: 0.3, stunTime: 1, knock: 0, split: 0, pull: false, execute: false, volatile: false, specials: [], base: 200 * s.P } }, '#82b1ff', 1.8);
+    skyStrike(g, 'player', tgt.x, tgt.y, 800 * s.P, { srcTank: p.id, fx: { slow: 0, stun: 0.3, stunTime: 1, knock: 0, split: 0, pull: false, execute: false, volatile: false, specials: [], base: 800 * s.P } }, '#82b1ff', 1.8 * CARD_AREA * 0.6);
   }
 }

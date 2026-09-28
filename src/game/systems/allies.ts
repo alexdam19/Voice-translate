@@ -396,14 +396,14 @@ function updateMine(g: Game, a: Ally, dt: number): boolean {
   }
   for (const e of g.enemies) {
     if (e.hp <= 0 || e.burrowed || e.flying) continue;
-    if (Math.hypot(e.x - a.x, e.y - a.y) < 1.6 + e.r) {
-      explode(g, a.x, a.y, 3, a.dmg, 'player', { srcTank: g.player.id }, '#ffd740');
+    if (Math.hypot(e.x - a.x, e.y - a.y) < 6 + e.r) {
+      explode(g, a.x, a.y, 14, a.dmg, 'player', { srcTank: g.player.id }, '#ffd740');
       return true;
     }
   }
   for (const t of g.tanks) {
-    if (t.dead || t.team !== 'enemy' || t.edgeDist(a.x, a.y) > 1) continue;
-    explode(g, a.x, a.y, 3, a.dmg, 'player', { srcTank: g.player.id }, '#ffd740');
+    if (t.dead || t.team !== 'enemy' || t.edgeDist(a.x, a.y) > 4) continue;
+    explode(g, a.x, a.y, 14, a.dmg, 'player', { srcTank: g.player.id }, '#ffd740');
     return true;
   }
   return false;

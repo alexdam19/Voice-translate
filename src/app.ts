@@ -11,7 +11,7 @@ import { deserialize, loadSave, saveGame } from './game/save';
 import { choosePerk, openPack, untrack } from './game/actions';
 import { featureLevel } from './game/progress';
 import { SQUADS, type SquadType } from './game/squads';
-import { CAST_RANGE, cardBlock, clampCast, playCard } from './game/systems/cards';
+import { castRange, cardBlock, clampCast, playCard } from './game/systems/cards';
 import { orderAttack, orderHarvest, orderInteract, orderMove } from './game/systems/orders';
 import { launchOutrider, OUTRIDER_COST, sendOutrider } from './game/systems/outrider';
 import { setSquadOrder } from './game/systems/squads';
@@ -269,10 +269,14 @@ export class App {
     return SCHOOLS[CARDS[id]?.school ?? 'iron'].color;
   }
 
+  /** While a card is being aimed, time crawls (so you can pick your spot even in a horde). */
+  aiming = false;
+
   /** Shows where the card in `slot` would land. */
   cardAim(slot: number, sx: number, sy: number, overUI: boolean): void {
     const g = this.game;
     const id = g?.hand[slot];
+    this.aiming = !!id;
     if (!id || overUI) {
       this.view.aim = null;
       return;
@@ -289,6 +293,7 @@ export class App {
 
   cardDrop(slot: number, sx: number, sy: number, overUI: boolean): void {
     this.view.aim = null;
+    this.aiming = false;
     if (overUI) return;
     const w = this.view.screenToWorld(sx, sy);
     this.play(slot, w.x, w.y);
@@ -314,6 +319,7 @@ export class App {
       return;
     }
     this.hud.armed = slot;
+    this.aiming = true;
     this.hud.toast(`${CARDS[id].name}: tap the battlefield to play it (${this.touch ? 'tap the card again' : 'right-click'} to cancel).`, this.cardColor(id));
     this.sound('draw');
   }
@@ -321,6 +327,7 @@ export class App {
   cancelArmed(): void {
     this.hud.armed = -1;
     this.view.aim = null;
+    this.aiming = false;
   }
 
   private play(slot: number, x: number, y: number): void {
@@ -477,7 +484,7 @@ export class App {
     const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen;
     if (!paused) {
       this.checkWarp();
-      const warp = this.dz ? 1 : g.warp;
+      const warp = this.dz ? 1 : this.aiming ? 0.25 : g.warp;
       this.acc += dt * warp;
       let steps = 0;
       while (this.acc >= STEP && steps < 5 * warp) {
@@ -515,6 +522,7 @@ export class App {
       if (ms.x !== undefined && ms.y !== undefined) this.overlay.drawMission(g, ms.x, ms.y, ms.title.length > 26 ? `${ms.title.slice(0, 24)}…` : ms.title);
     }
     this.minimap.draw(this.mapCtx, 220, 220, g, this.view, false);
+    this.hud.slowmo = this.aiming;
     this.hud.update(g, dt, this.village);
     this.villageUI.update();
     this.panels.tick();
@@ -931,7 +939,7 @@ export class App {
   }
 
   get castRange(): number {
-    return CAST_RANGE;
+    return castRange(this.game);
   }
 
   /** Screen position of the middle of a deck cell (tests and tooling). */

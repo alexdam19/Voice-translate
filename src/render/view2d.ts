@@ -996,13 +996,28 @@ export class View2D {
       c.fillStyle = a.color;
       c.lineWidth = 1;
       const r = Math.max(3, a.r * ppm) * (1 + Math.sin(this.time * 8) * 0.03);
+      const ax = this.bx(a.x, a.y), ay = this.by(a.x, a.y);
       c.beginPath();
-      c.arc(this.bx(a.x, a.y), this.by(a.x, a.y), r, 0, Math.PI * 2);
-      c.globalAlpha = 0.9;
-      c.stroke();
-      c.globalAlpha = 0.14;
+      c.arc(ax, ay, r, 0, Math.PI * 2);
+      c.globalAlpha = 0.18;
       c.fill();
       c.globalAlpha = 1;
+      c.lineWidth = 3;
+      c.strokeStyle = '#000';
+      c.stroke();
+      c.lineWidth = 1.5;
+      c.strokeStyle = a.color;
+      c.stroke();
+      // A rotating crosshair at the middle.
+      const t = this.time * 2;
+      for (let k = 0; k < 4; k++) {
+        const an = t + (k * Math.PI) / 2;
+        c.beginPath();
+        c.moveTo(ax + Math.cos(an) * r * 0.82, ay + Math.sin(an) * r * 0.82);
+        c.lineTo(ax + Math.cos(an) * r * 1.12, ay + Math.sin(an) * r * 1.12);
+        c.stroke();
+      }
+      c.fillRect(Math.round(ax) - 1, Math.round(ay) - 1, 3, 3);
     }
     if (this.beacon) {
       const b = this.beacon;

@@ -39,7 +39,9 @@ export interface CardDef {
   relic?: { stat: RelicStat; value: number };
 }
 
-const C = (d: Omit<CardDef, 'radius' | 'target'> & { radius?: number; target?: CardDef['target'] }): CardDef => ({ radius: 0, target: 'area', ...d });
+/** Cards work at the scale of a 200 m Titan and a horde of hundreds: every area is this many times the base radius. */
+export const CARD_AREA = 8;
+const C = (d: Omit<CardDef, 'radius' | 'target'> & { radius?: number; target?: CardDef['target'] }): CardDef => ({ target: 'area', ...d, radius: (d.radius ?? 0) * CARD_AREA });
 
 export const CARDS: Record<string, CardDef> = {};
 const add = (d: CardDef): void => {
@@ -47,53 +49,53 @@ const add = (d: CardDef): void => {
 };
 
 /* ---------------- Iron ---------------- */
-add(C({ id: 'artillery', name: 'Artillery Call', school: 'iron', type: 'spell', cost: 3, rarity: 0, radius: 4, text: 'Six shells hit the area for {60} damage each.', flavor: '"Coordinates received. Duck."' }));
-add(C({ id: 'salvo', name: 'Rocket Salvo', school: 'iron', type: 'spell', cost: 3, rarity: 0, radius: 4, text: '12 rockets slam the area for {40} damage each.', flavor: 'Aim is optional.' }));
-add(C({ id: 'fireball', name: 'Fireball', school: 'iron', type: 'spell', cost: 4, rarity: 1, radius: 3, text: 'Explodes for {220} damage and leaves the ground burning.', flavor: 'Napalm, lovingly hand-rolled.' }));
-add(C({ id: 'carpet_bomb', name: 'Carpet Bomb', school: 'iron', type: 'spell', cost: 5, rarity: 2, radius: 3, text: 'A bomber drops {14} bombs in a line to the target ({90} each).', flavor: 'The ground rearranged itself.' }));
+add(C({ id: 'artillery', name: 'Artillery Call', school: 'iron', type: 'spell', cost: 3, rarity: 0, radius: 4, text: 'Eighteen shells rain on the area for {240} damage each.', flavor: '"Coordinates received. Duck."' }));
+add(C({ id: 'salvo', name: 'Rocket Salvo', school: 'iron', type: 'spell', cost: 3, rarity: 0, radius: 4, text: '30 rockets slam the area for {160} damage each.', flavor: 'Aim is optional.' }));
+add(C({ id: 'fireball', name: 'Fireball', school: 'iron', type: 'spell', cost: 4, rarity: 1, radius: 3, text: 'Explodes for {900} damage and leaves the ground burning.', flavor: 'Napalm, lovingly hand-rolled.' }));
+add(C({ id: 'carpet_bomb', name: 'Carpet Bomb', school: 'iron', type: 'spell', cost: 5, rarity: 2, radius: 3, text: 'A bomber drops {30} bombs in a line to the target ({360} each).', flavor: 'The ground rearranged itself.' }));
 add(C({ id: 'barrage', name: 'Barrage', school: 'iron', type: 'enchant', cost: 3, rarity: 0, target: 'self', text: 'Your guns fire {50%} faster for 6s.', flavor: 'Feed the belts. All of them.' }));
 add(C({ id: 'meltdown', name: 'Meltdown Core', school: 'iron', type: 'enchant', cost: 6, rarity: 3, target: 'self', text: 'Refill your shields. Your guns fire {80%} faster for 7s.', flavor: 'Old Brass swears it is stable.' }));
-add(C({ id: 'jets', name: 'Scramble Fighters', school: 'iron', type: 'summon', cost: 5, rarity: 2, radius: 3, text: '{3} fighter jets strafe and bomb the area for 14s.', flavor: 'Wheels up in thirty seconds.' }));
-add(C({ id: 'meteor', name: 'Meteor Storm', school: 'iron', type: 'spell', cost: 8, rarity: 4, radius: 10, text: '{16} meteors rain down for {240} damage each and set the ground on fire.', flavor: 'The sky has had enough.' }));
-add(C({ id: 'nuke', name: 'Nuclear Launch', school: 'iron', type: 'spell', cost: 9, rarity: 5, radius: 13, text: 'After a 3s siren, a warhead hits for {2500} damage and leaves a radiation zone.', flavor: 'Launch codes accepted.' }));
+add(C({ id: 'jets', name: 'Scramble Fighters', school: 'iron', type: 'summon', cost: 5, rarity: 2, radius: 3, text: '{6} fighter jets strafe and bomb the area for 14s.', flavor: 'Wheels up in thirty seconds.' }));
+add(C({ id: 'meteor', name: 'Meteor Storm', school: 'iron', type: 'spell', cost: 8, rarity: 4, radius: 10, text: '{30} meteors rain down for {900} damage each and set the ground on fire.', flavor: 'The sky has had enough.' }));
+add(C({ id: 'nuke', name: 'Nuclear Launch', school: 'iron', type: 'spell', cost: 9, rarity: 5, radius: 13, text: 'After a 3s siren, a warhead hits for {12000} damage and leaves a radiation zone.', flavor: 'Launch codes accepted.' }));
 
 /* ---------------- Volt ---------------- */
-add(C({ id: 'emp', name: 'EMP Pulse', school: 'volt', type: 'spell', cost: 3, rarity: 1, radius: 10, text: 'Stun everything in the area for {2s} and deal 40 damage. Shields drop.', flavor: 'Lights out.' }));
-add(C({ id: 'lightning', name: 'Lightning Storm', school: 'volt', type: 'spell', cost: 5, rarity: 2, radius: 8, text: '{10} bolts strike enemies in the area for {120} each, stunning some.', flavor: 'Forecast: violent.' }));
-add(C({ id: 'orbital', name: 'Orbital Lance', school: 'volt', type: 'spell', cost: 6, rarity: 3, radius: 6, text: 'A beam from orbit hits for {600} damage and burns the ground.', flavor: 'Marshal Hale still has the codes.' }));
-add(C({ id: 'orbital_laser', name: 'Orbital Laser', school: 'volt', type: 'spell', cost: 8, rarity: 4, radius: 3.5, text: 'Steer a laser from orbit with your mouse for 7s ({350} per second).', flavor: 'Point and delete.' }));
-add(C({ id: 'timestop', name: 'Time Stop', school: 'volt', type: 'spell', cost: 8, rarity: 4, target: 'self', text: 'Every enemy within 45 freezes for {6s}. Your guns fire 50% faster.', flavor: 'Tick. Tick. ...' }));
+add(C({ id: 'emp', name: 'EMP Pulse', school: 'volt', type: 'spell', cost: 3, rarity: 1, radius: 10, text: 'Stun everything in the area for {2s} and deal 160 damage. Shields drop.', flavor: 'Lights out.' }));
+add(C({ id: 'lightning', name: 'Lightning Storm', school: 'volt', type: 'spell', cost: 5, rarity: 2, radius: 8, text: '{24} bolts strike enemies in the area for {480} each, stunning some.', flavor: 'Forecast: violent.' }));
+add(C({ id: 'orbital', name: 'Orbital Lance', school: 'volt', type: 'spell', cost: 6, rarity: 3, radius: 6, text: 'A beam from orbit hits for {2400} damage and burns the ground.', flavor: 'Marshal Hale still has the codes.' }));
+add(C({ id: 'orbital_laser', name: 'Orbital Laser', school: 'volt', type: 'spell', cost: 8, rarity: 4, radius: 3.5, text: 'Steer a laser from orbit with your mouse for 7s ({1400} per second).', flavor: 'Point and delete.' }));
+add(C({ id: 'timestop', name: 'Time Stop', school: 'volt', type: 'spell', cost: 8, rarity: 4, target: 'self', text: 'Every enemy within 360 m freezes for {6s}. Your guns fire 50% faster.', flavor: 'Tick. Tick. ...' }));
 add(C({ id: 'blink', name: 'Blink Drive', school: 'volt', type: 'spell', cost: 3, rarity: 1, radius: 6, text: 'Teleport your whole fortress there and stun enemies where you land.', flavor: 'A facility, displaced.' }));
-add(C({ id: 'drones', name: 'Drone Swarm', school: 'volt', type: 'summon', cost: 4, rarity: 1, radius: 3, text: '{4} laser drones hunt around the target for 18s.', flavor: 'They never blink.' }));
-add(C({ id: 'cataclysm', name: 'Cataclysm', school: 'volt', type: 'spell', cost: 9, rarity: 5, target: 'self', text: 'For 10s lightning strikes every enemy near you for {200} per bolt.', flavor: 'The sky splits open.' }));
+add(C({ id: 'drones', name: 'Drone Swarm', school: 'volt', type: 'summon', cost: 4, rarity: 1, radius: 3, text: '{8} laser drones hunt around the target for 18s.', flavor: 'They never blink.' }));
+add(C({ id: 'cataclysm', name: 'Cataclysm', school: 'volt', type: 'spell', cost: 9, rarity: 5, target: 'self', text: 'For 10s lightning strikes every enemy within 300 m for {800} per bolt.', flavor: 'The sky splits open.' }));
 add(C({ id: 'nitro', name: 'Nitro', school: 'volt', type: 'enchant', cost: 2, rarity: 0, target: 'self', text: '+{70%} speed for 4s. Ram enemies for damage.', flavor: 'Floor it.' }));
 
 /* ---------------- Rust ---------------- */
 add(C({ id: 'weld', name: 'Weld Crew', school: 'rust', type: 'spell', cost: 3, rarity: 0, target: 'self', text: 'Repair {22%} of max hull over 3s.', flavor: 'Duct tape is structural.' }));
 add(C({ id: 'nanite', name: 'Nanite Cloud', school: 'rust', type: 'spell', cost: 5, rarity: 2, target: 'self', text: 'Repair {45%} hull over 5s and gain +30% armor.', flavor: 'Doc Rivet\'s little helpers.' }));
-add(C({ id: 'acid_rain', name: 'Acid Rain', school: 'rust', type: 'spell', cost: 4, rarity: 1, radius: 6, text: 'Acid pools cover the area and eat through armor ({30} per second).', flavor: 'Bring an umbrella. A thick one.' }));
-add(C({ id: 'magnet', name: 'Magnet Sweep', school: 'rust', type: 'spell', cost: 2, rarity: 0, target: 'self', text: 'Pull in all loot within 30 and harvest {60%} faster for 8s.', flavor: 'Everything metal comes home.' }));
+add(C({ id: 'acid_rain', name: 'Acid Rain', school: 'rust', type: 'spell', cost: 4, rarity: 1, radius: 6, text: 'Acid pools cover the area and eat through armor ({120} per second).', flavor: 'Bring an umbrella. A thick one.' }));
+add(C({ id: 'magnet', name: 'Magnet Sweep', school: 'rust', type: 'spell', cost: 2, rarity: 0, target: 'self', text: 'Pull in all loot within 240 m and harvest {60%} faster for 8s.', flavor: 'Everything metal comes home.' }));
 add(C({ id: 'frenzy', name: 'Salvage Frenzy', school: 'rust', type: 'enchant', cost: 3, rarity: 1, target: 'self', text: '+{100%} loot and harvest yield for 45s.', flavor: 'Strip it all.' }));
-add(C({ id: 'mines', name: 'Minefield', school: 'rust', type: 'summon', cost: 2, rarity: 0, radius: 4, text: 'Scatter {8} proximity mines ({120} damage each).', flavor: 'Mind your step.' }));
-add(C({ id: 'kraken', name: 'Kraken\'s Grasp', school: 'rust', type: 'spell', cost: 4, rarity: 2, radius: 5, text: 'Tentacles root everything in the area for {3s} and deal 80 damage.', flavor: 'Something lives under the mud.' }));
+add(C({ id: 'mines', name: 'Minefield', school: 'rust', type: 'summon', cost: 2, rarity: 0, radius: 4, text: 'Scatter {24} proximity mines ({480} damage each).', flavor: 'Mind your step.' }));
+add(C({ id: 'kraken', name: 'Kraken\'s Grasp', school: 'rust', type: 'spell', cost: 4, rarity: 2, radius: 5, text: 'Tentacles root everything in the area for {3s} and deal 320 damage.', flavor: 'Something lives under the mud.' }));
 
 /* ---------------- Void ---------------- */
-add(C({ id: 'singularity', name: 'Singularity', school: 'void', type: 'spell', cost: 5, rarity: 2, radius: 5, text: 'A gravity well drags enemies in for 3s, then detonates for {250}.', flavor: 'Nova Six likes to watch.' }));
+add(C({ id: 'singularity', name: 'Singularity', school: 'void', type: 'spell', cost: 5, rarity: 2, radius: 5, text: 'A gravity well drags enemies in for 3s, then detonates for {1000}.', flavor: 'Nova Six likes to watch.' }));
 add(C({ id: 'soul_harvest', name: 'Soul Harvest', school: 'void', type: 'enchant', cost: 4, rarity: 1, target: 'self', text: 'Your guns heal you for {10%} of their damage for 10s.', flavor: 'Waste not.' }));
-add(C({ id: 'dragon', name: 'Summon Dragon', school: 'void', type: 'summon', cost: 9, rarity: 5, radius: 4, text: 'A dragon fights for 25s, breathing fire for about {400} damage per second.', flavor: 'It answers the call.' }));
-add(C({ id: 'void_rift', name: 'Void Rift', school: 'void', type: 'spell', cost: 6, rarity: 3, radius: 4, text: '{700} damage to everything in the area. Anything left under 20% health is erased.', flavor: 'Reality, torn along the dotted line.' }));
+add(C({ id: 'dragon', name: 'Summon Dragon', school: 'void', type: 'summon', cost: 9, rarity: 5, radius: 4, text: 'A dragon fights for 25s, breathing fire for about {1600} damage per second.', flavor: 'It answers the call.' }));
+add(C({ id: 'void_rift', name: 'Void Rift', school: 'void', type: 'spell', cost: 6, rarity: 3, radius: 4, text: '{2800} damage to everything in the area. Anything left under 20% health is erased.', flavor: 'Reality, torn along the dotted line.' }));
 add(C({ id: 'scholar', name: 'Scholar\'s Insight', school: 'void', type: 'enchant', cost: 2, rarity: 1, target: 'self', text: '+{100%} commander XP for 60s.', flavor: 'Learn from their mistakes. Loudly.' }));
 add(C({ id: 'deadeye', name: 'Deadeye Salvo', school: 'void', type: 'enchant', cost: 5, rarity: 3, target: 'self', text: 'For {6s} every shot is a critical hit and pierces one extra target.', flavor: 'Vex Morrow never misses twice.' }));
 
 /* ---------------- Aegis ---------------- */
 add(C({ id: 'shield_surge', name: 'Shield Surge', school: 'aegis', type: 'spell', cost: 3, rarity: 0, target: 'self', text: 'Gain a barrier worth {18%} of max hull for 6s.', flavor: 'Not today.' }));
 add(C({ id: 'dome', name: 'Aegis Dome', school: 'aegis', type: 'spell', cost: 5, rarity: 2, target: 'self', text: 'An energy dome blocks 90% of damage for {4s}.', flavor: 'Knock knock. No.' }));
-add(C({ id: 'squad', name: 'Drop Squad', school: 'aegis', type: 'summon', cost: 3, rarity: 0, radius: 3, text: 'Drop {3} marines at the target. They fight for 20s.', flavor: 'Boots on the ground.' }));
-add(C({ id: 'legion', name: 'Iron Legion', school: 'aegis', type: 'summon', cost: 6, rarity: 3, radius: 4, text: 'Drop {5} heavy marines for 25s.', flavor: 'Warden Sol\'s finest.' }));
-add(C({ id: 'mech', name: 'Mech Drop', school: 'aegis', type: 'summon', cost: 7, rarity: 4, radius: 4, text: 'A battle mech with {3000} hull drops from orbit and fights for 30s.', flavor: 'Some assembly required. Already done.' }));
+add(C({ id: 'squad', name: 'Drop Squad', school: 'aegis', type: 'summon', cost: 3, rarity: 0, radius: 3, text: 'Drop {9} marines at the target. They fight for 20s.', flavor: 'Boots on the ground.' }));
+add(C({ id: 'legion', name: 'Iron Legion', school: 'aegis', type: 'summon', cost: 6, rarity: 3, radius: 4, text: 'Drop {15} heavy marines for 25s.', flavor: 'Warden Sol\'s finest.' }));
+add(C({ id: 'mech', name: 'Mech Drop', school: 'aegis', type: 'summon', cost: 7, rarity: 4, radius: 4, text: 'A battle mech with {12000} hull drops from orbit and fights for 30s.', flavor: 'Some assembly required. Already done.' }));
 add(C({ id: 'miracle', name: 'Miracle Protocol', school: 'aegis', type: 'spell', cost: 7, rarity: 4, target: 'self', text: 'Invulnerable for {3s}, repair 25%, revive and cleanse your crew.', flavor: 'Mother Kess does not lose patients.' }));
-add(C({ id: 'treasure', name: 'Treasure Sense', school: 'aegis', type: 'spell', cost: 4, rarity: 3, target: 'self', text: 'Pull in loot within 60, reveal every loot area and rune, and the next chest is one rarity better.', flavor: 'Magpie can smell gold.' }));
-add(C({ id: 'charge', name: 'Juggernaut Charge', school: 'aegis', type: 'spell', cost: 4, rarity: 2, radius: 3, text: 'Dash your fortress to the target, crushing everything in the way for {150}.', flavor: 'Grit Taggart does not brake.' }));
+add(C({ id: 'treasure', name: 'Treasure Sense', school: 'aegis', type: 'spell', cost: 4, rarity: 3, target: 'self', text: 'Pull in loot within 480 m, reveal every loot area and rune, and the next chest is one rarity better.', flavor: 'Magpie can smell gold.' }));
+add(C({ id: 'charge', name: 'Juggernaut Charge', school: 'aegis', type: 'spell', cost: 4, rarity: 2, radius: 3, text: 'Dash your fortress to the target, crushing everything in the way for {600}.', flavor: 'Grit Taggart does not brake.' }));
 add(C({ id: 'smoke', name: 'Smoke Screen', school: 'aegis', type: 'enchant', cost: 2, rarity: 0, target: 'self', text: 'Halve incoming damage for {5s}. Enemies lose track of you.', flavor: 'Now you see us.' }));
 
 /* ---------------- Relics (permanent) ---------------- */

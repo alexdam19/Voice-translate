@@ -1,4 +1,5 @@
 import { ENEMIES } from '../game/enemyDefs';
+import { DoomBar } from './doombar';
 import { TITAN } from '../game/systems/movement';
 import { DRIVE_ITEM, getItem } from '../shared/items';
 import { titanAlerts } from '../game/systems/titan';
@@ -136,11 +137,15 @@ export class Hud {
   private perkBox = h('div', 'perk-box');
   private perkKey = '';
   private tint = h('div', 'timestop-tint');
+  /** Aiming a card: the world slows down (set by the app). */
+  slowmo = false;
   private rider = h('div', 'rider-card');
   private hint = h('div', 'hover-hint');
   private death = h('div', 'death');
   private dragGhost = h('div', 'drag-ghost');
   private bottom = h('div', 'hud-bottom');
+  /** The status bar along the bottom (cells, hull, the hand, the captain, armour, supplies). */
+  private doom = new DoomBar();
   minimap: HTMLCanvasElement;
   private mmWrap = h('div', 'minimap');
   /** Touch driving stick (bottom left, touch screens only). */
@@ -278,8 +283,10 @@ export class Hud {
       e.stopPropagation();
       act.openPack();
     });
-    handWrap.append(this.packBtn, handRow, this.energy);
-    this.bottom.append(this.hpBox, handWrap);
+    handWrap.append(this.packBtn, handRow);
+    // The hand sits in the middle of the status bar; the helm and hull readout above it on the left.
+    this.doom.cards.appendChild(handWrap);
+    this.bottom.append(this.hpBox);
     // Bottom-right: squads above the minimap.
     this.minimap = h('canvas');
     this.minimap.width = 220;
@@ -293,8 +300,8 @@ export class Hud {
       act.minimapClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, e.button === 2);
     });
     this.minimap.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.mmWrap, this.hint, this.death, this.dragGhost);
-    for (const el of [tl, tr, this.bottom, this.squads, this.perkBox, this.rider, this.mmWrap]) el.addEventListener('mousedown', (e) => e.stopPropagation());
+    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost);
+    for (const el of [tl, tr, this.bottom, this.doom.root, this.squads, this.perkBox, this.rider, this.mmWrap]) el.addEventListener('mousedown', (e) => e.stopPropagation());
   }
 
   /**
@@ -391,7 +398,7 @@ export class Hud {
     if (!el) return true;
     if (el.tagName === 'CANVAS' && !el.closest('.minimap')) return false;
     if (el.closest('.joy')) return false;
-    return !!el.closest('.hud-bottom, .hud-tl, .hud-tr, .squads, .minimap, .perk-box, .panel-backdrop, .rider-card, .village .v-card, .village .v-top');
+    return !!el.closest('.hud-bottom, .doom-bar, .hud-tl, .hud-tr, .squads, .minimap, .perk-box, .panel-backdrop, .rider-card, .village .v-card, .village .v-top');
   }
 
   /* ---------------- messages ---------------- */
@@ -567,7 +574,8 @@ export class Hud {
     if (g.timeStop > 0) b.push(`<span style="color:#18ffff">TIME STOP ${Math.ceil(g.timeStop)}s</span>`);
     if (g.orbital) b.push(`<span style="color:#ff1744">ORBITAL LASER ${Math.ceil(g.orbital.t)}s · steer with ${isTouch() ? 'your finger' : 'the mouse'}</span>`);
     if (g.storm) b.push(`<span style="color:#82b1ff">CATACLYSM ${Math.ceil(g.storm.t)}s</span>`);
-    this.tint.style.display = g.timeStop > 0 ? 'block' : 'none';
+    this.tint.style.display = g.timeStop > 0 || this.slowmo ? 'block' : 'none';
+    this.tint.classList.toggle('aim', this.slowmo && g.timeStop <= 0);
     setHTML(this.buffs, b.join(''));
     if (g.hazardWarn) {
       this.hazard.style.display = 'block';
@@ -601,6 +609,7 @@ export class Hud {
     setHTML(this.kitBtn, `<img src="${itemIcon('repair_kit')}"><span class="k">5</span><span class="n">${p.cargo.count('repair_kit')}</span>`);
     this.updateDrive(g);
     this.updateHand(g);
+    this.doom.update(g, dt);
     this.updateSquads(g);
     this.updatePerks(g);
     this.updateRider(g);
