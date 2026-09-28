@@ -13,7 +13,7 @@ import { NODE_INFO, RUNE_INFO } from '../shared/mapgen';
 import { RARITIES } from '../shared/rarity';
 import { DEAD_ZONE, ZONES } from '../shared/zones';
 import { allySprite, archFor, creatureSprite } from './px/creatures2d';
-import { Fx2D, type ScreenMap } from './px/fx2d';
+import { Fx2D, glowSprite, type ScreenMap } from './px/fx2d';
 import { makeCanvas, mix, shade } from './px/pixels';
 import { BLOCK, Terrain2D } from './px/terrain2d';
 import { paintSmallTank, paintTitan } from './px/titan2d';
@@ -149,12 +149,17 @@ export class View2D {
 
   /** Metres from the top of the screen to the bottom. */
   get visibleH(): number {
-    return Math.max(20, this.cam.zoom * (this.cam.fov > 40 ? 1.8 : 0.8));
+    return Math.max(20, this.cam.zoom * (this.cam.fov > 40 ? 1.3 : 0.8));
   }
+
+  /** Snap to a pixel-perfect scale (half, one or two pixels per metre) when the zoom is near one. */
+  snap = false;
 
   /** Buffer pixels per metre. */
   get ppm(): number {
-    return this.rh / this.visibleH;
+    const raw = this.rh / this.visibleH;
+    if (this.snap) for (const n of [0.5, 1, 2, 3]) if (raw / n > 0.72 && raw / n < 1.38) return n;
+    return raw;
   }
 
   /** Screen (CSS) pixels per metre. */
@@ -164,7 +169,7 @@ export class View2D {
 
   /** Ground radius around the camera that can be on screen. */
   get groundR(): number {
-    return Math.hypot(this.visibleH * (this.rw / this.rh), this.visibleH) / 2 + 20;
+    return Math.hypot(this.rw, this.rh) / this.ppm / 2 + 20;
   }
 
   /** Kept for callers of the old view; 2D draws small things at a minimum size instead. */
@@ -230,11 +235,12 @@ export class View2D {
     const w = window.innerWidth, h = window.innerHeight;
     this.width = w;
     this.height = h;
-    let ps = w * h > 2200000 ? 4 : w * h > 900000 ? 3 : 2;
+    // Two screen pixels to the art pixel (three on very big screens): enough resolution for real detail.
+    let ps = w * h > 3600000 ? 3 : 2;
     const dpr = window.devicePixelRatio || 1;
     if (Math.min(w, h) < 560 && dpr > 1) {
       // Phones: ~300 buffer lines on the short side, each a whole number of device pixels.
-      const k = Math.max(2, Math.round((Math.min(w, h) * dpr) / 300));
+      const k = Math.max(2, Math.round((Math.min(w, h) * dpr) / 360));
       ps = k / dpr;
     }
     this.pixelScale = ps;
@@ -299,6 +305,24 @@ export class View2D {
     this.drawWeather(g, dt);
     if (g.mode === 'world' && !g.revealAll) this.drawFog(g, dt);
     this.drawMarkers(g, dt);
+    this.drawVignette();
+  }
+
+  private vignette: HTMLCanvasElement | null = null;
+
+  /** Darkened corners pull the eye to the ship in the middle. */
+  private drawVignette(): void {
+    if (!this.vignette || this.vignette.width !== this.rw || this.vignette.height !== this.rh) {
+      const v = makeCanvas(this.rw, this.rh);
+      const x = v.getContext('2d')!;
+      const g = x.createRadialGradient(this.rw / 2, this.rh / 2, Math.min(this.rw, this.rh) * 0.35, this.rw / 2, this.rh / 2, Math.hypot(this.rw, this.rh) * 0.6);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(1, 'rgba(0,0,0,0.45)');
+      x.fillStyle = g;
+      x.fillRect(0, 0, this.rw, this.rh);
+      this.vignette = v;
+    }
+    this.ctx.drawImage(this.vignette, 0, 0);
   }
 
   /* ---------------- ground ---------------- */
@@ -312,8 +336,9 @@ export class View2D {
     const R = this.groundR;
     const x0 = Math.floor((this.cam.x - R) / BLOCK), x1 = Math.floor((this.cam.x + R) / BLOCK);
     const y0 = Math.floor((this.cam.y - R) / BLOCK), y1 = Math.floor((this.cam.y + R) / BLOCK);
-    const lod = ppm >= 0.9 ? 0 : ppm >= 0.45 ? 1 : 2;
-    c.imageSmoothingEnabled = lod === 0 && ppm < 0.9;
+    const lod = ppm >= 0.7 ? 0 : ppm >= 0.35 ? 1 : 2;
+    // Shrinking a block is smoothed (no shimmer); blowing one up keeps hard pixels.
+    c.imageSmoothingEnabled = ppm < 1 / (1 << lod) - 1e-6;
     // Blocks nearest the middle first, so the budget goes where you're looking.
     const list: [number, number, number][] = [];
     for (let by = y0; by <= y1; by++) for (let bx = x0; bx <= x1; bx++) list.push([bx, by, Math.hypot((bx + 0.5) * BLOCK - this.cam.x, (by + 0.5) * BLOCK - this.cam.y)]);
@@ -600,6 +625,18 @@ export class View2D {
       c.setTransform(ca, sa, -sa, ca, sx, sy);
       c.drawImage(p.canvas, -p.cx, -p.cy);
       c.setTransform(1, 0, 0, 1, 0, 0);
+      // Its lights glow: strips, headlights (and their beams on the ground), tail lights, hot stacks, fires.
+      if (p.lights?.length) {
+        c.globalCompositeOperation = 'lighter';
+        for (const l of p.lights) {
+          const w = t.toWorld(l.x, l.y);
+          const gs = glowSprite(l.color, l.r * 2 * ppm);
+          c.globalAlpha = Math.min(1, l.k);
+          c.drawImage(gs, Math.round(this.bx(w.x, w.y) - gs.width / 2), Math.round(this.by(w.x, w.y) - gs.height / 2));
+        }
+        c.globalAlpha = 1;
+        c.globalCompositeOperation = 'source-over';
+      }
       // Shield bubble.
       if (t.shield > 0 && !t.dead) {
         this.worldPath();
@@ -789,7 +826,7 @@ export class View2D {
       const def = ENEMIES[e.kind];
       const arch = archFor(e.kind, def?.arch);
       const real = e.r * 2 * ppm * (arch === 'worm' || arch === 'dragon' ? 1.35 : 1.15);
-      const min = e.boss ? 14 : e.titan ? 10 : e.elite ? 6 : e.horde ? 4 : 5;
+      const min = e.boss ? 22 : e.titan ? 15 : e.elite ? 10 : e.horde ? 6 : 7;
       const size = Math.max(min, real);
       const toP = Math.atan2(p.y - e.y, p.x - e.x);
       const a = this.headingOf(e.id, e.x, e.y, toP) + this.th;
@@ -863,6 +900,10 @@ export class View2D {
       const vx = sp > 0 ? p.vx / sp : 1, vy = sp > 0 ? p.vy / sp : 0;
       const dx = (vx * this.ct - vy * this.st) * len, dy = (vx * this.st + vy * this.ct) * len;
       const big = p.size > 0.3 || p.splash > 1.5;
+      const gs = glowSprite(p.color.length === 7 ? p.color : '#ffcc80', big ? 14 : 8);
+      c.globalAlpha = 0.55;
+      c.drawImage(gs, Math.round(x - gs.width / 2), Math.round(y - gs.height / 2));
+      c.globalAlpha = 1;
       c.strokeStyle = p.color;
       c.lineWidth = big ? 2 : 1;
       c.beginPath();

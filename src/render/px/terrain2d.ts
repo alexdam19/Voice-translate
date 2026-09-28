@@ -2,14 +2,21 @@ import { CH, OBS, OBS_COLOR, TER, TERRAIN, type GameMap } from '../../shared/map
 import { hash2, rgb, type RGB } from './pixels';
 
 /**
- * The ground as pixel art, one pixel per metre tile, baked in 128 m blocks: terrain with its own texture (dune
- * ripples, deck plating, water glints, lava crust), obstacles bevelled against a sun in the north-west, and the
- * shadows they cast to the south-east (taller things throw longer shadows). Blocks are drawn scaled by the view;
- * far-out zooms use half- and quarter-size copies so the ground doesn't shimmer.
+ * The ground as pixel art, one pixel per metre tile, baked in 128 m blocks and seen in a slight 3/4 view:
+ *
+ *  - every ground type has its own texture (dune ripples, grass tufts and flowers, snow sparkle, ice cracks,
+ *    lava crust, deck plating, cracked asphalt...) and rolls in low hills lit by a sun in the north-west;
+ *  - cliffs, rocks, walls and buildings show their roofs bevelled against that sun and their south faces as
+ *    walls (strata on rock, panels and lit windows on buildings), taller things taller;
+ *  - they cast shadows to the south-east, darken the ground at their feet, and water gets a shoreline.
+ *
+ * Blocks are drawn scaled by the view; far-out zooms use half- and quarter-size copies so nothing shimmers.
  */
 
 export const BLOCK = 128;
-const PAD = 14;
+/** Margin read around a block: walls and shadows reach in from the north and west. */
+const PAD = 16;
+const W = BLOCK + PAD + 2;
 const CPB = BLOCK / CH;
 
 interface Block {
@@ -20,17 +27,58 @@ interface Block {
 const TER_RGB: RGB[] = TERRAIN.map((t) => rgb(t.color));
 const OBS_RGB: RGB[] = OBS_COLOR.map((c) => (c ? rgb(c) : [0, 0, 0]));
 
-const PROP_RGB: Record<string, RGB> = {
-  deadtree: rgb('#4a3a2c'), barrel: rgb('#b0662a'), sign: rgb('#b09060'), crate: rgb('#a07a44'), wreckcar: rgb('#6e5e54'), bones: rgb('#e4dcc4'),
-  skull: rgb('#f2ecdc'), pipe: rgb('#7a7c80'), spike: rgb('#3e3636'), crystal: rgb('#8ae6ff'), cactus: rgb('#4e8e3c'), mushroom: rgb('#b464c8'), antenna: rgb('#9a9ca0'),
+/** How much each ground rolls (hill shading). */
+const RELIEF: number[] = [];
+RELIEF[TER.DUNE] = 2.6;
+RELIEF[TER.SAND] = 1.3;
+RELIEF[TER.SNOW] = 1.8;
+RELIEF[TER.ICE] = 0.7;
+RELIEF[TER.ASH] = 1.2;
+RELIEF[TER.BASALT] = 1.6;
+RELIEF[TER.DIRT] = 1.1;
+RELIEF[TER.RUST] = 1.1;
+RELIEF[TER.GRASS] = 1.1;
+RELIEF[TER.CRATER] = 1.5;
+RELIEF[TER.MUD] = 0.5;
+RELIEF[TER.GLASS] = 0.9;
+RELIEF[TER.CAMP] = 0.6;
+
+const PROP: Record<string, { c: RGB; hi: RGB; w: number; h: number }> = {
+  deadtree: { c: rgb('#4a3a2c'), hi: rgb('#6e5842'), w: 1, h: 3 },
+  barrel: { c: rgb('#a8551e'), hi: rgb('#e08a3a'), w: 1, h: 1 },
+  sign: { c: rgb('#9a7a4a'), hi: rgb('#d0b080'), w: 2, h: 1 },
+  crate: { c: rgb('#8a6434'), hi: rgb('#c49a5a'), w: 2, h: 2 },
+  wreckcar: { c: rgb('#5e4e44'), hi: rgb('#8a7a6c'), w: 4, h: 2 },
+  bones: { c: rgb('#cfc6ac'), hi: rgb('#f4eedc'), w: 2, h: 1 },
+  skull: { c: rgb('#e2dccb'), hi: rgb('#ffffff'), w: 1, h: 1 },
+  pipe: { c: rgb('#63666b'), hi: rgb('#9ea2a8'), w: 4, h: 1 },
+  spike: { c: rgb('#2e2828'), hi: rgb('#5a5050'), w: 1, h: 2 },
+  crystal: { c: rgb('#3fb6e0'), hi: rgb('#c8f6ff'), w: 1, h: 2 },
+  cactus: { c: rgb('#3a7a30'), hi: rgb('#6ab85a'), w: 1, h: 3 },
+  mushroom: { c: rgb('#8a3ca0'), hi: rgb('#e08ef0'), w: 2, h: 2 },
+  antenna: { c: rgb('#7a7c80'), hi: rgb('#cfd2d6'), w: 1, h: 3 },
 };
+
+/** Smooth value noise (0..1) on a grid of `cell` tiles. */
+function vnoise(x: number, y: number, cell: number, seed: number): number {
+  const fx0 = x / cell, fy0 = y / cell;
+  const gx = Math.floor(fx0), gy = Math.floor(fy0);
+  const fx = fx0 - gx, fy = fy0 - gy;
+  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+  const a = hash2(gx, gy, seed), b = hash2(gx + 1, gy, seed), c = hash2(gx, gy + 1, seed), d = hash2(gx + 1, gy + 1, seed);
+  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+}
+
+const isBuilding = (o: number): boolean => o === OBS.WALL || o === OBS.RUIN || o === OBS.PILLAR || o === OBS.WRECK;
+const isLiquid = (t: number): boolean => t === TER.WATER || t === TER.ACID || t === TER.LAVA;
 
 export class Terrain2D {
   private blocks = new Map<number, Block>();
   private tick = 0;
-  private ter = new Uint8Array((BLOCK + PAD + 1) ** 2);
-  private obs = new Uint8Array((BLOCK + PAD + 1) ** 2);
-  private oh = new Uint8Array((BLOCK + PAD + 1) ** 2);
+  private ter = new Uint8Array(W * W);
+  private obs = new Uint8Array(W * W);
+  private oh = new Uint8Array(W * W);
+  private hgt = new Float32Array(W * W);
   private img: ImageData | null = null;
   /** Blocks built this frame (building is spread over frames). */
   private built = 0;
@@ -46,20 +94,18 @@ export class Terrain2D {
     return by * 4096 + bx;
   }
 
-  /** A map chunk changed (something was crushed): rebuild its block, and the one that takes its shadows. */
+  /** A map chunk changed (something was crushed): rebuild its block, and the ones its walls and shadows reach. */
   invalidate(cx: number, cy: number): void {
     const bx = Math.floor(cx / CPB), by = Math.floor(cy / CPB);
-    this.blocks.delete(this.key(bx, by));
-    if ((cx + 1) % CPB === 0) this.blocks.delete(this.key(bx + 1, by));
-    if ((cy + 1) % CPB === 0) this.blocks.delete(this.key(bx, by + 1));
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0], [0, -1]]) this.blocks.delete(this.key(bx + dx, by + dy));
   }
 
   beginFrame(): void {
     this.built = 0;
     this.tick++;
     // Forget blocks nobody has drawn for a while.
-    if (this.blocks.size > 900) {
-      for (const [k, b] of this.blocks) if (this.tick - b.used > 300) this.blocks.delete(k);
+    if (this.blocks.size > 700) {
+      for (const [k, b] of this.blocks) if (this.tick - b.used > 240) this.blocks.delete(k);
     }
   }
 
@@ -89,9 +135,8 @@ export class Terrain2D {
     return b.lod[lod] ?? b.lod[0];
   }
 
-  /** Copies the tiles of a block (plus a margin up and to the left for shadows) out of the map. */
+  /** Copies the tiles of a block (plus the margin) out of the map. */
   private read(x0: number, y0: number): void {
-    const W = BLOCK + PAD + 1;
     const m = this.map;
     for (let ly = 0; ly < W; ly++) {
       const ty = y0 - PAD + ly;
@@ -105,7 +150,6 @@ export class Terrain2D {
           lx++;
           continue;
         }
-        // Copy a run of tiles from the chunk they sit in.
         const c = m.chunk(tx >> 5, ty >> 5);
         const run = Math.min(W - lx, CH - (tx & 31));
         const base = ((ty & 31) << 5) | (tx & 31);
@@ -117,139 +161,300 @@ export class Terrain2D {
         lx += run;
       }
     }
+    // Rolling ground: three octaves of smooth noise.
+    for (let ly = 0; ly < W; ly++) {
+      const ty = y0 - PAD + ly;
+      for (let lx = 0; lx < W; lx++) {
+        const tx = x0 - PAD + lx;
+        this.hgt[ly * W + lx] = vnoise(tx, ty, 46, 11) * 3 + vnoise(tx, ty, 15, 12) * 1.1 + vnoise(tx, ty, 5, 13) * 0.35;
+      }
+    }
+  }
+
+  /** How many tiles of south-facing wall an obstacle shows. */
+  private wallLen(i: number): number {
+    const o = this.obs[i];
+    if (!o || o === OBS.TREE || o === OBS.FUNGUS) return 0;
+    return Math.min(PAD - 2, Math.round(this.oh[i] * 0.5 * 0.3));
   }
 
   private build(bx: number, by: number): HTMLCanvasElement {
     const x0 = bx * BLOCK, y0 = by * BLOCK;
     this.read(x0, y0);
-    const W = BLOCK + PAD + 1;
     if (!this.img) this.img = new ImageData(BLOCK, BLOCK);
     const d = this.img.data;
-    const ter = this.ter, obs = this.obs, oh = this.oh;
+    const { ter, obs, oh, hgt } = this;
     for (let y = 0; y < BLOCK; y++) {
       for (let x = 0; x < BLOCK; x++) {
         const i = (y + PAD) * W + x + PAD;
         const tx = x0 + x, ty = y0 + y;
         const t = ter[i];
         const o = obs[i];
-        let r: number, g: number, b: number;
         const n = hash2(tx, ty);
-        const patch = hash2(tx >> 3, ty >> 3, 7) - 0.5;
-        if (o) {
-          // Obstacles: lit from the north-west, darker on the south-east faces; tall ones read as roofs.
+        let r: number, g: number, b: number;
+        // A wall face: some obstacle up to the north stands tall enough to hide this tile behind its south face.
+        let face = 0, faceK = 0, faceLen = 0;
+        if (!o || this.wallLen(i) === 0) {
+          for (let k = 1; k < PAD - 1; k++) {
+            const j = i - k * W;
+            if (!obs[j]) continue;
+            const len = this.wallLen(j);
+            if (len >= k) {
+              face = j;
+              faceK = k;
+              faceLen = len;
+            }
+            break;
+          }
+        }
+        if (face) {
+          const fo = obs[face];
+          const c = OBS_RGB[fo];
+          // Lit from above: brightest at the top edge, darker toward the ground.
+          let k = 0.62 - (faceK / Math.max(1, faceLen)) * 0.16 + (n - 0.5) * 0.06;
+          if (isBuilding(fo)) {
+            if (tx % 4 === 0) k -= 0.1;
+            if (tx % 4 === 2 && faceK % 3 === 2 && faceK < faceLen) {
+              // Windows: mostly dark glass, a few lit.
+              const lit = hash2(tx, ty - faceK, 5) > 0.82;
+              r = lit ? 255 : 38;
+              g = lit ? 206 : 52;
+              b = lit ? 120 : 70;
+              this.put(d, x, y, r, g, b);
+              continue;
+            }
+          } else if (fo === OBS.ICE_SPIRE) k += 0.1 + (faceK % 2) * 0.05;
+          else if (faceK % 2 === 0) k -= 0.07;
+          if (faceK === 1) k += 0.12;
+          r = c[0] * k;
+          g = c[1] * k;
+          b = c[2] * k;
+        } else if (o) {
+          // A roof or rock top: bevelled against the sun, with a hint of what it's made of.
           const c = OBS_RGB[o];
           const h = oh[i];
-          let k = 1 + (n - 0.5) * 0.12 + Math.min(0.25, h * 0.004);
-          const nw = obs[i - W - 1], se = obs[i + W + 1];
-          if (!nw || oh[i - W - 1] + 2 < h) k += 0.28;
-          else if (!se || oh[i + W + 1] + 2 < h) k -= 0.3;
+          let k = 1.02 + (n - 0.5) * 0.14 + Math.min(0.2, h * 0.003);
+          if (!obs[i - W] || !obs[i - 1]) k += 0.26;
+          else if (!obs[i + W] || !obs[i + 1]) k -= 0.2;
           if (o === OBS.TREE) {
+            // Canopy: dark rim, lighter crown, leaf speckle.
             const edge = !obs[i - 1] || !obs[i + 1] || !obs[i - W] || !obs[i + W];
-            k = edge ? 0.8 : 1.05 + n * 0.3;
-          } else if ((o === OBS.WALL || o === OBS.RUIN || o === OBS.PILLAR) && h >= 16) {
-            // Building roofs: vents and panel seams.
-            if ((tx % 7 === 0 || ty % 9 === 0) && k < 1.2) k -= 0.1;
-            if (n > 0.97) k += 0.35;
+            k = edge ? 0.72 : 1 + n * 0.45;
+            if (!edge && (!obs[i - W - 1] || !obs[i - 2 * W])) k += 0.25;
+          } else if (isBuilding(o) && h >= 12) {
+            // Rooftops: seams, vents, the odd aerial or skylight.
+            if (tx % 6 === 0 || ty % 7 === 0) k -= 0.12;
+            if (n > 0.985) k += 0.4;
+            else if (n < 0.012) k -= 0.35;
+          } else if (o === OBS.CLIFF || o === OBS.BASALT || o === OBS.ROCK) {
+            k += (vnoise(tx, ty, 3, 21) - 0.5) * 0.25;
+          } else if (o === OBS.SHARD || o === OBS.ICE_SPIRE) {
+            if (n > 0.9) k += 0.4;
           }
           r = c[0] * k;
           g = c[1] * k;
           b = c[2] * k;
         } else {
-          const c = TER_RGB[t] ?? TER_RGB[0];
-          let k = 1 + (n - 0.5) * 0.1 + patch * 0.08;
-          switch (t) {
-            case TER.DUNE:
-              k += Math.sin(tx * 0.55 + ty * 0.22 + Math.sin(ty * 0.05) * 2) * 0.07;
-              break;
-            case TER.SAND:
-              k += Math.sin(tx * 0.3 + ty * 0.12) * 0.03;
-              break;
-            case TER.METAL:
-              if (tx % 10 === 0 || ty % 10 === 0) k -= 0.14;
-              else if ((tx % 10 === 1 && ty % 10 === 1) || (tx % 10 === 9 && ty % 10 === 9)) k += 0.2;
-              break;
-            case TER.CONCRETE:
-              if (tx % 8 === 0 || ty % 8 === 0) k -= 0.1;
-              if (n > 0.985) k -= 0.25;
-              break;
-            case TER.ROAD:
-              k -= 0.04;
-              if (n > 0.97) k -= 0.15;
-              else if (n < 0.012) k += 0.35;
-              break;
-            case TER.WATER:
-            case TER.ACID:
-              k += (n > 0.94 ? 0.3 : 0) + Math.sin(tx * 0.4 - ty * 0.3) * 0.05;
-              break;
-            case TER.LAVA:
-              k += n > 0.8 ? 0.35 : n < 0.25 ? -0.45 : 0;
-              break;
-            case TER.SNOW:
-              k += n > 0.93 ? -0.08 : 0.02;
-              break;
-            case TER.ICE:
-              k += Math.sin((tx + ty) * 0.5) * 0.05 + (n > 0.96 ? 0.2 : 0);
-              break;
-            case TER.GRASS:
-              k += n > 0.8 ? -0.18 : n < 0.08 ? 0.15 : 0;
-              break;
+          [r, g, b] = this.groundColour(t, tx, ty, n);
+          // Hill shading: faces toward the sun (north-west) lighter, the far sides darker.
+          const relief = RELIEF[t] ?? 0;
+          if (relief) {
+            const s = (hgt[i + W + 1] - hgt[i - W - 1]) * relief * 0.55;
+            const k = 1 + Math.max(-0.3, Math.min(0.3, s));
+            r *= k;
+            g *= k;
+            b *= k;
           }
-          r = c[0] * k;
-          g = c[1] * k;
-          b = c[2] * k;
-          // Shadows from anything tall up-sun (north-west).
-          for (let s = 1; s <= PAD - 1; s++) {
+          // Edges between different ground (road verges, field borders), and shorelines.
+          const tn = ter[i - W], tw = ter[i - 1], ts = ter[i + W], te = ter[i + 1];
+          if (isLiquid(t) && (!isLiquid(tn) || !isLiquid(tw) || !isLiquid(ts) || !isLiquid(te))) {
+            const foam = t === TER.LAVA ? [60, 20, 10] : t === TER.ACID ? [200, 255, 170] : [210, 236, 240];
+            r = r * 0.45 + foam[0] * 0.55;
+            g = g * 0.45 + foam[1] * 0.55;
+            b = b * 0.45 + foam[2] * 0.55;
+          } else if (tn !== t || tw !== t) {
+            r *= 0.86;
+            g *= 0.86;
+            b *= 0.86;
+          }
+          // Shadow from anything tall up-sun, and darker ground at the foot of walls.
+          let shade = 1;
+          for (let s = 1; s < PAD - 1; s++) {
             const j = i - s * W - Math.round(s * 0.8);
-            const o2 = obs[j];
-            if (o2 && oh[j] * 0.5 * 0.55 >= s) {
-              r *= 0.62;
-              g *= 0.62;
-              b *= 0.68;
+            if (obs[j] && oh[j] * 0.5 * 0.55 >= s) {
+              shade = 0.6;
               break;
             }
           }
+          if (shade === 1 && (obs[i - W] || obs[i - 1] || obs[i + 1] || obs[i - 2 * W])) shade = 0.82;
+          r *= shade;
+          g *= shade;
+          b *= shade * (shade < 1 ? 1.08 : 1);
         }
-        const p = (y * BLOCK + x) * 4;
-        d[p] = r > 255 ? 255 : r;
-        d[p + 1] = g > 255 ? 255 : g;
-        d[p + 2] = b > 255 ? 255 : b;
-        d[p + 3] = 255;
+        this.put(d, x, y, r, g, b);
       }
     }
-    // Props: a few pixels each.
+    this.drawProps(d, bx, by, x0, y0);
+    const out = document.createElement('canvas');
+    out.width = BLOCK;
+    out.height = BLOCK;
+    out.getContext('2d')!.putImageData(this.img, 0, 0);
+    return out;
+  }
+
+  /** Writes a pixel with a little extra saturation and contrast (the wasteland should pop, not wash out). */
+  private put(d: Uint8ClampedArray, x: number, y: number, r: number, g: number, b: number): void {
+    const l = r * 0.3 + g * 0.59 + b * 0.11;
+    r = l + (r - l) * 1.18;
+    g = l + (g - l) * 1.18;
+    b = l + (b - l) * 1.18;
+    r = (r - 128) * 1.06 + 128;
+    g = (g - 128) * 1.06 + 128;
+    b = (b - 128) * 1.06 + 128;
+    const p = (y * BLOCK + x) * 4;
+    d[p] = r;
+    d[p + 1] = g;
+    d[p + 2] = b;
+    d[p + 3] = 255;
+  }
+
+  /** The texture of each kind of ground. */
+  private groundColour(t: number, tx: number, ty: number, n: number): [number, number, number] {
+    const c = TER_RGB[t] ?? TER_RGB[0];
+    const patch = vnoise(tx, ty, 9, 3) - 0.5;
+    let k = 1 + (n - 0.5) * 0.12 + patch * 0.14;
+    let r = c[0], g = c[1], b = c[2];
+    switch (t) {
+      case TER.DUNE:
+        k += Math.sin(tx * 0.55 + ty * 0.22 + Math.sin(ty * 0.05) * 2) * 0.08;
+        break;
+      case TER.SAND:
+        k += Math.sin(tx * 0.3 + ty * 0.12 + patch * 4) * 0.04;
+        if (n > 0.985) k -= 0.3;
+        else if (n < 0.02) k += 0.18;
+        break;
+      case TER.GRASS: {
+        // Three greens, tufts and the odd flower.
+        const v = vnoise(tx, ty, 4, 7);
+        r = r * (0.85 + v * 0.3);
+        g = g * (0.9 + v * 0.35);
+        if (n > 0.93) k -= 0.22;
+        else if (n > 0.9) k += 0.2;
+        if (n < 0.006) return hash2(tx, ty, 9) > 0.5 ? [240, 220, 90] : [235, 235, 240];
+        break;
+      }
+      case TER.DIRT:
+      case TER.RUST:
+      case TER.CAMP:
+        if (n > 0.97) k -= 0.28;
+        else if (n < 0.03) k += 0.2;
+        // Cracks.
+        if (Math.abs(vnoise(tx, ty, 13, 17) - 0.5) < 0.012) k -= 0.25;
+        break;
+      case TER.ASH:
+        if (n > 0.992) return [255, 120, 40];
+        if (n > 0.95) k -= 0.2;
+        break;
+      case TER.SNOW:
+        k += n > 0.97 ? 0.12 : n < 0.05 ? -0.06 : 0;
+        k += Math.sin(tx * 0.35 - ty * 0.6) * 0.025;
+        break;
+      case TER.ICE:
+        k += Math.sin((tx + ty) * 0.45) * 0.04 + (n > 0.96 ? 0.22 : 0);
+        if (Math.abs(vnoise(tx, ty, 8, 23) - 0.5) < 0.015) return [236, 248, 255];
+        break;
+      case TER.ROAD:
+        k -= 0.05;
+        if (n > 0.975) k -= 0.18;
+        else if (n < 0.012) k += 0.3;
+        if (Math.abs(vnoise(tx, ty, 11, 29) - 0.5) < 0.01) k -= 0.22;
+        break;
+      case TER.WATER:
+        k += Math.sin(tx * 0.5 - ty * 0.35 + patch * 6) * 0.07 + (n > 0.97 ? 0.35 : 0);
+        break;
+      case TER.ACID:
+        k += Math.sin(tx * 0.4 + ty * 0.3) * 0.06;
+        if (n > 0.97) return [220, 255, 160];
+        break;
+      case TER.LAVA: {
+        // Glowing rivers under a dark crust of plates.
+        const cr = vnoise(tx, ty, 5, 31);
+        if (cr > 0.62) return [70 + n * 20, 28, 20];
+        k += (0.62 - cr) * 0.6 + (n > 0.9 ? 0.3 : 0);
+        return [Math.min(255, 255 * k), Math.min(255, 120 * k), 30 * k];
+      }
+      case TER.BASALT:
+        if (Math.abs(vnoise(tx, ty, 6, 37) - 0.5) < 0.02) k -= 0.3;
+        k += n > 0.97 ? 0.25 : 0;
+        break;
+      case TER.GLASS:
+        if (n > 0.96) return [200, 255, 200];
+        k += Math.sin(tx * 0.7 + ty * 0.2) * 0.06;
+        break;
+      case TER.CRATER:
+        if (n > 0.95) k -= 0.25;
+        else if (n < 0.04) k += 0.2;
+        break;
+      case TER.MUD:
+        if (vnoise(tx, ty, 6, 41) > 0.7) {
+          // Puddles.
+          r = r * 0.7 + 30;
+          g = g * 0.7 + 34;
+          b = b * 0.7 + 40;
+        }
+        break;
+      case TER.METAL:
+        if (tx % 10 === 0 || ty % 10 === 0) k -= 0.16;
+        else if ((tx % 10 === 1 || tx % 10 === 9) && (ty % 10 === 1 || ty % 10 === 9)) k += 0.25;
+        else if (tx % 10 === 1 || ty % 10 === 1) k += 0.07;
+        k -= patch * 0.08;
+        break;
+      case TER.CONCRETE:
+        if (tx % 8 === 0 || ty % 8 === 0) k -= 0.12;
+        if (n > 0.985) k -= 0.28;
+        if (vnoise(tx, ty, 7, 43) > 0.78) k -= 0.1;
+        break;
+    }
+    return [r * k, g * k, b * k];
+  }
+
+  /** Props: a few shaded pixels each, with a shadow. */
+  private drawProps(d: Uint8ClampedArray, bx: number, by: number, x0: number, y0: number): void {
+    const set = (qx: number, qy: number, c: RGB | [number, number, number], mul = 1): void => {
+      if (qx < 0 || qy < 0 || qx >= BLOCK || qy >= BLOCK) return;
+      const q = (qy * BLOCK + qx) * 4;
+      d[q] = c[0] * mul;
+      d[q + 1] = c[1] * mul;
+      d[q + 2] = c[2] * mul;
+    };
+    const darken = (qx: number, qy: number): void => {
+      if (qx < 0 || qy < 0 || qx >= BLOCK || qy >= BLOCK) return;
+      const q = (qy * BLOCK + qx) * 4;
+      d[q] *= 0.65;
+      d[q + 1] *= 0.65;
+      d[q + 2] *= 0.7;
+    };
     for (let cy = 0; cy < CPB; cy++) {
       for (let cx = 0; cx < CPB; cx++) {
         const c = this.map.peek(bx * CPB + cx, by * CPB + cy);
         if (!c) continue;
         for (const pr of c.props) {
           if (pr.gone) continue;
-          const col = PROP_RGB[pr.kind];
-          if (!col) continue;
+          const p = PROP[pr.kind];
+          if (!p) continue;
           const px = Math.floor(pr.x) - x0, py = Math.floor(pr.y) - y0;
-          // Nothing lying about on roads and plating (the hangar floor and its apron are swept).
           if (px >= 0 && py >= 0 && px < BLOCK && py < BLOCK) {
-            const t = this.ter[(py + PAD) * (BLOCK + PAD + 1) + px + PAD];
+            const t = this.ter[(py + PAD) * W + px + PAD];
             if (t === TER.ROAD || t === TER.METAL || t === TER.CONCRETE) continue;
           }
-          const s = Math.max(1, Math.round(pr.s * (pr.kind === 'wreckcar' ? 2.2 : pr.kind === 'deadtree' || pr.kind === 'cactus' ? 1.4 : 1)));
-          for (let dy = 0; dy < s; dy++) {
-            for (let dx = 0; dx < s + (pr.kind === 'wreckcar' || pr.kind === 'pipe' ? s : 0); dx++) {
-              const qx = px + dx, qy = py + dy;
-              if (qx < 0 || qy < 0 || qx >= BLOCK || qy >= BLOCK) continue;
-              const q = (qy * BLOCK + qx) * 4;
-              const k = dx === 0 || dy === 0 ? 1.15 : 0.9;
-              d[q] = Math.min(255, col[0] * k);
-              d[q + 1] = Math.min(255, col[1] * k);
-              d[q + 2] = Math.min(255, col[2] * k);
-            }
+          const s = Math.max(1, Math.round(pr.s));
+          const w = p.w * s, h = p.h * s;
+          for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) darken(px + xx + 1, py + yy + 1);
+          for (let yy = 0; yy < h; yy++) {
+            for (let xx = 0; xx < w; xx++) set(px + xx, py + yy, yy === 0 || xx === 0 ? p.hi : p.c);
           }
         }
       }
     }
-    const out = document.createElement('canvas');
-    out.width = BLOCK;
-    out.height = BLOCK;
-    out.getContext('2d')!.putImageData(this.img, 0, 0);
-    return out;
   }
 }

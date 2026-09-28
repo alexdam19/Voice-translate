@@ -137,18 +137,15 @@ export class Fx2D {
       const f = t.t / t.max;
       switch (t.k) {
         case 'flash': {
-          const r = Math.max(1, t.r * ppm * (1.2 - f * 0.4));
+          const r = Math.max(2, t.r * ppm * (1.3 - f * 0.4));
           const x = m.sx(t.x, t.y), y = m.sy(t.x, t.y);
-          c.globalAlpha = f * 0.8;
-          c.fillStyle = t.color;
-          c.beginPath();
-          c.arc(x, y, r, 0, Math.PI * 2);
-          c.fill();
+          const col = t.color.length === 7 ? t.color : '#ffcc80';
+          const big = glowSprite(col, r * 4);
+          c.globalAlpha = Math.min(1, f * 1.2);
+          c.drawImage(big, x - big.width / 2, y - big.height / 2);
+          const core = glowSprite('#ffffff', r * 1.4);
           c.globalAlpha = f;
-          c.fillStyle = '#ffffff';
-          c.beginPath();
-          c.arc(x, y, r * 0.4, 0, Math.PI * 2);
-          c.fill();
+          c.drawImage(core, x - core.width / 2, y - core.height / 2);
           break;
         }
         case 'ring': {
@@ -197,4 +194,27 @@ export class Fx2D {
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
   }
+}
+
+const glows = new Map<string, HTMLCanvasElement>();
+
+/** A soft round glow of a colour, `px` pixels across (cached by size bucket). */
+export function glowSprite(color: string, px: number): HTMLCanvasElement {
+  const s = Math.max(4, Math.min(512, Math.round(px / 4) * 4));
+  const key = `${color}|${s}`;
+  let c = glows.get(key);
+  if (c) return c;
+  if (glows.size > 400) glows.clear();
+  c = document.createElement('canvas');
+  c.width = s;
+  c.height = s;
+  const x = c.getContext('2d')!;
+  const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, color);
+  g.addColorStop(0.35, color + 'aa');
+  g.addColorStop(1, color + '00');
+  x.fillStyle = g;
+  x.fillRect(0, 0, s, s);
+  glows.set(key, c);
+  return c;
 }

@@ -196,11 +196,11 @@ const cache = new Map<string, HTMLCanvasElement>();
 
 /** A creature sprite `px` pixels across (plus a 1 px outline), facing right. */
 export function creatureSprite(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss' = 'normal'): HTMLCanvasElement {
-  const S = Math.max(3, Math.min(260, Math.round(px)));
+  const S = Math.max(3, Math.min(640, Math.round(px)));
   const key = `${arch}|${color}|${S}|${frame}|${kind}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  if (cache.size > 2500) cache.clear();
+  if (cache.size > 1500) cache.clear();
   const pal: Pal = {
     body: color,
     dark: shade(color, -0.45),
@@ -238,6 +238,7 @@ export function creatureSprite(arch: Arch, color: string, px: number, frame: num
       }
     };
     PLANS[arch](r, o, pal, frame & 1);
+    shadePixels(inner, S, color, arch);
   }
   // Outline: the silhouette in a dark colour under the sprite, one pixel out each way.
   const out = makeCanvas(S + 2, S + 2);
@@ -281,4 +282,72 @@ function mineSprite(S: number): HTMLCanvasElement {
   x.fillStyle = '#ffd740';
   x.fillRect(Math.floor(S / 2) - 1, Math.floor(S / 2) - 1, 2, 2);
   return c;
+}
+
+/**
+ * Pixel shading on a drawn body: edges facing the sun (north-west) catch the light, the underside falls into
+ * shadow, and the rest gets a fine grain (fur, scales, rust) so big creatures don't read as flat blocks.
+ */
+function shadePixels(c: HTMLCanvasElement, S: number, color: string, arch: Arch): void {
+  const x = c.getContext('2d')!;
+  const img = x.getImageData(0, 0, S, S);
+  const d = img.data;
+  const a = (px: number, py: number): number => (px < 0 || py < 0 || px >= S || py >= S ? 0 : d[(py * S + px) * 4 + 3]);
+  const deep = S >= 18;
+  let seed = 0;
+  for (let i = 0; i < color.length; i++) seed = (seed * 31 + color.charCodeAt(i)) | 0;
+  for (let py = 0; py < S; py++) {
+    for (let px = 0; px < S; px++) {
+      const p = (py * S + px) * 4;
+      if (!d[p + 3]) continue;
+      let k = 1;
+      if (!a(px - 1, py) || !a(px, py - 1)) k = 1.3;
+      else if (!a(px + 1, py) || !a(px, py + 1)) k = 0.66;
+      else if (deep && (!a(px - 2, py - 1) || !a(px - 1, py - 2))) k = 1.12;
+      else if (deep && (!a(px + 2, py + 1) || !a(px + 1, py + 2))) k = 0.82;
+      else {
+        let h = (px * 374761393 + py * 668265263 + seed) | 0;
+        h = Math.imul(h ^ (h >>> 13), 1274126177);
+        const n = ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+        k = 0.93 + n * 0.14;
+        // Big bodies get a surface: cracked rock, panel lines, fur, segments, scales.
+        if (S >= 22) {
+          const u = S / 16;
+          switch (arch) {
+            case 'golem':
+              if ((px + Math.floor(py / (u * 2))) % Math.max(3, Math.round(u * 3)) === 0) k *= 0.72;
+              if (n > 0.97) k *= 1.35;
+              break;
+            case 'bot':
+            case 'vehicle':
+              if (px % Math.max(3, Math.round(u * 3)) === 0 || py % Math.max(3, Math.round(u * 4)) === 0) k *= 0.8;
+              if (n > 0.985) k *= 1.4;
+              break;
+            case 'beast':
+            case 'canine':
+              if ((px + py * 2) % Math.max(3, Math.round(u * 2)) === 0) k *= 0.84;
+              break;
+            case 'worm':
+              if (px % Math.max(3, Math.round(u * 2.2)) === 0) k *= 0.7;
+              break;
+            case 'dragon':
+            case 'flyer':
+              if ((px - py) % Math.max(3, Math.round(u * 2.5)) === 0) k *= 0.82;
+              break;
+            case 'fish':
+            case 'insect':
+              if ((px + (py % 2)) % 2 === 0 && n > 0.5) k *= 0.9;
+              break;
+            case 'entity':
+              k *= 1 + Math.sin(px * 0.6 + py * 0.4) * 0.12;
+              break;
+          }
+        }
+      }
+      d[p] = Math.min(255, d[p] * k);
+      d[p + 1] = Math.min(255, d[p + 1] * k);
+      d[p + 2] = Math.min(255, d[p + 2] * k);
+    }
+  }
+  x.putImageData(img, 0, 0);
 }

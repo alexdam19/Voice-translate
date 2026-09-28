@@ -554,7 +554,7 @@ export class App {
     const k = 1 - Math.pow(0.002, dt);
     let tx = p.x, ty = p.y;
     // Look a little ahead of where you're driving, so you see what you're about to hit.
-    const lead = p.fortress ? Math.max(-20, Math.min(60, p.speed * 8)) : Math.max(-2, Math.min(6, p.speed * 0.9));
+    const lead = p.fortress ? Math.max(-20, Math.min(40, p.speed * 5)) : Math.max(-2, Math.min(6, p.speed * 0.9));
     this.camLead.x += (Math.cos(p.rot) * lead - this.camLead.x) * (1 - Math.pow(0.05, dt));
     this.camLead.y += (Math.sin(p.rot) * lead - this.camLead.y) * (1 - Math.pow(0.05, dt));
     if (!this.village) {
@@ -571,6 +571,7 @@ export class App {
     v.cam.y += (ty - v.cam.y) * (this.village ? k : 1 - Math.pow(0.0005, dt));
     v.cam.zoom += (this.autoZoom() - v.cam.zoom) * k;
     v.cam.fov = !this.village && g.player.fortress ? 45 : 32;
+    v.snap = !this.village && Math.abs(this.zoomMul - 1) < 0.01;
     const wantYaw = this.village ? p.rot : -Math.PI / 2;
     v.cam.yaw = wrapAngle(v.cam.yaw + wrapAngle(wantYaw - v.cam.yaw) * k);
     v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;

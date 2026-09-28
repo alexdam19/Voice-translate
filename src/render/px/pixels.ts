@@ -51,3 +51,25 @@ export function ctx2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
   x.imageSmoothingEnabled = false;
   return x;
 }
+
+let silo: HTMLCanvasElement | null = null;
+
+/** Rings whatever is drawn on a canvas with a 1 px outline (drawn behind it), so it stands off any ground. */
+export function outlineCanvas(c: HTMLCanvasElement, color = '#07080a'): void {
+  if (!silo) silo = document.createElement('canvas');
+  if (silo.width !== c.width || silo.height !== c.height) {
+    silo.width = c.width;
+    silo.height = c.height;
+  }
+  const s = silo.getContext('2d')!;
+  s.globalCompositeOperation = 'source-over';
+  s.clearRect(0, 0, silo.width, silo.height);
+  s.drawImage(c, 0, 0);
+  s.globalCompositeOperation = 'source-in';
+  s.fillStyle = color;
+  s.fillRect(0, 0, silo.width, silo.height);
+  const x = c.getContext('2d')!;
+  x.globalCompositeOperation = 'destination-over';
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) x.drawImage(silo, dx, dy);
+  x.globalCompositeOperation = 'source-over';
+}

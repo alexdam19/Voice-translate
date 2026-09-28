@@ -4,7 +4,7 @@ import { compIndex } from '../../game/systems/titan';
 import type { ModuleInst, Tank } from '../../game/tank';
 import { RARITIES } from '../../shared/rarity';
 import { WEAPONS } from '../../shared/weapons';
-import { ctx2d, hash2, makeCanvas, shade } from './pixels';
+import { ctx2d, hash2, makeCanvas, outlineCanvas, shade } from './pixels';
 
 /**
  * The Titan Crawler from above, after the reference sheet: a long graphite hull on four crawlers a side, the
@@ -41,11 +41,22 @@ const RIVAL: Look = { ...PLAYER, hull: '#43383b', dark: '#2a2224', light: '#6556
 const REMOTE: Look = { ...PLAYER, strip: '#e040fb', mark: '#f3e5f5' };
 const CLASS_STRIP: Record<string, string> = { juggernaut: '#38c8ff', bastion: '#ffd740', ark: '#76ff03', nightrunner: '#b388ff', dredge: '#ffab40' };
 
+export interface HullLight {
+  x: number;
+  y: number;
+  /** Glow radius (m) and strength (0-1). */
+  r: number;
+  color: string;
+  k: number;
+}
+
 export interface Painted {
   canvas: HTMLCanvasElement;
   /** Pixel of the hull's centre in the canvas. */
   cx: number;
   cy: number;
+  /** Lights to glow, in hull metres (forward, starboard). */
+  lights?: HullLight[];
 }
 
 const canvases = new WeakMap<Tank, HTMLCanvasElement>();
@@ -104,73 +115,176 @@ export function paintTitan(t: Tank, ppm: number, g: Game | null, time: number): 
   };
   const fine = ppm * 5 >= 3;
   const detail = ppm * 2 >= 2;
+  /** Lights on the hull (local metres) the view makes glow. */
+  const lights: HullLight[] = [];
 
-  /* ---- Crawlers: four a side, treads running at each side's speed ---- */
+  /* ---- Crawlers: four a side, treads running at each side's speed, fenders over their inner halves ---- */
   const cl = L * 0.22, cwid = W * 0.16, gap = (L * 0.96 - cl * 4) / 3;
+  const hw = W * 0.345;
   for (let i = 0; i < 8; i++) {
     const side = i < 4 ? -1 : 1;
     const k = i % 4;
     const x0 = L * 0.48 - cl - k * (cl + gap);
     const y0 = side < 0 ? -W / 2 : W / 2 - cwid;
     const health = g && t === g.player ? g.titan.crawlers[i] : 1;
-    R(x0, y0, cl, cwid, look.tread);
-    // Track links slide back as the side drives forward.
-    const pitch = 2.6;
-    const phase = ((t.sidePhase[side < 0 ? 0 : 1] % pitch) + pitch) % pitch;
-    if (health > 0.1 && ppm * pitch >= 1.6) for (let m = x0 + cl - phase; m > x0; m -= pitch) R(m, y0 + 0.6, Math.max(0.6, 0.35 * pitch), cwid - 1.2, look.link);
-    // Sprockets at each end, and the suspension riding up.
-    R(x0, y0 + 1, 1.2, cwid - 2, '#0c0c0e');
-    R(x0 + cl - 1.2, y0 + 1, 1.2, cwid - 2, '#0c0c0e');
     const lift = t.susp[i] ?? 0;
-    if (lift > 0.4 && detail) R(x0 + cl * 0.2, y0 + (side < 0 ? cwid - 1.5 : 0.5), cl * 0.6, 1, '#3e4148');
+    R(x0, y0, cl, cwid, look.tread);
+    // Track links slide back as the side drives forward; grousers glint at the edges.
+    const pitch = 2.4;
+    const phase = ((t.sidePhase[side < 0 ? 0 : 1] % pitch) + pitch) % pitch;
+    if (health > 0.1 && ppm * pitch >= 1.4) {
+      for (let m = x0 + cl - phase; m > x0 + 0.3; m -= pitch) {
+        R(m, y0 + 0.4, Math.max(0.5, 0.42 * pitch), cwid - 0.8, look.link);
+        if (detail) {
+          R(m, y0 + 0.4, 0.6, 1, '#5d6067');
+          R(m, y0 + cwid - 1.4, 0.6, 1, '#5d6067');
+        }
+      }
+    }
+    // Sprockets at each end (rounded ends of the track).
+    R(x0, y0 + 1.5, 1.6, cwid - 3, '#0b0b0d');
+    R(x0 + cl - 1.6, y0 + 1.5, 1.6, cwid - 3, '#0b0b0d');
+    R(x0 + 0.6, y0 + 0.6, 1, 1, '#0b0b0d');
+    // The fender over the inner half, riding up with the suspension.
+    const fy = side < 0 ? y0 + cwid * 0.5 : y0, fw = cwid * 0.5;
+    const fc = lift > 0.4 ? shade(look.plate, 0.1) : look.plate;
+    R(x0 + 1.5, fy, cl - 3, fw, fc);
+    R(x0 + 1.5, fy, cl - 3, 0.8, shade(fc, 0.22));
+    R(x0 + 1.5, fy + fw - 0.8, cl - 3, 0.8, shade(fc, -0.3));
+    if (fine) for (let m = x0 + 4; m < x0 + cl - 3; m += 9) {
+      R(m, fy + fw * 0.35, 0.8, 0.8, shade(fc, -0.4));
+      R(m + 0.1, fy + fw * 0.35 - 0.3, 0.4, 0.4, shade(fc, 0.35));
+    }
     if (health < 0.35) {
-      R(x0 + cl * 0.3, y0 + cwid * 0.3, cl * 0.4, cwid * 0.4, health <= 0.1 ? '#2a1208' : '#5a2a14');
-      if (health <= 0.1) R(x0 + cl * 0.45, y0, 2, cwid, '#050505');
+      R(x0 + cl * 0.3, y0 + cwid * 0.2, cl * 0.4, cwid * 0.6, health <= 0.1 ? '#2a1208' : '#5a2a14');
+      if (health <= 0.1) R(x0 + cl * 0.45, y0, 2.5, cwid, '#050505');
+    }
+  }
+  // Between the crawlers: the suspension housings.
+  for (let k = 0; k < 3; k++) {
+    const gx = L * 0.48 - cl - k * (cl + gap) - gap;
+    for (const side of [-1, 1]) {
+      const y0 = side < 0 ? -W / 2 + 1 : W / 2 - cwid + 1;
+      R(gx, y0, gap, cwid - 2, '#1a1c20');
+      R(gx + gap * 0.25, y0 + 2, gap * 0.5, cwid - 6, '#2b2e34');
     }
   }
 
-  /* ---- Hull ---- */
-  const hw = W * 0.345;
+  /* ---- Hull: armour plates, each bevelled against the light, with rivets at the corners ---- */
   const bow = L * 0.39, stern = -L * 0.49;
-  R(stern, -hw, bow - stern, hw * 2, look.hull);
-  // Side armour and the blue light strips.
-  R(stern, -hw, bow - stern, W * 0.05, look.plate);
-  R(stern, hw - W * 0.05, bow - stern, W * 0.05, shade(look.plate, -0.18));
-  const pulse = 0.55 + 0.45 * Math.sin(time * 2.4);
-  const strip = shade(look.strip, -0.35 + 0.35 * pulse);
-  for (let m = stern + 6; m < bow - 6; m += 9) {
-    R(m, -hw + W * 0.05, 6, Math.max(0.8, 1 / ppm), strip);
-    R(m, hw - W * 0.05 - Math.max(0.8, 1 / ppm), 6, Math.max(0.8, 1 / ppm), strip);
+  R(stern, -hw, bow - stern, hw * 2, look.dark);
+  const lanes = 4, laneW = (hw * 2 - W * 0.1) / lanes, plateL = 12;
+  for (let m = stern + 1; m < bow - 0.5; m += plateL) {
+    for (let ln = 0; ln < lanes; ln++) {
+      const px0 = m + 0.35, py0 = -hw + W * 0.05 + ln * laneW + 0.35, pw = Math.min(plateL, bow - m) - 0.7, ph = laneW - 0.7;
+      const v = (hash2(Math.round(m), ln, t.id) - 0.5) * 0.1;
+      const col = shade(look.hull, v + (ln < lanes / 2 ? 0.04 : -0.03));
+      R(px0, py0, pw, ph, col);
+      if (fine) {
+        R(px0, py0, pw, Math.max(0.4, 0.7 / ppm), shade(col, 0.2));
+        R(px0, py0, Math.max(0.4, 0.7 / ppm), ph, shade(col, 0.12));
+        R(px0, py0 + ph - Math.max(0.4, 0.7 / ppm), pw, Math.max(0.4, 0.7 / ppm), shade(col, -0.28));
+      }
+      if (detail) {
+        for (const [rx, ry] of [[1, 1], [pw - 1.6, 1], [1, ph - 1.6], [pw - 1.6, ph - 1.6]]) R(px0 + rx, py0 + ry, 0.6, 0.6, shade(col, -0.35));
+        // Weathering: rust runs and scuffs.
+        if (hash2(Math.round(m), ln, 77) > 0.72) R(px0 + pw * hash2(ln, Math.round(m), 5), py0 + ph * 0.3, 0.6, ph * 0.5, 'rgba(110,60,30,0.55)');
+      }
+    }
   }
-  // The faceted prow: a wedge in steps, lit on the port facet, with the grille and hazard stripes.
+  // Side armour rails with the light strips and vent slots.
+  for (const side of [-1, 1]) {
+    const ry = side < 0 ? -hw : hw - W * 0.05;
+    R(stern, ry, bow - stern, W * 0.05, side < 0 ? look.plate : shade(look.plate, -0.18));
+    R(stern, side < 0 ? ry : ry + W * 0.05 - 0.6, bow - stern, 0.6, side < 0 ? shade(look.plate, 0.25) : shade(look.plate, -0.4));
+    if (detail) for (let m = stern + 4; m < bow - 4; m += 7) R(m, ry + W * 0.015, 2.2, W * 0.02, '#16181b');
+  }
+  const pulse = 0.55 + 0.45 * Math.sin(time * 2.4);
+  const strip = shade(look.strip, -0.3 + 0.3 * pulse);
+  const sw = Math.max(0.8, 1 / ppm);
+  for (let m = stern + 6; m < bow - 6; m += 9) {
+    R(m, -hw + W * 0.05, 6, sw, strip);
+    R(m, hw - W * 0.05 - sw, 6, sw, strip);
+    lights.push({ x: m + 3, y: -hw + W * 0.05, r: 5, color: look.strip, k: 0.35 * pulse }, { x: m + 3, y: hw - W * 0.05, r: 5, color: look.strip, k: 0.35 * pulse });
+  }
+
+  /* ---- Deck furniture: hatches, vents, a pipe run down each side, cargo at the stern ---- */
+  if (fine) {
+    for (const side of [-1, 1]) {
+      const py = side * hw * 0.62;
+      R(stern + 30, py - 0.6, bow - stern - 45, 1.2, '#50555d');
+      if (detail) for (let m = stern + 34; m < bow - 15; m += 16) R(m, py - 1, 1, 2, '#6c727b');
+      for (let m = stern + 40; m < bow - 20; m += 26) {
+        const hx = m + hash2(Math.round(m), side, 3) * 6, hy = side * hw * 0.35 - 2;
+        R(hx, hy, 4, 4, '#1e2126');
+        R(hx + 0.5, hy + 0.5, 3, 3, shade(look.plate, 0.05));
+        if (detail) {
+          R(hx + 1.8, hy + 0.5, 0.5, 3, shade(look.plate, -0.3));
+          R(hx + 0.5, hy + 1.8, 3, 0.5, shade(look.plate, -0.3));
+        }
+      }
+    }
+    // Cargo containers lashed down aft of the tower.
+    const cargoCols = ['#5d6b3a', '#7a4a2e', '#46607a', '#6b5d3a'];
+    for (let k = 0; k < 4; k++) {
+      const cx0 = stern + L * 0.2 + (k % 2) * 7, cy0 = (k < 2 ? -1 : 1) * hw * 0.55 - 3;
+      const col = cargoCols[(k + t.id) % 4];
+      R(cx0, cy0, 6, 6, shade(col, -0.35));
+      R(cx0 + 0.4, cy0 + 0.4, 5.2, 5.2, col);
+      if (detail) for (let q = 1; q < 6; q += 1.2) R(cx0 + q, cy0 + 0.6, 0.35, 4.8, shade(col, -0.2));
+    }
+  }
+
+  /* ---- The prow: stacked armour facets, the big grille, headlights and the ram edge ---- */
   const tip = L * 0.5;
   const cols = Math.max(1, Math.ceil((tip - bow) * ppm));
   for (let i = 0; i < cols; i++) {
     const m = bow + i / ppm;
     const f = (m - bow) / (tip - bow);
-    const half = hw * (1 - f * 0.72);
-    R(m, -half, 1 / ppm + 0.01, half, shade(look.hull, 0.12));
-    R(m, 0, 1 / ppm + 0.01, half, shade(look.hull, -0.12));
-    if (fine && f > 0.1 && f < 0.75 && Math.floor(m * 0.9) % 2 === 0) R(m, -half * 0.55, 1 / ppm + 0.01, half * 1.1, look.dark);
-    if (f > 0.86) R(m, -half, 1 / ppm + 0.01, half * 2, Math.floor(m * 0.8) % 2 ? '#e6b422' : '#111');
+    const half = hw * (1 - f * 0.7);
+    const band = f < 0.35 ? 0.1 : f < 0.7 ? 0.02 : -0.04;
+    R(m, -half, 1 / ppm + 0.01, half, shade(look.hull, 0.16 + band));
+    R(m, 0, 1 / ppm + 0.01, half, shade(look.hull, -0.14 + band));
+    R(m, -half, 1 / ppm + 0.01, Math.max(0.6, 0.8 / ppm), shade(look.hull, 0.35));
+    R(m, half - Math.max(0.6, 0.8 / ppm), 1 / ppm + 0.01, Math.max(0.6, 0.8 / ppm), '#121316');
+    if (fine && f > 0.12 && f < 0.62 && Math.floor(m * 1.1) % 2 === 0) R(m, -half * 0.5, 1 / ppm + 0.01, half, '#15171a');
+    if (f > 0.84) R(m, -half, 1 / ppm + 0.01, half * 2, Math.floor((m - f * 3) * 0.7) % 2 ? '#e6b422' : '#16161a');
   }
-  // Plating seams.
-  if (fine) {
-    for (let m = stern + 10; m < bow; m += 12) R(m, -hw + W * 0.05, 0.5, hw * 2 - W * 0.1, look.dark);
-    R(stern, -0.25, bow - stern, 0.5, look.dark);
+  if (fine) for (const k of [0.35, 0.7]) R(bow + (tip - bow) * k, -hw * (1 - k * 0.7), 0.6, hw * 2 * (1 - k * 0.7), '#101114');
+  for (const side of [-1, 1]) {
+    const hx = tip - 8, hy = side * hw * 0.42;
+    disc(hx, hy, 1.8, '#20232a');
+    disc(hx, hy, 1.2, '#fff8d6');
+    lights.push({ x: hx, y: hy, r: 9, color: '#fff3c4', k: 0.6 }, { x: tip + 18, y: hy * 1.3, r: 22, color: '#fff3c4', k: 0.12 });
   }
-  // Engine deck: grilles and four stacks.
-  R(stern, -hw * 0.8, L * 0.16, hw * 1.6, look.deck);
-  if (detail) for (let m = stern + 2; m < stern + L * 0.15; m += 2.2) R(m, -hw * 0.7, 0.8, hw * 1.4, look.dark);
+
+  /* ---- The stern: engine deck with radiator fans and stacks, the rear ramp, tail lights ---- */
+  R(stern, -hw * 0.82, L * 0.17, hw * 1.64, look.deck);
+  R(stern, -hw * 0.82, L * 0.17, 0.8, shade(look.deck, 0.25));
+  if (detail) for (let m = stern + 3; m < stern + L * 0.07; m += 1.6) R(m, -hw * 0.3, 0.7, hw * 0.6, '#16181b');
   const od = g && t === g.player && g.helm.overdrive;
   const moving = Math.min(1, Math.abs(t.speed) / 8);
-  for (const sy of [-0.62, -0.22, 0.22, 0.62]) {
-    const sx = stern + L * 0.06, syy = sy * hw;
-    disc(sx, syy, 3.2, '#16171a');
-    const glow = od ? (Math.sin(time * 30 + sy * 9) > 0 ? '#ffcc40' : '#ff6d00') : moving > 0.2 ? '#6b3a20' : '#2a2a2c';
-    disc(sx, syy, 1.8, glow);
+  for (const side of [-1, 1]) {
+    // Radiator fans, spinning with the engine load.
+    const fx = stern + L * 0.12, fy = side * hw * 0.5, fr = 6;
+    disc(fx, fy, fr, '#15171a');
+    disc(fx, fy, fr - 0.8, '#2b2f35');
+    const spin = time * (4 + moving * 18) * side;
+    for (let b = 0; b < 5; b++) {
+      const a = spin + (b * Math.PI * 2) / 5;
+      line(fx, fy, fx + Math.cos(a) * (fr - 1.2), fy + Math.sin(a) * (fr - 1.2), 1.1, '#4d535b');
+    }
+    disc(fx, fy, 1.2, '#8a9099');
   }
-  // Hull number on the engine deck (and the tail lights).
+  for (const sy of [-0.78, -0.2, 0.2, 0.78]) {
+    const sx = stern + L * 0.035, syy = sy * hw;
+    disc(sx, syy, 3.2, '#101114');
+    disc(sx - 0.4, syy - 0.4, 2.4, '#26282d');
+    const glow = od ? (Math.sin(time * 30 + sy * 9) > 0 ? '#ffcc40' : '#ff6d00') : moving > 0.2 ? '#7a3c1c' : '#1a1a1c';
+    disc(sx, syy, 1.5, glow);
+    if (od) lights.push({ x: sx, y: syy, r: 7, color: '#ff9100', k: 0.7 });
+  }
+  // Hull number on the engine deck.
   const digitH = 9, px = digitH / 5;
   if (digitH * ppm >= 5) {
     const text = '07';
@@ -179,16 +293,15 @@ export function paintTitan(t: Tank, ppm: number, g: Game | null, time: number): 
       for (let ry = 0; ry < 5; ry++) {
         for (let rx = 0; rx < 3; rx++) {
           if (rows[ry][rx] !== '1') continue;
-          // Read along the hull from the stern: rotate the digits so they face aft.
           R(stern + L * 0.19 + (4 - ry) * px, -3.8 * px + k * 4 * px + rx * px, px, px, look.mark);
         }
       }
     }
   }
-  R(stern, -hw, 1.2, 4, '#ff1744');
-  R(stern, hw - 4, 1.2, 4, '#ff1744');
-  R(tip - 5, -hw * 0.4, 1.5, 2, '#fff9c4');
-  R(tip - 5, hw * 0.4 - 2, 1.5, 2, '#fff9c4');
+  for (const side of [-1, 1]) {
+    R(stern, side < 0 ? -hw : hw - 4, 1.4, 4, '#ff1744');
+    lights.push({ x: stern, y: side * (hw - 2), r: 6, color: '#ff1744', k: 0.5 });
+  }
 
   /* ---- Roof: the Spine's skylight, the command tower, then everything built up there ---- */
   const cell = t.cell;
@@ -295,6 +408,7 @@ export function paintTitan(t: Tank, ppm: number, g: Game | null, time: number): 
           const r = (1.2 + f * 3.2) * (0.6 + flick * 0.6);
           disc(fx + (hash2(k, deck, s) - 0.5) * 10 * f, fy + (hash2(k, s, deck) - 0.5) * 8 * f, r, k % 3 === 0 ? '#ffe082' : k % 3 === 1 ? '#ff9100' : '#ff3d00');
         }
+        lights.push({ x: fx, y: fy, r: 8 + f * 10, color: '#ff6d00', k: 0.35 + f * 0.4 });
       }
     }
   }
@@ -310,7 +424,8 @@ export function paintTitan(t: Tank, ppm: number, g: Game | null, time: number): 
     x.fillRect(0, 0, cw, chh);
     x.globalCompositeOperation = 'source-over';
   }
-  return { canvas: c, cx: ox, cy: oy };
+  outlineCanvas(c);
+  return { canvas: c, cx: ox, cy: oy, lights: t.dead ? [] : lights };
 }
 
 /* ---------------------------------------------------------------------- */
@@ -380,5 +495,6 @@ export function paintSmallTank(t: Tank, ppm: number, time: number): Painted {
     x.globalCompositeOperation = 'source-over';
   }
   void time;
+  outlineCanvas(c);
   return { canvas: c, cx: ox, cy: oy };
 }
