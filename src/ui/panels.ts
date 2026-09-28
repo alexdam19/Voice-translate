@@ -382,6 +382,15 @@ export class Panels {
         a.audio.setMuted(!a.audio.muted);
         this.render();
       }),
+      button(`Screen shake: ${a.view.shakeOn ? 'ON' : 'OFF'}`, () => {
+        a.view.shakeOn = !a.view.shakeOn;
+        try {
+          localStorage.setItem('ironcrawl-shake', a.view.shakeOn ? '1' : '0');
+        } catch {
+          /* private mode */
+        }
+        this.render();
+      }),
       button(`Pixel outlines: ${a.view.outlines ? 'ON' : 'OFF'}`, () => {
         a.view.outlines = !a.view.outlines;
         this.render();

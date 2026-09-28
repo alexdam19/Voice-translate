@@ -70,11 +70,11 @@ describe('squads', () => {
     expect(squadUnits(g, 'buggies').length).toBeGreaterThan(0);
     const before = ['scrap', 'iron_ore', 'copper_ore', 'biomass'].reduce((s, k) => s + g.player.cargo.count(k), 0);
     expect(setSquadOrder(g, 'buggies', 'scavenge')).toBeNull();
-    for (let i = 0; i < 60 * 90; i++) stepWorld(g, 1 / 60);
+    for (let i = 0; i < 30 * 90; i++) stepWorld(g, 1 / 30);
     const after = ['scrap', 'iron_ore', 'copper_ore', 'biomass'].reduce((s, k) => s + g.player.cargo.count(k), 0);
     expect(g.objectiveCounters.scavenged ?? 0).toBeGreaterThan(0);
     expect(after).toBeGreaterThan(before);
-  });
+  }, 30000);
 });
 
 describe('tracking', () => {

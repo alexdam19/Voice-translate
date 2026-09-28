@@ -321,7 +321,9 @@ export function arcThrottle(diff: number): number {
  * turns in wide differential arcs (a slow pivot only when nearly stopped, on firm ground). Heavy, but readable:
  * the HUD shows the throttle, both crawler sides and the predicted path.
  */
-export const TITAN = { accel: 0.55, brake: 1.1, reverseBrake: 1.6, yaw: 0.11, pivot: 0.045, cap: 9 } as const;
+export const TITAN = { accel: 2.2, brake: 3.2, reverseBrake: 4, yaw: 0.34, pivot: 0.14, cap: 26 } as const;
+/** Overdrive: this much more speed, for this much more fuel and wear. */
+export const OVERDRIVE = { speed: 1.45, fuel: 3, wear: 5 } as const;
 
 export function handling(t: Tank): { turn: number; accel: number; brake: number } {
   if (!t.fortress) {
@@ -333,7 +335,7 @@ export function handling(t: Tank): { turn: number; accel: number; brake: number 
 
 /** Yaw rate a fortress can manage at `speed`: a slow pivot when stopped, up to the full rate once moving. */
 export function titanYaw(t: Tank, speed: number, firm: boolean): number {
-  const k = Math.min(1, Math.abs(speed) / 2.5);
+  const k = Math.min(1, Math.abs(speed) / 4);
   const pivot = firm ? TITAN.pivot : 0.01;
   return (pivot + (TITAN.yaw - pivot) * k) * t.handling;
 }

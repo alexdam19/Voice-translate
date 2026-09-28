@@ -1,61 +1,80 @@
 import { describe, expect, it } from 'vitest';
-import { driveTank, manualDrive, TITAN } from '../src/game/systems/movement';
+import { driveTank, OVERDRIVE, TITAN } from '../src/game/systems/movement';
+import { helmDrive, stepWorld } from '../src/game/systems/step';
 import { wrapAngle } from '../src/shared/types';
 import { game } from './helpers';
 
 const DT = 1 / 30;
 
-/** Drives the player with tank-style input held for `secs`; returns when `done` first held. */
+/** Holds keys (tank-style input) for `secs` through the helm; returns when `done` first held. */
 function hold(g: ReturnType<typeof game>, ix: number, iy: number, secs: number, done: () => boolean = () => false): number {
+  g.driveInput = { x: ix, y: iy, active: ix !== 0 || iy !== 0 };
   for (let t = 0; t < secs; t += DT) {
-    driveTank(g, g.player, DT, 1, manualDrive(g.player, ix, iy, true));
+    driveTank(g, g.player, DT, 1, helmDrive(g, DT));
     if (done()) return t;
   }
   return Infinity;
 }
 
-describe('Titan Crawler handling: heavy but readable', () => {
-  it('builds speed slowly to about 25 km/h and takes seconds to stop', () => {
+const top = (g: ReturnType<typeof game>): number => Math.min(TITAN.cap, g.player.stats.topSpeed);
+
+describe('Titan Crawler handling', () => {
+  it('reaches 50-65 km/h in about ten seconds and the lever holds its speed', () => {
     const g = game();
     const p = g.player;
-    expect(Math.min(TITAN.cap, p.stats.topSpeed)).toBeGreaterThan(5);
-    expect(Math.min(TITAN.cap, p.stats.topSpeed) * 3.6).toBeLessThan(33);
-    const t = hold(g, 0, -1, 40, () => p.speed >= Math.min(TITAN.cap, p.stats.topSpeed) * 0.9 * p.trac);
-    expect(t).toBeGreaterThan(6);
-    expect(t).toBeLessThan(20);
+    expect(top(g) * 3.6).toBeGreaterThan(48);
+    expect(top(g) * 3.6).toBeLessThan(66);
+    // W pushes the lever up; it stays there when you let go (cruise control).
+    const t = hold(g, 0, -1, 30, () => g.helm.lever >= 1);
+    expect(t).toBeLessThan(2);
+    hold(g, 0, 0, 12);
+    expect(p.speed).toBeGreaterThan(top(g) * 0.85 * p.trac);
+    // Down through 0% stops on the detent.
+    hold(g, 0, 1, 3);
+    expect(g.helm.lever).toBe(0);
     let stop = Infinity;
-    for (let s = 0; s < 30; s += DT) {
-      driveTank(g, p, DT, 1);
+    for (let s = 0; s < 20; s += DT) {
+      driveTank(g, p, DT, 1, helmDrive(g, DT));
       if (Math.abs(p.speed) < 0.05) {
         stop = s;
         break;
       }
     }
-    expect(stop).toBeGreaterThan(3);
-    expect(stop).toBeLessThan(12);
+    expect(stop).toBeLessThan(8);
   });
 
-  it('turns in a wide arc with the inside crawlers slower than the outside', () => {
+  it('turns briskly, with the inside crawlers slower than the outside', () => {
     const g = game();
     const p = g.player;
     const r0 = p.rot;
-    hold(g, 0, -1, 15);
-    const x0 = p.x, y0 = p.y;
-    const t = hold(g, 1, -1, 60, () => Math.abs(wrapAngle(p.rot - r0)) > Math.PI / 2 - 0.02);
-    expect(t).toBeGreaterThan(10);
-    expect(t).toBeLessThan(40);
-    expect(Math.hypot(p.x - x0, p.y - y0)).toBeGreaterThan(60);
-    hold(g, 1, -1, 0.5);
+    hold(g, 0, -1, 1.5);
+    hold(g, 0, 0, 6);
+    const t = hold(g, 1, 0, 30, () => Math.abs(wrapAngle(p.rot - r0)) > Math.PI / 2 - 0.02);
+    expect(t).toBeLessThan(7);
     expect(p.sideSpeed[0]).toBeGreaterThan(p.sideSpeed[1]);
   });
 
-  it('only pivots slowly when stopped', () => {
+  it('pivots when stopped', () => {
     const g = game();
     const p = g.player;
     const r0 = p.rot;
     hold(g, 1, 0, 5);
-    const turned = Math.abs(wrapAngle(p.rot - r0));
-    expect(turned).toBeGreaterThan(0.05);
-    expect(turned).toBeLessThan(0.35);
+    expect(Math.abs(wrapAngle(p.rot - r0))).toBeGreaterThan(0.4);
+  });
+
+  it('overdrive: faster, for triple the fuel', () => {
+    const g = game();
+    const p = g.player;
+    g.helm.lever = 1;
+    for (let i = 0; i < 30 * 20; i++) stepWorld(g, DT);
+    const normal = p.speed, fuel0 = g.titan.fuel;
+    for (let i = 0; i < 30 * 5; i++) stepWorld(g, DT);
+    const burnt = fuel0 - g.titan.fuel;
+    g.helm.overdrive = true;
+    for (let i = 0; i < 30 * 20; i++) stepWorld(g, DT);
+    expect(p.speed).toBeGreaterThan(normal * (OVERDRIVE.speed - 0.2));
+    const fuel1 = g.titan.fuel;
+    for (let i = 0; i < 30 * 5; i++) stepWorld(g, DT);
+    expect(fuel1 - g.titan.fuel).toBeGreaterThan(burnt * 2.5);
   });
 });

@@ -18,12 +18,12 @@ describe('world generation', () => {
     for (const [cx, cy] of [[160, 160], [161, 150], [120, 190]]) expect(Array.from(b.map.chunk(cx, cy).ter)).toEqual(Array.from(gen.map.chunk(cx, cy).ter));
   });
 
-  it('is enormous: crossing it takes the best part of half an hour', () => {
+  it('is enormous: crossing it takes a good while even flat out', () => {
     const g = game();
     expect(MAP_SIZE).toBeGreaterThanOrEqual(10000);
     // Edge to edge through the middle, flat out on a highway.
     const secs = (RING.EDGE * 2) / (g.player.stats.topSpeed * 1.2);
-    expect(secs / 60).toBeGreaterThan(20);
+    expect(secs / 60).toBeGreaterThan(8);
   });
 
   it('places camp, biomes and features', () => {

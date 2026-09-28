@@ -180,6 +180,11 @@ export class Game {
   crewFx: CrewFx = emptyCrewFx();
   /** WASD drive input (screen-relative unit vector, or tank-style throttle/turn). */
   driveInput = { x: 0, y: 0, active: false };
+  /**
+   * The helm: a throttle lever that stays where you set it (-0.5 full astern .. 1 full ahead), the overdrive switch,
+   * and whether the lever is resting on the 0% detent (you have to let go and press again to go past it).
+   */
+  helm = { lever: 0, overdrive: false, detent: false };
   /** Tank-style controls: W/S throttle, A/D turn. Off = screen-relative. */
   tankControls = true;
   /**

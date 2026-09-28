@@ -8,7 +8,7 @@ import { updateCards } from './cards';
 import { healPlayer, injureRandomCrew } from './damage';
 import { updateBuffs, updateCrew, updateZones } from './crewsys';
 import { updateSquads } from './squads';
-import { driveTank, manualDrive, separateTanks, updateCollapses } from './movement';
+import { driveTank, manualDrive, OVERDRIVE, separateTanks, updateCollapses, type ManualDrive } from './movement';
 import { updateFocus, updateInteract } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
 import { updateProjectiles } from './projectiles';
@@ -44,6 +44,32 @@ export function installHandlers(g: Game): void {
     g.hooks.died();
   };
   g.onOutriderDestroyed = () => outriderDestroyed(g);
+}
+
+/**
+ * A Titan's helm: W/S (or the stick) move the throttle lever, which stays where it's left (cruise control); it
+ * stops on the 0% detent on the way down, so stopping is one press. A/D steer. A path (right-click) flies on
+ * autopilot with the lever at zero. Other hulls and screen-relative controls drive directly.
+ */
+export function helmDrive(g: Game, dt: number): ManualDrive | undefined {
+  const p = g.player;
+  const di = g.driveInput;
+  const helm = g.helm;
+  if (!p.fortress || !g.tankControls) return di.active ? manualDrive(p, di.x, di.y, g.tankControls) : undefined;
+  if (p.path.length && !di.active) {
+    helm.lever = 0;
+    return undefined;
+  }
+  if (di.active && di.y) {
+    const was = helm.lever;
+    const next = Math.max(-0.5, Math.min(1, was - di.y * dt * 0.8));
+    // The detent: coming down (or up) through zero stops there until you let go.
+    if (!helm.detent && ((was > 0 && next <= 0) || (was < 0 && next >= 0))) {
+      helm.lever = 0;
+      helm.detent = true;
+    } else if (!helm.detent) helm.lever = next;
+  } else if (di.active) helm.detent = false;
+  return { throttle: helm.lever, wantRot: p.rot, turn: di.active ? Math.max(-1, Math.min(1, di.x)) : 0 };
 }
 
 function respawn(g: Game): void {
@@ -87,19 +113,22 @@ export function stepWorld(g: Game, dt: number): void {
     if (g.respawnIn <= 0 && g.mode === 'world') respawn(g);
   } else {
     const di = g.driveInput;
+    const helm = g.helm;
     if (di.active) {
       // WASD overrides right-click paths.
       p.path = [];
       p.goal = null;
       g.interact = null;
     } else {
+      helm.detent = false;
       updateFocus(g, dt);
       updateInteract(g);
     }
     const nitro = p.buff('nitro');
     const chill = p.buff('chill');
-    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)) * stormSpeed(g);
-    driveTank(g, p, dt, mult, di.active ? manualDrive(p, di.x, di.y, g.tankControls) : undefined);
+    if (helm.overdrive && (g.titan.fuel <= 0 || !p.titan)) helm.overdrive = false;
+    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)) * stormSpeed(g) * (helm.overdrive ? OVERDRIVE.speed : 1);
+    driveTank(g, p, dt, mult, helmDrive(g, dt));
     if (nitro && Math.random() < dt * 20) {
       const b = p.toWorld(-p.stats.length / 2, (Math.random() - 0.5) * p.stats.width);
       g.fx.push({ t: 'dust', x: b.x, y: b.y, color: '#18ffff' });

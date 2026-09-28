@@ -596,7 +596,13 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 .hud-bottom { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); display: flex; align-items: flex-end; gap: 14px; }
 .hp-box { width: 250px; background: rgba(13, 14, 20, 0.88); border: 2px solid var(--edge); padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; position: relative; }
 .hp-box .tank-info { cursor: pointer; }
-.drive-gauge { display: grid; grid-template-columns: auto 10px 1fr; grid-template-rows: auto auto; gap: 2px 8px; align-items: center; }
+.drive-gauge { display: flex; flex-direction: column; gap: 4px; }
+.dg-read { display: grid; grid-template-columns: auto 10px 1fr; grid-template-rows: auto auto; gap: 2px 8px; align-items: center; }
+.dg-ctl { display: flex; gap: 3px; }
+.dg-ctl .dg-b { flex: 0 0 auto; padding: 2px 8px; font-family: var(--px); font-size: 11px; background: #1a1d24; border: 1px solid #3c4147; color: #cfd8dc; cursor: pointer; }
+.dg-ctl .dg-b.stop { flex: 1; color: #ff8a80; }
+.dg-ctl .dg-b.overdrive { color: #ffab40; }
+.dg-ctl .dg-b.overdrive.on { background: #5a2a00; border-color: #ff9100; color: #fff3e0; animation: packpulse 0.8s infinite; }
 .dg-spd { grid-row: span 2; display: flex; align-items: baseline; gap: 3px; min-width: 64px; }
 .dg-spd b { font-family: var(--px); font-size: 22px; color: #e6edf2; }
 .dg-spd small { font-size: 10px; color: var(--dim); }
@@ -928,7 +934,8 @@ html.touch .joy { display: block; }
   .hud-bottom { bottom: 3px; flex-direction: column; align-items: center; gap: 2px; }
   .hp-box { width: auto; align-self: stretch; padding: 2px 3px; gap: 0; border-width: 1px; }
   .hp-box .tank-info { display: none; }
-  .drive-gauge { gap: 1px 4px; }
+  .dg-read { gap: 1px 4px; }
+  .dg-ctl .dg-b { padding: 1px 5px; font-size: 9px; }
   .dg-spd { min-width: 44px; }
   .dg-spd b { font-size: 14px; }
   .dg-thr { min-height: 18px; }

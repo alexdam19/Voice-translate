@@ -301,7 +301,7 @@ export function updateTitan(g: Game, dt: number): void {
 
   // Fuel: the diesels burn it in proportion to how hard they work (a full tank is about 40 minutes flat out).
   const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
-  const burnRate = p.anchored ? 0.02 : 0.08 + 0.75 * load;
+  const burnRate = (p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1);
   const hadFuel = s.fuel > 0;
   s.fuel = Math.max(0, s.fuel - burnRate * dt);
   if (hadFuel && s.fuel <= 0) g.hooks.toast('OUT OF FUEL: running on the reactors alone at a crawl. Refinery, the Mothership, or burn scrap.', '#ff1744');
@@ -351,7 +351,7 @@ export function updateTitan(g: Game, dt: number): void {
   // Wear: crawlers and the drive wear with every metre; everything else slowly.
   const metres = Math.abs(p.speed) * dt;
   for (let i = 0; i < 8; i++) s.crawlers[i] = Math.max(0, s.crawlers[i] - metres * 0.000004 * (1 + Math.random()));
-  s.systems.propulsion = Math.max(0, s.systems.propulsion - metres * 0.000003);
+  s.systems.propulsion = Math.max(0, s.systems.propulsion - metres * 0.000003 * (g.helm.overdrive ? 5 : 1));
   s.systems.power = Math.max(0, s.systems.power - dt * 0.00002);
   s.systems.steering = Math.max(0, s.systems.steering - Math.abs(p.yawRate) * dt * 0.0006);
 

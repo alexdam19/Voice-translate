@@ -105,6 +105,16 @@ export class App {
       trackClick: () => this.trackClick(),
       untrack: () => this.game && untrack(this.game),
       camp: () => this.toggleCamp(),
+      helm: (cmd) => {
+        const h = this.game.helm;
+        if (cmd === 'overdrive') this.toggleOverdrive();
+        else if (cmd === 'stop') this.allStop();
+        else {
+          h.lever = Math.max(-0.5, Math.min(1, Math.round((h.lever + (cmd === 'up' ? 0.25 : -0.25)) * 4) / 4));
+          this.game.player.path = [];
+          this.game.player.goal = null;
+        }
+      },
     });
     this.mapCtx = this.hud.minimap.getContext('2d')!;
     this.villageUI = new VillageUI(uiRoot, this);
@@ -562,6 +572,26 @@ export class App {
     v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;
   }
 
+  /** Overdrive: more speed for a lot more fuel and wear on the drive. */
+  toggleOverdrive(): void {
+    const g = this.game;
+    if (!g.player.titan || g.player.dead) return;
+    if (!g.helm.overdrive && g.titan.fuel <= 0) {
+      this.hud.toast('No fuel for overdrive.', '#ff8a80');
+      return;
+    }
+    g.helm.overdrive = !g.helm.overdrive;
+    this.hud.toast(g.helm.overdrive ? 'OVERDRIVE: +45% speed, triple fuel burn, hard on the drive.' : 'Overdrive off.', g.helm.overdrive ? '#ff9100' : '#b0bec5');
+    this.sound(g.helm.overdrive ? 'levelup' : 'ui');
+  }
+
+  /** All stop: the throttle lever back to zero. */
+  allStop(): void {
+    this.game.helm.lever = 0;
+    this.game.player.path = [];
+    this.game.player.goal = null;
+  }
+
   /** WASD / arrow keys / the touch stick drive the fortress (screen-relative, or tank-style from the menu). */
   private readDrive(): void {
     const g = this.game;
@@ -648,7 +678,9 @@ export class App {
       if (this.hover && (this.hover.kind === 'node' || this.hover.kind === 'site')) this.trySend(this.hover);
       else this.outriderCmd('send');
     }
-    if (i.consume('KeyO')) this.view.outlines = !this.view.outlines;
+    if (i.consume('F8')) this.view.outlines = !this.view.outlines;
+    if (i.consume('KeyO')) this.toggleOverdrive();
+    if (i.consume('Space')) this.allStop();
   }
 
   private trySend(hv: Hover): void {

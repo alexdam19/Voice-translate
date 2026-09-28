@@ -78,6 +78,14 @@ const ZONE_COLOR: Record<string, string> = { fire: '#ff6d00', acid: '#76ff03', w
 
 const COARSE_POINTER = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 
+export function readShakeSetting(): boolean {
+  try {
+    return localStorage.getItem('ironcrawl-shake') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export class View {
   renderer: WebGLRenderer;
   scene = new Scene();
@@ -298,8 +306,12 @@ export class View {
     this.normP.mat.uniforms.pxScale.value = px;
   }
 
+  /** Screen shake is off unless you turn it on in the menu: the view holds steady on the ship. */
+  shakeOn = readShakeSetting();
+
   shake(a: number): void {
-    this.shakeAmt = Math.min(1.5, this.shakeAmt + a);
+    if (!this.shakeOn) return;
+    this.shakeAmt = Math.min(1.5, this.shakeAmt + a * 0.5);
   }
 
   moveMarker(x: number, y: number, color = '#76ff03'): void {

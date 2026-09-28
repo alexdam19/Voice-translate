@@ -56,6 +56,8 @@ export interface HudActions {
   untrack(): void;
   /** Set up camp / pack up. */
   camp(): void;
+  /** The helm: throttle lever steps, all stop, overdrive. */
+  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive'): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -109,6 +111,9 @@ export class Hud {
   private tankInfo = h('div', 'tank-info');
   /** A Titan's drive readout: speed, the throttle you're asking for, and each crawler bank's speed. */
   private gauge = h('div', 'drive-gauge');
+  private gaugeRead = h('div', 'dg-read');
+  private gaugeCtl = h('div', 'dg-ctl');
+  private odBtn: HTMLButtonElement | null = null;
   /** Fires, flooding, lost crawlers and failing systems (tap for the bridge status display). */
   private alerts = h('div', 'titan-alerts');
   private kitBtn = h('div', 'kit-btn');
@@ -208,6 +213,16 @@ export class Hud {
     });
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
     this.hpBox.append(this.alerts, this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
+    this.gauge.append(this.gaugeRead, this.gaugeCtl);
+    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): +45% speed, triple fuel, hard wear']] as const) {
+      const b = button(label, (e) => {
+        e.stopPropagation();
+        act.helm(cmd);
+      }, `dg-b ${cmd}`);
+      b.title = tip;
+      if (cmd === 'overdrive') this.odBtn = b;
+      this.gaugeCtl.appendChild(b);
+    }
     this.alerts.addEventListener('click', (e) => {
       e.stopPropagation();
       act.openPanel('bridge');
@@ -562,7 +577,8 @@ export class Hud {
       const top = Math.max(1, Math.min(9, p.stats.topSpeed));
       const bar = (v: number): string => `<div class="dg-side"><i class="${v < -0.05 ? 'rev' : ''}" style="width:${Math.round(Math.min(1, Math.abs(v) / top) * 100)}%"></i></div>`;
       const thr = p.throttle;
-      setHTML(this.gauge, `<div class="dg-spd"><b>${Math.round(Math.abs(p.speed) * 3.6)}</b><small>km/h${p.speed < -0.05 ? ' R' : ''}</small></div>`
+      this.odBtn?.classList.toggle('on', g.helm.overdrive);
+      setHTML(this.gaugeRead, `<div class="dg-spd"><b>${Math.round(Math.abs(p.speed) * 3.6)}</b><small>km/h${p.speed < -0.05 ? ' R' : ''}</small></div>`
         + `<div class="dg-thr" title="Throttle"><i class="${thr < 0 ? 'rev' : ''}" style="height:${Math.round(Math.min(1, Math.abs(thr)) * 100)}%"></i></div>`
         + `<div class="dg-lr"><span>L</span>${bar(p.sideSpeed[0])}<span>R</span>${bar(p.sideSpeed[1])}</div>`
         + `<div class="dg-note">${p.anchored ? 'ANCHORED' : Math.abs(p.yawRate) > 0.01 ? (p.yawRate > 0 ? 'TURNING RIGHT' : 'TURNING LEFT') : Math.abs(p.speed) < 0.1 ? (thr ? 'BUILDING SPEED' : 'STOPPED') : thr === 0 ? 'COASTING' : 'UNDER WAY'}</div>`);
