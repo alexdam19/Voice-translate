@@ -14,7 +14,7 @@ import { CAST_RANGE, cardBlock, clampCast, playCard } from './game/systems/cards
 import { orderAttack, orderHarvest, orderInteract, orderMove } from './game/systems/orders';
 import { launchOutrider, OUTRIDER_COST, sendOutrider } from './game/systems/outrider';
 import { setSquadOrder } from './game/systems/squads';
-import { installHandlers, stepWorld } from './game/systems/step';
+import { installHandlers, stepWorld, warpBlocked } from './game/systems/step';
 import { trackInfo } from './game/systems/tracking';
 import { Minimap } from './render/minimap';
 import { deckHeight } from './render/models';
@@ -22,7 +22,7 @@ import type { HullClass } from './game/classes';
 import { toggleDeploy } from './game/systems/camp';
 import { isDocked, mission } from './game/campaign';
 import { Overlay, type VillageState } from './render/overlay';
-import { View } from './render/view';
+import { View2D } from './render/view2d';
 import { ChestUI } from './ui/chest';
 import { CURSORS, initCursors } from './ui/cursors';
 import { hideTip } from './ui/dom';
@@ -46,11 +46,11 @@ interface Hover {
 /** Camera distance around a Titan Crawler (m): default, nearest and furthest. Phones sit a little closer. */
 const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
 const TITAN_ZOOM = COARSE ? 300 : 360;
-const TITAN_MIN = 120, TITAN_MAX = COARSE ? 520 : 700;
+const TITAN_MIN = 110, TITAN_MAX = COARSE ? 1000 : 1400;
 
 export class App {
   game!: Game;
-  view: View;
+  view: View2D;
   overlay: Overlay;
   minimap = new Minimap();
   input: Input;
@@ -86,7 +86,7 @@ export class App {
 
   constructor(private canvas: HTMLCanvasElement, overlayCanvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     initCursors();
-    this.view = new View(canvas);
+    this.view = new View2D(canvas);
     this.overlay = new Overlay(overlayCanvas, this.view);
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, {
@@ -108,6 +108,7 @@ export class App {
       helm: (cmd) => {
         const h = this.game.helm;
         if (cmd === 'overdrive') this.toggleOverdrive();
+        else if (cmd === 'warp') this.cycleWarp();
         else if (cmd === 'stop') this.allStop();
         else {
           h.lever = Math.max(-0.5, Math.min(1, Math.round((h.lever + (cmd === 'up' ? 0.25 : -0.25)) * 4) / 4));
@@ -474,9 +475,11 @@ export class App {
     this.handleZoom();
     const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen;
     if (!paused) {
-      this.acc += dt;
+      this.checkWarp();
+      const warp = this.dz ? 1 : g.warp;
+      this.acc += dt * warp;
       let steps = 0;
-      while (this.acc >= STEP && steps < 5) {
+      while (this.acc >= STEP && steps < 5 * warp) {
         if (this.dz) this.dz.step(STEP);
         else stepWorld(g, STEP);
         this.acc -= STEP;
@@ -484,7 +487,7 @@ export class App {
         if (steps === 1) this.input.endFrame();
       }
       if (steps === 0) this.input.endFrame();
-      if (this.acc > STEP * 5) this.acc = 0;
+      if (this.acc > STEP * 5 * warp) this.acc = 0;
     } else this.input.endFrame();
     if (this.village && (g.player.dead || g.mode !== 'world')) this.setVillage(false);
     this.updateCamera(dt);
@@ -559,14 +562,14 @@ export class App {
     }
     if (this.village) {
       // Nudge the view so the building card at the bottom doesn't cover the fortress.
-      const back = p.toWorld(-p.stats.length * 0.07, 0);
+      const back = p.toWorld(p.stats.length * 0.06, 0);
       tx = back.x;
       ty = back.y;
     }
     v.cam.x += (tx - v.cam.x) * (this.village ? k : 1 - Math.pow(0.0005, dt));
     v.cam.y += (ty - v.cam.y) * (this.village ? k : 1 - Math.pow(0.0005, dt));
     v.cam.zoom += (this.autoZoom() - v.cam.zoom) * k;
-    v.cam.fov = !this.village && g.mode === 'world' && g.player.fortress ? 45 : 32;
+    v.cam.fov = !this.village && g.player.fortress ? 45 : 32;
     const wantYaw = this.village ? p.rot : -Math.PI / 2;
     v.cam.yaw = wrapAngle(v.cam.yaw + wrapAngle(wantYaw - v.cam.yaw) * k);
     v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;
@@ -583,6 +586,31 @@ export class App {
     g.helm.overdrive = !g.helm.overdrive;
     this.hud.toast(g.helm.overdrive ? 'OVERDRIVE: +45% speed, triple fuel burn, hard on the drive.' : 'Overdrive off.', g.helm.overdrive ? '#ff9100' : '#b0bec5');
     this.sound(g.helm.overdrive ? 'levelup' : 'ui');
+  }
+
+  /** Cruise warp: 1x, 4x, 8x. Only while nothing hostile is near. */
+  cycleWarp(): void {
+    const g = this.game;
+    const next = g.warp === 1 ? 4 : g.warp === 4 ? 8 : 1;
+    const why = next > 1 ? warpBlocked(g) : null;
+    if (why) {
+      this.hud.toast(`Can't warp: ${why}.`, '#ff8a80');
+      return;
+    }
+    g.warp = next;
+    this.hud.toast(next > 1 ? `CRUISE WARP ×${next}: time runs faster until something hostile comes near.` : 'Warp off.', next > 1 ? '#18ffff' : '#b0bec5');
+    this.sound('ui');
+  }
+
+  /** Warp drops out the moment anything hostile turns up. */
+  private checkWarp(): void {
+    const g = this.game;
+    if (g.warp === 1) return;
+    const why = warpBlocked(g);
+    if (!why) return;
+    g.warp = 1;
+    this.hud.toast(`Warp off: ${why}.`, '#ffab40');
+    this.sound('alarm');
   }
 
   /** All stop: the throttle lever back to zero. */
@@ -680,6 +708,7 @@ export class App {
     }
     if (i.consume('F8')) this.view.outlines = !this.view.outlines;
     if (i.consume('KeyO')) this.toggleOverdrive();
+    if (i.consume('Period')) this.cycleWarp();
     if (i.consume('Space')) this.allStop();
   }
 

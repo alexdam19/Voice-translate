@@ -212,3 +212,15 @@ export function stepWorld(g: Game, dt: number): void {
   }
   g.tanks = g.tanks.filter((t) => !t.dead || t.kind === 'raider' || t.kind === 'remote');
 }
+
+/** Why cruise warp can't run right now (null = it can): anything hostile close, a horde, the last stand. */
+export function warpBlocked(g: Game): string | null {
+  const p = g.player;
+  if (g.mode !== 'world') return 'not in the Dead Zone';
+  if (p.dead) return 'the Titan is down';
+  if (g.campaign.finale === 'active') return 'the last stand';
+  if (g.wave.phase !== 'calm') return 'a horde is coming';
+  for (const e of g.enemies) if (e.hp > 0 && (e.aggro || e.boss || e.titan) && p.edgeDist(e.x, e.y) < 650) return `${e.name} nearby`;
+  for (const t of g.tanks) if (!t.dead && t.team === 'enemy' && Math.hypot(t.x - p.x, t.y - p.y) < 900) return 'an enemy hull nearby';
+  return null;
+}

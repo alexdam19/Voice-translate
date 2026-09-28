@@ -3,7 +3,7 @@ import { NODE_INFO, REGION_INFO, RUNE_INFO, type OpenWorld } from '../shared/map
 import { ZONES } from '../shared/zones';
 import type { Game } from '../game/game';
 import { hexToRgb } from './pixel';
-import type { View } from './view';
+import type { View2D as View } from './view2d';
 
 /** How far the corner radar reaches (tiles from the fortress). */
 /** The corner radar covers this many metres each way (sampled every RADAR_STEP tiles): a Titan sees a long way. */

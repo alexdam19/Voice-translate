@@ -6,7 +6,7 @@ import { CH } from './map';
  */
 export class Fog {
   /** Visibility window (tiles per side). */
-  static readonly W = 400;
+  static readonly W = 1100;
   ox = 0;
   oy = 0;
   readonly vis = new Uint8Array(Fog.W * Fog.W);
@@ -63,17 +63,27 @@ export class Fog {
     this.ox = Math.floor(cx) - Fog.W / 2;
     this.oy = Math.floor(cy) - Fog.W / 2;
     this.vis.fill(0);
+    const cps = this.cps;
     for (const d of discs) {
       const r2 = d.r * d.r;
       for (let ty = Math.floor(d.y - d.r); ty <= d.y + d.r; ty++) {
         const wy = ty - this.oy;
-        if (wy < 0 || wy >= Fog.W) continue;
-        for (let tx = Math.floor(d.x - d.r); tx <= d.x + d.r; tx++) {
-          const wx = tx - this.ox;
-          if (wx < 0 || wx >= Fog.W) continue;
-          if ((tx + 0.5 - d.x) ** 2 + (ty + 0.5 - d.y) ** 2 > r2) continue;
-          this.vis[wy * Fog.W + wx] = 1;
-          this.markExplored(tx, ty);
+        if (wy < 0 || wy >= Fog.W || ty < 0 || ty >= this.size) continue;
+        const dy = ty + 0.5 - d.y;
+        const half = Math.sqrt(Math.max(0, r2 - dy * dy));
+        const x0 = Math.max(Math.ceil(d.x - half - 0.5), this.ox, 0), x1 = Math.min(Math.floor(d.x + half - 0.5), this.ox + Fog.W - 1, this.size - 1);
+        if (x1 < x0) continue;
+        this.vis.fill(1, wy * Fog.W + (x0 - this.ox), wy * Fog.W + (x1 - this.ox) + 1);
+        // Explored, a chunk-row run at a time.
+        let tx = x0;
+        while (tx <= x1) {
+          const k = (ty >> 5) * cps + (tx >> 5);
+          let c = this.seen.get(k);
+          if (!c) this.seen.set(k, (c = new Uint8Array(CH * CH)));
+          const end = Math.min(x1, (tx | 31));
+          const row = (ty & 31) << 5;
+          c.fill(1, row + (tx & 31), row + (end & 31) + 1);
+          tx = end + 1;
         }
       }
     }

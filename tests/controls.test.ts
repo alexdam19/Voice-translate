@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { driveTank, OVERDRIVE, TITAN } from '../src/game/systems/movement';
-import { helmDrive, stepWorld } from '../src/game/systems/step';
+import { helmDrive, stepWorld, warpBlocked } from '../src/game/systems/step';
 import { CH, OBS, TER } from '../src/shared/map';
 import { wrapAngle } from '../src/shared/types';
 import { game } from './helpers';
@@ -80,5 +80,16 @@ describe('Titan Crawler handling', () => {
     const fuel1 = g.titan.fuel;
     for (let i = 0; i < 30 * 5; i++) stepWorld(g, DT);
     expect(fuel1 - g.titan.fuel).toBeGreaterThan(burnt * 2.5);
+  });
+
+  it('cruise warp only runs with nothing hostile near', () => {
+    const g = game();
+    expect(warpBlocked(g)).toBeNull();
+    const e = g.spawnEnemy('d_sand_rat', g.player.x + 150, g.player.y, 1);
+    e.aggro = true;
+    expect(warpBlocked(g)).toMatch(/nearby/);
+    e.hp = 0;
+    g.wave.phase = 'warning';
+    expect(warpBlocked(g)).toMatch(/horde/);
   });
 });

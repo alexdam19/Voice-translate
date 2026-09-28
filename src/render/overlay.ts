@@ -8,7 +8,7 @@ import type { TrackTarget } from '../game/systems/tracking';
 import { SITE_RADIUS, SITE_TIME } from '../game/systems/world';
 import type { Tank } from '../game/tank';
 import { deckHeight } from './models';
-import type { View } from './view';
+import type { View2D as View } from './view2d';
 
 /** What the base (village) view is showing. */
 export interface VillageState {
@@ -411,7 +411,9 @@ export class Overlay {
       // Horde fodder gets no bars (there are hundreds); its elites get a small one, no name.
       if (e.horde && !picked && !e.elite) continue;
       if (full && !e.elite && !picked && e.kind !== 'guardian') continue;
-      const p = v.worldToScreen(e.x, e.y, (e.flying ? 1.6 : 0) + e.z + e.r * 3.1 + 0.2);
+      const p = v.worldToScreen(e.x, e.y, 0);
+      // Straight above: the bar sits just over the creature's sprite (drawn at least a few pixels big).
+      p.y -= Math.max(e.horde ? 8 : 10, e.r * v.cssPpm * 1.2 + 6) + (e.flying ? 6 : 0);
       if (!onScreen(p)) continue;
       const w = Math.max(e.horde ? 16 : 26, Math.min(70, e.r * 36 * scale));
       this.bar(p.x, p.y, w, e.hp / e.maxHp, e.elite ? '#ff40ff' : '#e53935', 0, 0, e.horde ? 3 : 4);
@@ -423,8 +425,14 @@ export class Overlay {
     for (const t of tanks) {
       if (t.dead) continue;
       if (t.team === 'enemy' && g.mode === 'world' && !g.isVisible(t.x, t.y)) continue;
-      const ext = Math.max(t.stats.length, t.stats.width) / 2;
-      const p = v.worldToScreen(t.x, t.y - ext * 0.75, 2.2);
+      // Above the top of the hull as it sits on screen.
+      let top = Infinity;
+      for (const [lx, lz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const w = t.toWorld((lx * t.stats.length) / 2, (lz * t.stats.width) / 2);
+        top = Math.min(top, v.worldToScreen(w.x, w.y, 0).y);
+      }
+      const p = v.worldToScreen(t.x, t.y, 0);
+      p.y = top - 12;
       if (!onScreen(p)) continue;
       const w = Math.max(50, Math.min(130, t.stats.length * 14 * scale));
       const col = t === g.player ? '#43d15a' : t.kind === 'outrider' ? '#26c6da' : '#e53935';
@@ -441,7 +449,8 @@ export class Overlay {
       for (const s of g.gen.sites) {
         if (Math.abs(s.x - v.cam.x) > v.cam.zoom * 1.6 || Math.abs(s.y - v.cam.y) > v.cam.zoom * 1.3) continue;
         if (!g.isExplored(s.x, s.y)) continue;
-        const p = v.worldToScreen(s.x, s.y, 3.2);
+        const p = v.worldToScreen(s.x, s.y, 0);
+        p.y -= 12;
         if (!onScreen(p)) continue;
         const ready = s.readyAt <= g.time;
         this.text(s.name, p.x, p.y - 10, ready ? '#ffd740' : '#9e9e9e', 10);
@@ -457,7 +466,8 @@ export class Overlay {
       for (const r of g.gen.runes) {
         if (Math.abs(r.x - v.cam.x) > v.cam.zoom * 1.6 || Math.abs(r.y - v.cam.y) > v.cam.zoom * 1.3) continue;
         if (!g.isExplored(r.x, r.y)) continue;
-        const p = v.worldToScreen(r.x, r.y, 3.4);
+        const p = v.worldToScreen(r.x, r.y, 0);
+        p.y -= 14;
         if (!onScreen(p)) continue;
         const info = RUNE_INFO[r.rune];
         const ready = r.readyAt <= g.time;
@@ -471,7 +481,8 @@ export class Overlay {
       if (g.harvestId) {
         const n = g.gen.nodes.find((k) => k.id === g.harvestId);
         if (n) {
-          const p = v.worldToScreen(n.x, n.y, 1.6);
+          const p = v.worldToScreen(n.x, n.y, 0);
+          p.y -= 14;
           this.bar(p.x, p.y, 40, n.amount / n.max, '#ffd740', 0, 0, 4);
           this.text(NODE_INFO[n.type].name, p.x, p.y - 8, '#fff8e1', 8);
         }
@@ -485,7 +496,8 @@ export class Overlay {
     }
     // Floating text
     for (const f of g.floats) {
-      const p = v.worldToScreen(f.x, f.y, f.z + 1);
+      const p = v.worldToScreen(f.x, f.y, 0);
+      p.y -= 10 + f.z * 12;
       if (!onScreen(p)) continue;
       const a = f.t > 0.7 ? 1 - (f.t - 0.7) / 0.4 : 1;
       c.globalAlpha = Math.max(0, a);

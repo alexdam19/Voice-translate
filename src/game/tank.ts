@@ -585,7 +585,7 @@ export class Tank {
       bunks: bunkTotal, crewWanted: manning.wanted, crewManned: manning.manned, depts: manning.depts,
     };
     // From 40 m up, a Titan's lookouts and sensors see five times as far.
-    if (this.fortress) this.stats.vision = Math.max(120, this.stats.vision * 5) * (0.4 + 0.6 * this.titanMods.sensors);
+    if (this.fortress) this.stats.vision = Math.max(360, this.stats.vision * 12) * (0.4 + 0.6 * this.titanMods.sensors);
     // A bridge without its officers fights half blind.
     if (this.kind === 'main') {
       this.stats.vision *= 0.6 + 0.4 * cmdK;

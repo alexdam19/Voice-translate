@@ -88,7 +88,7 @@ export class Panels {
       },
       drive: { title: 'DRIVE TRAIN', sub: 'Different treads for different ground. Craft them at a Workshop (CARGO > Workshop).', render: (c) => this.renderDrive(c), wide: true },
       cargo: { title: 'CARGO', sub: 'Your hold, and the Refinery and Workshop where ore becomes parts.', tabs: [['hold', 'Hold'], ['workshop', 'Refine & Craft']], render: renderCargo, wide: true },
-      map: { title: 'WORLD MAP', sub: 'Click to drive there. Zones further from camp are more dangerous and need special gear.', render: (c) => this.renderMap(c), wide: true },
+      map: { title: 'WORLD MAP', sub: 'The Crater, 140 km across. Click to drive there. Each zone has its own creatures and dangers; some need special gear.', render: (c) => this.renderMap(c), wide: true },
       help: { title: 'HOW TO PLAY', sub: 'Commander\'s field manual', render: (c) => this.renderHelp(c), wide: true },
       menu: { title: 'PAUSED', sub: '', render: (c) => this.renderMenu(c) },
       blueprint: { title: 'BLUEPRINT', sub: 'A technical drawing of your whole fortress, and an analysis of what it can do.', render: renderBlueprint, wide: true, cls: 'blueprint' },

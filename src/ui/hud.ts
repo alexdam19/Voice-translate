@@ -1,3 +1,5 @@
+import { ENEMIES } from '../game/enemyDefs';
+import { TITAN } from '../game/systems/movement';
 import { DRIVE_ITEM, getItem } from '../shared/items';
 import { titanAlerts } from '../game/systems/titan';
 import { RUNE_INFO, TIER_NAMES, threatAt, threatTier } from '../shared/mapgen';
@@ -57,7 +59,7 @@ export interface HudActions {
   /** Set up camp / pack up. */
   camp(): void;
   /** The helm: throttle lever steps, all stop, overdrive. */
-  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive'): void;
+  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp'): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -114,6 +116,7 @@ export class Hud {
   private gaugeRead = h('div', 'dg-read');
   private gaugeCtl = h('div', 'dg-ctl');
   private odBtn: HTMLButtonElement | null = null;
+  private warpBtn: HTMLButtonElement | null = null;
   /** Fires, flooding, lost crawlers and failing systems (tap for the bridge status display). */
   private alerts = h('div', 'titan-alerts');
   private kitBtn = h('div', 'kit-btn');
@@ -214,13 +217,14 @@ export class Hud {
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
     this.hpBox.append(this.alerts, this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
     this.gauge.append(this.gaugeRead, this.gaugeCtl);
-    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): +45% speed, triple fuel, hard wear']] as const) {
+    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): +45% speed, triple fuel, hard wear'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near']] as const) {
       const b = button(label, (e) => {
         e.stopPropagation();
         act.helm(cmd);
       }, `dg-b ${cmd}`);
       b.title = tip;
       if (cmd === 'overdrive') this.odBtn = b;
+      if (cmd === 'warp') this.warpBtn = b;
       this.gaugeCtl.appendChild(b);
     }
     this.alerts.addEventListener('click', (e) => {
@@ -534,15 +538,17 @@ export class Hud {
       setHTML(this.waveBar, `<div class="wb-t">${ws.urgent ? '☣ ' : ''}${esc(ws.label)}</div><div class="wb-b"><div style="width:${Math.round(Math.max(0, Math.min(1, ws.frac)) * 100)}%"></div></div>`);
     } else this.waveBar.style.display = 'none';
     // Boss bar
-    const titan = g.enemies.find((e) => e.boss && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 90) ?? g.enemies.find((e) => e.titan && e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 70);
-    const rival = g.tanks.find((t) => t.kind === 'rival' && !t.dead && Math.hypot(t.x - p.x, t.y - p.y) < 110);
+    // Measured to the hull: a Titan is 200 m long.
+    const near = (e: { x: number; y: number }, r: number): boolean => p.edgeDist(e.x, e.y) < r;
+    const titan = g.enemies.find((e) => e.boss && e.hp > 0 && near(e, 600)) ?? g.enemies.find((e) => e.titan && e.hp > 0 && near(e, 400));
+    const rival = g.tanks.find((t) => t.kind === 'rival' && !t.dead && Math.hypot(t.x - p.x, t.y - p.y) < 700);
     if (rival) {
       this.boss.style.display = 'block';
       const hp = (rival.hp + rival.shield) / (rival.stats.maxHp + rival.stats.shield);
       setHTML(this.boss, `<div class="bn">${esc(rival.name)} <small>RIVAL ${esc(chassisForCC(rival.stats.cc).name.toUpperCase())} · ${Math.round(Math.hypot(rival.x - p.x, rival.y - p.y))}m</small></div><div class="bb"><div style="width:${hp * 100}%"></div></div>`);
     } else if (titan) {
       this.boss.style.display = 'block';
-      setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${titan.boss ? 'BOSS' : `${esc(titan.kind.replace('titan_', '').toUpperCase())} TITAN`}</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
+      setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${titan.boss ? 'BOSS' : 'GIANT'} · ${Math.round(ENEMIES[titan.kind]?.size ?? titan.r * 2)} m</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
     } else this.boss.style.display = 'none';
     // Level banner timer
     if (this.lvlT > 0) {
@@ -574,16 +580,20 @@ export class Hud {
     setHTML(this.alerts, al.map((a) => `<span style="color:${a.color};border-color:${a.color}">${esc(a.text)}</span>`).join(''));
     this.gauge.style.display = p.fortress && !p.dead ? '' : 'none';
     if (p.fortress && !p.dead) {
-      const top = Math.max(1, Math.min(9, p.stats.topSpeed));
+      const top = Math.max(1, Math.min(TITAN.cap, p.stats.topSpeed));
       const bar = (v: number): string => `<div class="dg-side"><i class="${v < -0.05 ? 'rev' : ''}" style="width:${Math.round(Math.min(1, Math.abs(v) / top) * 100)}%"></i></div>`;
       const thr = p.throttle;
       this.odBtn?.classList.toggle('on', g.helm.overdrive);
+      if (this.warpBtn) {
+        setText(this.warpBtn, `⏩ ×${g.warp}`);
+        this.warpBtn.classList.toggle('on', g.warp > 1);
+      }
       setHTML(this.gaugeRead, `<div class="dg-spd"><b>${Math.round(Math.abs(p.speed) * 3.6)}</b><small>km/h${p.speed < -0.05 ? ' R' : ''}</small></div>`
         + `<div class="dg-thr" title="Throttle"><i class="${thr < 0 ? 'rev' : ''}" style="height:${Math.round(Math.min(1, Math.abs(thr)) * 100)}%"></i></div>`
         + `<div class="dg-lr"><span>L</span>${bar(p.sideSpeed[0])}<span>R</span>${bar(p.sideSpeed[1])}</div>`
         + `<div class="dg-note">${p.anchored ? 'ANCHORED' : Math.abs(p.yawRate) > 0.01 ? (p.yawRate > 0 ? 'TURNING RIGHT' : 'TURNING LEFT') : Math.abs(p.speed) < 0.1 ? (thr ? 'BUILDING SPEED' : 'STOPPED') : thr === 0 ? 'COASTING' : 'UNDER WAY'}</div>`);
     }
-    setHTML(this.tankInfo, `<b>${esc(ch.name)}</b> <span>CC L${p.stats.cc} · ${Math.round(Math.min(p.fortress ? 9 : 99, p.stats.topSpeed) * 3.6)} km/h max · ${Math.round(p.stats.armor * 100)}% armor${p.stats.powerRatio < 1 ? ' · <i class="bad">LOW POWER</i>' : ''}</span>`);
+    setHTML(this.tankInfo, `<b>${esc(ch.name)}</b> <span>CC L${p.stats.cc} · ${Math.round(Math.min(p.fortress ? TITAN.cap : 99, p.stats.topSpeed) * 3.6)} km/h max · ${Math.round(p.stats.armor * 100)}% armor${p.stats.powerRatio < 1 ? ' · <i class="bad">LOW POWER</i>' : ''}</span>`);
     this.hpFill.style.width = `${(p.hp / p.stats.maxHp) * 100}%`;
     const barrier = p.buff('barrier')?.v ?? 0;
     this.shFill.style.width = `${Math.min(100, ((p.shield + barrier) / p.stats.maxHp) * 100)}%`;

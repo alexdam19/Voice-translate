@@ -185,6 +185,8 @@ export class Game {
    * and whether the lever is resting on the 0% detent (you have to let go and press again to go past it).
    */
   helm = { lever: 0, overdrive: false, detent: false };
+  /** Cruise time-warp (1, 4 or 8): the Crater is 140 km across. Drops to 1 when anything hostile comes near. */
+  warp = 1;
   /** Tank-style controls: W/S throttle, A/D turn. Off = screen-relative. */
   tankControls = true;
   /**
