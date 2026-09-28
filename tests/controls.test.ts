@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { driveTank, OVERDRIVE, TITAN } from '../src/game/systems/movement';
 import { helmDrive, stepWorld } from '../src/game/systems/step';
+import { CH, OBS, TER } from '../src/shared/map';
 import { wrapAngle } from '../src/shared/types';
 import { game } from './helpers';
 
@@ -62,9 +63,12 @@ describe('Titan Crawler handling', () => {
     expect(Math.abs(wrapAngle(p.rot - r0))).toBeGreaterThan(0.4);
   });
 
-  it('overdrive: faster, for triple the fuel', () => {
+  it('overdrive: faster, for triple the fuel', { timeout: 20000 }, () => {
     const g = game();
     const p = g.player;
+    // A long straight slab out of the hangar door, so the ground stays the same the whole run.
+    for (let y = 0; y < 2600; y++) for (let x = -40; x <= 40; x++) g.map.set(Math.floor(p.x) + x, Math.floor(p.y) + y, { ter: TER.CONCRETE, obs: OBS.NONE });
+    for (let y = 0; y < 2600; y += CH) for (let x = -40; x <= 40 + CH; x += CH) g.map.chunk(Math.floor((p.x + x) / CH), Math.floor((p.y + y) / CH)).touched = true;
     g.helm.lever = 1;
     for (let i = 0; i < 30 * 20; i++) stepWorld(g, DT);
     const normal = p.speed, fuel0 = g.titan.fuel;

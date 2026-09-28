@@ -33,7 +33,7 @@ export class TerrainView {
   }
 
   private key(cx: number, cy: number): number {
-    return cy * 1000 + cx;
+    return cy * 8192 + cx;
   }
 
   /** Ensures chunks near (x, y) are built; frees far ones. */

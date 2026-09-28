@@ -151,12 +151,14 @@ describe('the fortress is a full facility', () => {
   it('rolls over rocks and ruins, flattening them', () => {
     const g = game();
     const p = g.player;
-    const x0 = Math.floor(p.x) - 3, y0 = Math.floor(p.y - p.stats.length / 2) - 12;
+    // A rock pile just off the bow.
+    const f = p.toWorld(p.stats.length / 2 + 12, 0);
+    const x0 = Math.floor(f.x) - 3, y0 = Math.floor(f.y) - 2;
     for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) g.map.set(x, y, { obs: OBS.ROCK, oh: 3 });
-    const startY = p.y;
+    const sx = p.x, sy = p.y;
     g.driveInput = { x: 0, y: -1, active: true };
     for (let i = 0; i < 30 * 20; i++) stepWorld(g, 1 / 30);
-    expect(p.y).toBeLessThan(startY - 40);
+    expect(Math.hypot(p.x - sx, p.y - sy)).toBeGreaterThan(40);
     let left = 0;
     for (let y = y0; y < y0 + 4; y++) for (let x = x0; x < x0 + 6; x++) if (g.map.getObs(x, y)) left++;
     expect(left).toBeLessThan(6);

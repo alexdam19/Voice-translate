@@ -165,23 +165,11 @@ export function spawnFor(g: Game, x: number, y: number, threat: number, zone: nu
   e.aggro = aggro;
 }
 
-import { ENEMIES } from '../enemyDefs';
+import { pickZoneKind } from '../enemyDefs';
 
+/** A creature from the zone's roster that fits the spot's danger. */
 export function pickKind(threat: number, zone: number): string {
-  const pool: [string, number][] = [];
-  for (const d of Object.values(ENEMIES)) {
-    if (d.minThreat > threat) continue;
-    const w = d.zones[zone] ?? 0;
-    if (w > 0) pool.push([d.kind, w * (d.minThreat > threat - 1 ? 0.6 : 1)]);
-  }
-  if (!pool.length) return 'rat';
-  const total = pool.reduce((s, p) => s + p[1], 0);
-  let r = Math.random() * total;
-  for (const [k, w] of pool) {
-    r -= w;
-    if (r <= 0) return k;
-  }
-  return pool[0][0];
+  return pickZoneKind(zone, threat);
 }
 
 /* ---------------------------------------------------------------------- */

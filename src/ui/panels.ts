@@ -1,8 +1,7 @@
 import type { App } from '../app';
 import { saveGame, clearSave } from '../game/save';
 import { orderMove } from '../game/systems/orders';
-import { ZONES } from '../shared/zones';
-import { ZONE } from '../shared/map';
+import { PLAY_ZONES, ZONES } from '../shared/zones';
 import { DRIVE_ITEM, getItem } from '../shared/items';
 import type { DriveKey } from '../shared/types';
 import { installDrive } from '../game/actions';
@@ -235,7 +234,7 @@ export class Panels {
     });
     wrap.appendChild(c);
     const side = h('div', 'map-side');
-    const zones = [ZONE.RUSTBELT, ZONE.DUNES, ZONE.CRYO, ZONE.GLASS, ZONE.MAGMA, ZONE.ACID].map((z) => {
+    const zones = PLAY_ZONES.map((z) => {
       const d = ZONES[z];
       const ok = (!d.hazard || g.player.stats.protects.has(d.hazard)) && (!d.drive || g.player.drive === d.drive || g.player.drive === 'hover');
       return `<div class="zrow"><i style="background:${d.color}"></i><b>${esc(d.name)}</b> <span class="${ok ? 'good' : 'bad'}">${ok ? '✔ ready' : '✖ gear needed'}</span><div class="d">${esc(d.desc)} <br>Resource: ${esc(d.resource)}.<br><b>Needs:</b> ${esc(d.need)}${d.drive ? ` (${DRIVE_INFO[d.drive].name})` : ''}</div></div>`;
@@ -335,7 +334,7 @@ export class Panels {
     }
     const zones = h('div', 'chassis-col');
     zones.appendChild(h('div', 'cat', 'WHAT EACH ZONE NEEDS'));
-    for (const z of [ZONE.DUNES, ZONE.GLASS, ZONE.CRYO, ZONE.MAGMA, ZONE.ACID]) {
+    for (const z of PLAY_ZONES.filter((k) => ZONES[k].hazard || ZONES[k].drive)) {
       const d = ZONES[z];
       const hazOk = !d.hazard || p.stats.protects.has(d.hazard);
       const drvOk = !d.drive || p.drive === d.drive || p.drive === 'hover';

@@ -14,7 +14,7 @@ export function troopTrainTime(g: Game): number {
   const p = g.player;
   let barracks = 0;
   for (const m of p.modules) if (m.built && m.key === 'barracks') barracks += m.lvl;
-  const inCamp = g.playerDistToCenter() < 30;
+  const inCamp = g.playerDistHome() < 500;
   return 14 / (1 + 0.35 * barracks) / (inCamp ? 4 : campBonus(g).train);
 }
 

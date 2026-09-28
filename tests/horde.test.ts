@@ -158,7 +158,7 @@ describe('going anywhere', () => {
     expect(ownsDrive(g, 'tracks')).toBe(true);
     expect(ownsDrive(g, 'hover')).toBe(false);
     const m = g.map;
-    for (let y = -30; y <= 30; y++) for (let x = -30; x <= 30; x++) m.set(Math.floor(p.x) + x, Math.floor(p.y) + y, { ter: TER.DUNE });
+    for (let y = -120; y <= 120; y++) for (let x = -120; x <= 120; x++) m.set(Math.floor(p.x) + x, Math.floor(p.y) + y, { ter: TER.DUNE });
     expect(driveScore(g, 'tracks')).toBeGreaterThan(driveScore(g, 'wheels'));
     g.driveSwapT = 0;
     g.timers.drive = 0;

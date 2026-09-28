@@ -179,7 +179,7 @@ export function deserialize(d: SaveData): Game {
     // The world is a different (much bigger) place now: the fortress drives out of the new camp.
     g.player.x = g.gen.spawn.x;
     g.player.y = g.gen.spawn.y;
-    g.player.rot = -Math.PI / 2;
+    g.player.rot = g.gen.spawnRot ?? -Math.PI / 2;
     g.outpostsDown = new Set();
   }
   g.outriderLevel = d.outriderLevel ?? 0;

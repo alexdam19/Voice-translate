@@ -7,7 +7,6 @@ import type { Tank } from '../tank';
 import { damageEnemy, damageFriendly, damageTank, explode } from './damage';
 import { driveTank, moveSmall, planPath } from './movement';
 import { troopCasualty } from './troops';
-import { siegeTarget } from '../campaign';
 
 function nearestFriendly(g: Game, e: Enemy, range: number, friends: Target[]): Target | null {
   let best: Target | null = null;
@@ -74,7 +73,11 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
   const dist = Math.hypot(dx, dy);
   const ang = Math.atan2(dy, dx);
   e.face = dx >= 0 ? 1 : -1;
-  if (e.kind === 'titan_worm') {
+  // The Crater's giants run from 20 m to 150 m: measure from their skin to the target's hull.
+  const style = ENEMIES[e.kind]?.titanStyle ?? (e.kind === 'titan_worm' ? 'worm' : e.kind === 'titan_beast' ? 'beast' : 'walker');
+  const gap = Math.max(0, g.friendlyEdgeDist(tgt.id, e.x, e.y) - e.r);
+  const big = Math.max(1, e.r / 3);
+  if (style === 'worm') {
     if (e.state === 'idle') {
       e.state = 'burrow';
       e.stateT = 3;
@@ -86,18 +89,19 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
         e.x += (dx / dist) * sp;
         e.y += (dy / dist) * sp;
       }
-      if (e.stateT <= 0 && dist < 10) {
+      if (e.stateT <= 0 && gap < 10 * big) {
         e.state = 'rising';
         e.stateT = 1.5;
-        const tx = tgt.x, ty = tgt.y;
-        telegraph(g, tx, ty, 4.5, 1.4, e.dmg, '#ff9100', 'circle', 0, 0, () => {
+        // It comes up under the hull, as near the target's middle as it got.
+        const tx = e.x + (dx / (dist || 1)) * Math.min(dist, e.r), ty = e.y + (dy / (dist || 1)) * Math.min(dist, e.r);
+        const rad = Math.max(4.5, e.r * 1.3);
+        telegraph(g, tx, ty, rad, 1.4, e.dmg, '#ff9100', 'circle', 0, 0, () => {
           e.x = tx;
           e.y = ty;
           e.burrowed = false;
           e.state = 'surface';
           e.stateT = 6;
-          explode(g, tx, ty, 4.5, e.dmg, 'enemy', {}, '#d7a860');
-          g.fx.push({ t: 'shake', amt: 1 });
+          explode(g, tx, ty, rad, e.dmg, 'enemy', {}, '#d7a860');
         });
       }
     } else if (e.state === 'rising') {
@@ -107,7 +111,7 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
       e.atkCd -= dt;
       if (e.atkCd <= 0) {
         e.atkCd = 1.2;
-        shootAt(g, e, tgt.x, tgt.y, 'spit', 12, e.dmg * 0.3, 2);
+        shootAt(g, e, tgt.x, tgt.y, 'spit', 12 + big * 4, e.dmg * 0.3, 2 * big);
       }
       if (e.stateT <= 0) {
         e.state = 'burrow';
@@ -118,27 +122,28 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
     // Segments trail behind the head.
     e.parts = [];
     if (!e.burrowed) {
-      for (let k = 1; k <= 5; k++) e.parts.push({ x: e.x - Math.cos(e.anim * 0.2 + k * 0.2) * k * 1.6 * e.face, y: e.y + Math.sin(k * 0.9 + e.anim) * 0.8 + k * 1.2, r: e.r * (1 - k * 0.1) });
+      for (let k = 1; k <= 5; k++) e.parts.push({ x: e.x - Math.cos(e.anim * 0.2 + k * 0.2) * k * 1.6 * big * e.face, y: e.y + Math.sin(k * 0.9 + e.anim) * 0.8 * big + k * 1.2 * big, r: e.r * (1 - k * 0.1) });
     }
     return;
   }
-  if (e.kind === 'titan_beast') {
+  if (style === 'beast') {
     if (e.state === 'charge') {
-      const sp = 20 * dt;
+      const sp = Math.max(20, e.speed * 2.5) * dt;
       const cx = Math.cos(e.leash), cy = Math.sin(e.leash);
       const r = moveSmall(g, e.x, e.y, e.r * 0.6, cx * sp, cy * sp, false);
       e.x = r.x;
       e.y = r.y;
       for (const f of g.friendlies()) {
-        if (g.friendlyEdgeDist(f.id, e.x, e.y) < e.r && !chargeHits.get(e.id)?.has(f.id)) {
+        if (g.friendlyEdgeDist(f.id, e.x, e.y) < e.r + 1 && !chargeHits.get(e.id)?.has(f.id)) {
           damageFriendly(g, f.id, e.dmg * 1.6, { at: { x: e.x, y: e.y } });
           if (!chargeHits.has(e.id)) chargeHits.set(e.id, new Set());
           chargeHits.get(e.id)!.add(f.id);
-          g.fx.push({ t: 'shake', amt: 0.9 });
           const t = g.tankById(f.id);
           if (t) {
-            t.pushX += cx * 12;
-            t.pushY += cy * 12;
+            // A Titan barely rocks; a small hull gets shoved.
+            const k = t.fortress ? Math.min(6, e.r * 0.2) : 12;
+            t.pushX += cx * k;
+            t.pushY += cy * k;
           }
         }
       }
@@ -156,37 +161,39 @@ function titanAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
       }
       return;
     }
-    if (e.stateT <= 0 && dist < 26 && dist > 6) {
+    if (e.stateT <= 0 && gap < 26 * big && gap > 3) {
       e.state = 'windup';
       e.stateT = 1;
       e.leash = ang;
-      telegraph(g, e.x, e.y, 2.8, 1, 0, '#ff3d00', 'line', ang, 24, () => {});
+      telegraph(g, e.x, e.y, Math.max(2.8, e.r), 1, 0, '#ff3d00', 'line', ang, Math.max(20, e.speed * 2.5) * 1.2 + e.r, () => {});
       return;
     }
   }
-  if (e.kind === 'titan_walker' && e.stateT <= 0) {
-    if (dist < 7) {
+  if (style === 'walker' && e.stateT <= 0) {
+    if (gap < 4 * big) {
+      // A stomp: a ring around its feet as wide as it is.
       e.stateT = 3;
-      telegraph(g, e.x, e.y, 6, 1.3, e.dmg, '#ff1744');
-    } else if (dist < 32) {
+      telegraph(g, e.x, e.y, Math.max(6, e.r * 1.6), 1.3, e.dmg, '#ff1744');
+    } else if (gap < 32 * big) {
+      // Hurls rock (or fires, for the machines) at the target.
       e.stateT = 2.4;
-      const tx = tgt.x + (Math.random() - 0.5) * 3, ty = tgt.y + (Math.random() - 0.5) * 3;
-      telegraph(g, tx, ty, 3.2, 1.8, e.dmg * 0.8, '#ff6d00');
-      g.fx.push({ t: 'muzzle', x: e.x, y: e.y, a: ang, color: '#8d6e63', size: 2 });
+      const sc = Math.max(3, Math.min(tgt.r, 30));
+      const tx = tgt.x + (Math.random() - 0.5) * sc, ty = tgt.y + (Math.random() - 0.5) * sc;
+      telegraph(g, tx, ty, Math.max(3.2, e.r * 0.35), 1.8, e.dmg * 0.8, '#ff6d00');
+      g.fx.push({ t: 'muzzle', x: e.x, y: e.y, a: ang, color: '#8d6e63', size: 2 * big });
     }
   }
   // Default: stride toward the target, stepping over terrain.
-  const want = e.kind === 'titan_beast' ? 5 : 4;
-  if (dist > want) {
+  const want = style === 'beast' ? 3 : 1;
+  if (gap > want) {
     const sp = e.speed * dt * slowMul(e);
     e.x += (dx / dist) * sp;
     e.y += (dy / dist) * sp;
   }
   e.atkCd -= dt;
-  if (dist < e.r + tgt.r + 1 && e.atkCd <= 0) {
+  if (gap < 1.5 && e.atkCd <= 0) {
     e.atkCd = 1.6;
     damageFriendly(g, tgt.id, e.dmg * 0.6, { at: { x: e.x, y: e.y } });
-    g.fx.push({ t: 'shake', amt: 0.5 });
   }
 }
 
@@ -415,8 +422,14 @@ function bossAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
   }
   if (e.atkCd > 0 || edge > Math.max(d.range, 6) + 10) return;
   // Pick the next attack in the rotation.
+  const arch = d.arch;
   const moves: ('slam' | 'volley' | 'charge' | 'beam' | 'rain')[] =
-    e.kind === 'boss_warlord' ? ['volley', 'charge', 'slam']
+    arch === 'vehicle' ? ['volley', 'charge', 'rain']
+      : arch === 'golem' ? ['slam', 'rain', 'charge']
+        : arch === 'worm' || arch === 'beast' || arch === 'canine' ? ['slam', 'charge', 'volley']
+          : arch === 'bot' ? ['rain', 'volley', 'beam']
+            : arch === 'dragon' || arch === 'entity' || arch === 'fish' ? ['beam', 'volley', 'rain']
+              : e.kind === 'boss_warlord' ? ['volley', 'charge', 'slam']
       : e.kind === 'boss_goliath' ? ['rain', 'volley', 'beam']
         : e.kind === 'boss_abomination' ? ['slam', 'charge', 'volley']
           : e.kind === 'boss_overmind' ? ['beam', 'volley', 'rain']
@@ -425,13 +438,16 @@ function bossAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
   const mv = moves[(e.moveN = (e.moveN ?? 0) + 1) % moves.length];
   e.atkCd = 2.4 + Math.random();
   const dmg = e.dmg;
+  // Everything scales with the boss: a 150 m war machine's slam covers a lot more ground than a 5 m one's.
+  const big = Math.max(1, e.r / 3);
+  const spread = Math.max(6, Math.min(tgt.r * 1.5, 60));
   switch (mv) {
     case 'slam':
-      if (edge < 7) telegraph(g, e.x + (dx / dist) * Math.min(dist, e.r + 2), e.y + (dy / dist) * Math.min(dist, e.r + 2), 4.5, 1.1, dmg * 1.4, '#ff1744');
+      if (edge < 7 + e.r) telegraph(g, e.x + (dx / dist) * Math.min(dist, e.r + 2), e.y + (dy / dist) * Math.min(dist, e.r + 2), Math.max(4.5, e.r * 1.1), 1.1, dmg * 1.4, '#ff1744');
       else e.atkCd = 0.4;
       break;
     case 'volley':
-      for (let i = 0; i < 7; i++) shootAt(g, e, tgt.x + (Math.random() - 0.5) * 6, tgt.y + (Math.random() - 0.5) * 6, 'spit', 13, dmg * 0.3, 1.6);
+      for (let i = 0; i < 7; i++) shootAt(g, e, tgt.x + (Math.random() - 0.5) * spread, tgt.y + (Math.random() - 0.5) * spread, 'spit', 13 + big * 3, dmg * 0.3, 1.6 * big);
       g.hooks.sound('rocket', e.x, e.y, 0.8);
       break;
     case 'charge':
@@ -439,30 +455,28 @@ function bossAI(g: Game, e: Enemy, dt: number, tgt: Target | null): void {
       e.stateT = 1.1;
       e.vx = (dx / dist) * e.speed * 4;
       e.vy = (dy / dist) * e.speed * 4;
-      telegraph(g, e.x, e.y, e.r, 0.9, 0, '#ff9100', 'line', Math.atan2(dy, dx), e.speed * 4.4, () => {});
+      telegraph(g, e.x, e.y, e.r, 0.9, 0, '#ff9100', 'line', Math.atan2(dy, dx), e.speed * 4.4 + e.r, () => {});
       break;
     case 'beam': {
       const a = Math.atan2(dy, dx);
       const x0 = e.x, y0 = e.y, len = dist + 8;
-      telegraph(g, x0, y0, 1, 1.2, dmg, '#e040fb', 'line', a, len, () => {
-        g.fx.push({ t: 'beam', x0, y0, x1: x0 + Math.cos(a) * len, y1: y0 + Math.sin(a) * len, color: '#e040fb', w: 0.9, life: 0.4 });
+      const bw = Math.max(1.2, e.r * 0.15);
+      telegraph(g, x0, y0, bw, 1.2, dmg, '#e040fb', 'line', a, len, () => {
+        g.fx.push({ t: 'beam', x0, y0, x1: x0 + Math.cos(a) * len, y1: y0 + Math.sin(a) * len, color: '#e040fb', w: 0.9 * big, life: 0.4 });
         for (const f of g.friendlies()) {
           const t = (f.x - x0) * Math.cos(a) + (f.y - y0) * Math.sin(a);
           if (t < 0 || t > len) continue;
-          if (g.friendlyEdgeDist(f.id, x0 + Math.cos(a) * t, y0 + Math.sin(a) * t) < 1.2) damageFriendly(g, f.id, dmg * 1.6, { at: { x: x0, y: y0 } });
+          if (g.friendlyEdgeDist(f.id, x0 + Math.cos(a) * t, y0 + Math.sin(a) * t) < bw) damageFriendly(g, f.id, dmg * 1.6, { at: { x: x0, y: y0 } });
         }
       });
       break;
     }
     case 'rain':
-      for (let i = 0; i < 6; i++) telegraph(g, tgt.x + (Math.random() - 0.5) * 16, tgt.y + (Math.random() - 0.5) * 16, 3, 1.6 + i * 0.2, dmg * 0.8, '#ff6d00');
+      for (let i = 0; i < 6; i++) telegraph(g, tgt.x + (Math.random() - 0.5) * spread * 2, tgt.y + (Math.random() - 0.5) * spread * 2, 3 * big, 1.6 + i * 0.2, dmg * 0.8, '#ff6d00');
       break;
   }
   // Charging bosses trample what they hit.
-  if (e.state === 'charge' && edge < 1.5) {
-    damageFriendly(g, tgt.id, dmg * dt * 2, { at: { x: e.x, y: e.y } });
-    g.fx.push({ t: 'shake', amt: 0.3 });
-  }
+  if (e.state === 'charge' && edge < 1.5 + e.r) damageFriendly(g, tgt.id, dmg * dt * 2, { at: { x: e.x, y: e.y } });
 }
 
 /**
@@ -618,23 +632,6 @@ export function updateEnemies(g: Game, dt: number): void {
     }
     e.slow = Math.max(0, e.slow - dt);
     if (e.slow <= 0) e.slowAmt = 0;
-    if (e.siege) {
-      // Besieging the Mothership: run at its hull, unless you're close enough to be the better meal.
-      const at = siegeTarget(g, e);
-      if (at) {
-        const dx = at.x - e.x, dy = at.y - e.y, d = Math.hypot(dx, dy) || 1;
-        if (d > 95) {
-          e.x += (dx / d) * e.speed * dt;
-          e.y += (dy / d) * e.speed * dt;
-        }
-        e.face = dx >= 0 ? 1 : -1;
-        e.anim += dt * 4;
-        continue;
-      }
-      e.siege = false;
-      e.horde = true;
-      e.aggro = true;
-    }
     if (e.horde || e.kind === 'swarmer' || e.kind === 'leaper') {
       e.anim += dt * 4;
       updateSwarmer(g, e, dt, friends, latched, near);
@@ -682,7 +679,7 @@ export function updateEnemies(g: Game, dt: number): void {
       const ranged = !!d.proj || !!d.aimed;
       if (d.still) {
         // Turrets and mortar pits don't move.
-      } else if (e.kind === 'stalker') {
+      } else if (e.kind === 'stalker' || d.burrow) {
         // Burrow, close in, then lunge.
         e.stateT -= dt;
         if (e.state !== 'lunge' && edge > 6) {
@@ -693,8 +690,8 @@ export function updateEnemies(g: Game, dt: number): void {
           e.burrowed = false;
           e.state = 'lunge';
           e.stateT = 0.6;
-          e.vx = (dx / len) * 16;
-          e.vy = (dy / len) * 16;
+          e.vx = (dx / len) * Math.max(16, e.speed * 2);
+          e.vy = (dy / len) * Math.max(16, e.speed * 2);
         } else if (e.state === 'lunge' && e.stateT <= 0) {
           e.state = 'idle';
           e.stateT = 1.8;
@@ -725,7 +722,7 @@ export function updateEnemies(g: Game, dt: number): void {
           e.hp = 0;
           continue;
         } else if (e.kind === 'guardian' || e.kind === 'brute' || d.slam) {
-          telegraph(g, e.x + (dx / len) * 1.2, e.y + (dy / len) * 1.2, e.kind === 'guardian' ? 3 : 2.2, 0.7, e.dmg, '#ff1744');
+          telegraph(g, e.x + (dx / len) * (1.2 + e.r * 0.6), e.y + (dy / len) * (1.2 + e.r * 0.6), e.kind === 'guardian' ? 3 : Math.max(2.2, e.r * 1.1), 0.7, e.dmg, '#ff1744');
         } else {
           damageFriendly(g, tgt.id, e.dmg, { at: { x: e.x, y: e.y } });
           g.fx.push({ t: 'spark', x: e.x + dx / len * e.r, y: e.y + dy / len * e.r, color: '#ffab40', n: 3 });

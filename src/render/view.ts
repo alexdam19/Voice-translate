@@ -5,7 +5,7 @@ import {
 } from 'three';
 import { getItem } from '../shared/items';
 import { RARITIES } from '../shared/rarity';
-import { MS_HULL_R, MS_SCALE, RUNE_INFO } from '../shared/mapgen';
+import { RUNE_INFO } from '../shared/mapgen';
 import { ZONES, DEAD_ZONE } from '../shared/zones';
 import type { Enemy, Pickup, Projectile } from '../game/entities';
 import { ENEMIES } from '../game/enemyDefs';
@@ -16,7 +16,7 @@ import { makeDecal, Particles, Transients, type Decal } from './fx';
 import { fowUniforms, updateFow, fillFow } from './fow';
 import { Debris } from './debris';
 import { STORMS } from '../game/systems/weather';
-import { buildAllyModel, buildGateModel, buildMothershipModel, buildNodeModel, buildRuneModel, buildSiteModel, buildTankModel, buildTitanModel, disposeModel, type AllyModel, type TankModel, type TitanModel } from './models';
+import { buildAllyModel, buildGateModel, buildNodeModel, buildRuneModel, buildSiteModel, buildTankModel, buildTitanModel, disposeModel, type AllyModel, type TankModel, type TitanModel } from './models';
 import { shadowTexture, spriteMat } from './sprites';
 import { CreatureLayer } from './creatures';
 import { TerrainView } from './terrain';
@@ -121,7 +121,6 @@ export class View {
   private decals = new Map<number, Decal>();
   private zoneDecals = new Map<number, Decal>();
   private nodeVis = new Map<number, Object3D>();
-  private mothershipVis: { root: Group; core: Mesh; lights: Mesh } | null = null;
   private siteVis = new Map<number, { root: Group; beacon: Mesh; ring: Decal }>();
   private runeVis = new Map<number, { root: Group; crystal: Object3D; beam: Mesh }>();
   private gateVis: { root: Group; disc: Mesh } | null = null;
@@ -253,19 +252,6 @@ export class View {
       grp.position.set(e.x, 0.03, e.y);
       this.world.add(grp);
       this.extractVis.push(grp);
-    }
-    if (this.mothershipVis) {
-      this.world.remove(this.mothershipVis.root);
-      this.mothershipVis = null;
-    }
-    if (g.mode === 'world' && g.gen.mothership) {
-      const ms = g.gen.mothership;
-      const m = buildMothershipModel();
-      m.root.position.set(ms.x, 0, ms.y);
-      m.root.scale.setScalar(MS_SCALE);
-      m.root.rotation.y = -Math.atan2(5120 - ms.y, 5120 - ms.x);
-      this.world.add(m.root);
-      this.mothershipVis = m;
     }
     if (g.mode === 'world') {
       const gate = buildGateModel();
@@ -468,7 +454,7 @@ export class View {
     this.stormParticles(g, dt);
     this.placeCamera();
     if (g.dirtyChunks.size) {
-      for (const k of g.dirtyChunks) this.terrain?.invalidate(k % 1000, Math.floor(k / 1000));
+      for (const k of g.dirtyChunks) this.terrain?.invalidate(k % 8192, Math.floor(k / 8192));
       g.dirtyChunks.clear();
     }
     this.terrain?.update(this.cam.x, this.cam.y, this.groundR, this.time);
@@ -612,15 +598,6 @@ export class View {
     }
     // The world streams: let go of features we've driven away from.
     this.pruneFeatures(g, R + 60);
-    if (this.mothershipVis) {
-      const c = this.mothershipVis.core;
-      c.rotation.y = this.time * 0.6;
-      c.rotation.x = this.time * 0.3;
-      const k = g.campaign.installed.length / 6;
-      (c.material as MeshBasicMaterial).opacity = 0.35 + 0.6 * k + 0.05 * Math.sin(this.time * 3);
-      c.scale.setScalar(0.6 + 0.6 * k);
-      this.mothershipVis.root.visible = this.near(g.gen.mothership!.x, g.gen.mothership!.y, 700 + MS_HULL_R * 2);
-    }
     if (this.gateVis) {
       this.gateVis.disc.rotation.y = this.time * 0.8;
       (this.gateVis.disc.material as MeshBasicMaterial).opacity = 0.4 + 0.2 * Math.sin(this.time * 3);

@@ -1,8 +1,8 @@
 import { CHUNK } from '../../shared/constants';
 import { TRACK_MARKS } from '../game';
-import { crushable, navModeFor, OBS_COLOR, TER, TRACTION, type NavMode } from '../../shared/map';
+import { crushable, navModeFor, OBS_COLOR, TER, TRACTION, ZONE, type NavMode } from '../../shared/map';
 import { findPath, moveCircle, resolveCircle } from '../../shared/motion';
-import { MS_HULL_R, NODE_INFO } from '../../shared/mapgen';
+import { NODE_INFO } from '../../shared/mapgen';
 import { turnToward, wrapAngle } from '../../shared/types';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
@@ -25,7 +25,7 @@ function queueCollapse(g: Game, tx: number, ty: number, fromX: number, fromY: nu
     const [x, y, d] = q.shift()!;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = x + dx, ny = y + dy;
-      const k = ny * 20000 + nx;
+      const k = ny * 262144 + nx;
       if (seen.has(k) || !map.inside(nx, ny)) continue;
       seen.add(k);
       const o = map.getObs(nx, ny);
@@ -80,7 +80,7 @@ function crushTiles(t: Tank, full: boolean): number[] {
   const add = (lx: number, lz: number): void => {
     const p = t.toWorld(lx, lz);
     const tx = Math.floor(p.x), ty = Math.floor(p.y);
-    const k = ty * 20000 + tx;
+    const k = ty * 262144 + tx;
     if (seen.has(k)) return;
     seen.add(k);
     out.push(tx, ty);
@@ -238,6 +238,8 @@ export function traction(g: Game, t: Tank): number {
       const o = g.map.inside(tx, ty) ? g.map.getObs(tx, ty) : 0;
       if (o && !crushable(o)) v *= 0.5;
     }
+    // Eight 30 m crawler banks spread the load: a Titan feels bad ground far less than a small hull does.
+    if (t.fortress && v > 0 && v < 1) v = 0.5 + 0.5 * v;
     if (v <= 0) v = 0.15; // stuck in something it shouldn't be in; let it crawl out
     worst = Math.min(worst, v);
   }
@@ -449,19 +451,16 @@ export function separateTanks(g: Game): void {
       }
     }
   }
-  // The Mothership's hull: nothing drives through it, not even a fortress.
-  const ms = g.gen.mothership;
-  if (ms) {
-    for (const t of all) {
-      const reach = MS_HULL_R + t.stats.length / 2 + 5;
-      if (Math.abs(t.x - ms.x) > reach || Math.abs(t.y - ms.y) > reach) continue;
-      for (const c of t.circles()) {
-        const dx = c.x - ms.x, dy = c.y - ms.y, d = Math.hypot(dx, dy);
-        const min = MS_HULL_R + c.r;
-        if (d >= min || d < 1e-6) continue;
-        t.x += (dx / d) * (min - d);
-        t.y += (dy / d) * (min - d);
-      }
+  // The Crater wall: nothing drives out of the world, not even a Titan that climbs everything else.
+  const mid = g.map.size / 2;
+  for (const t of all) {
+    for (const c of t.circles()) {
+      if (g.map.zoneAt(c.x, c.y) !== ZONE.EDGE) continue;
+      const dx = mid - c.x, dy = mid - c.y, d = Math.hypot(dx, dy) || 1;
+      t.x += (dx / d) * 1.2;
+      t.y += (dy / d) * 1.2;
+      t.speed *= 0.8;
+      break;
     }
   }
   // Solid features.
@@ -487,6 +486,11 @@ export function separateTanks(g: Game): void {
 
 /** Small circles (creatures) moving with wall sliding. */
 export function moveSmall(g: Game, x: number, y: number, r: number, dx: number, dy: number, flying: boolean): { x: number; y: number; hit: boolean } {
-  if (flying) return { x: x + dx, y: y + dy, hit: false };
+  // Flyers, and anything big enough to stride over rocks and wrecks, go straight; only the Crater wall stops them.
+  if (flying || r > 2.5) {
+    const nx = x + dx, ny = y + dy;
+    if (g.map.zoneAt(nx, ny) === ZONE.EDGE) return { x, y, hit: true };
+    return { x: nx, y: ny, hit: false };
+  }
   return moveCircle(g.map, x, y, r, dx, dy, 'ground');
 }

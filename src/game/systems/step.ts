@@ -1,4 +1,3 @@
-import { CENTER } from '../../shared/constants';
 import type { Game } from '../game';
 import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
 import { updateAllies } from './allies';
@@ -79,7 +78,7 @@ function respawn(g: Game): void {
   const home = g.deploy.home ?? g.gen.spawn;
   p.x = home.x;
   p.y = home.y;
-  p.rot = -Math.PI / 2;
+  p.rot = g.deploy.home ? -Math.PI / 2 : g.gen.spawnRot ?? -Math.PI / 2;
   p.anchored = false;
   // Every respawn comes back at full health, repaired and fires out (with at least a third of a tank of fuel and water).
   const t = newTitanState();
@@ -212,5 +211,4 @@ export function stepWorld(g: Game, dt: number): void {
     if (f.t > 1.1) g.floats.splice(i, 1);
   }
   g.tanks = g.tanks.filter((t) => !t.dead || t.kind === 'raider' || t.kind === 'remote');
-  void CENTER;
 }

@@ -1,4 +1,5 @@
 import { TER, ZONE } from '../../shared/map';
+import { HANGAR } from '../../shared/mapgen';
 import { TITAN_DECK_INFO } from '../defs';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
@@ -100,7 +101,8 @@ export function loadTitanState(s: Partial<TitanState> | undefined): TitanState {
 
 /** Outside air temperature by biome (°C). */
 const OUTSIDE: Record<number, number> = {
-  [ZONE.RUSTBELT]: 22, [ZONE.DUNES]: 41, [ZONE.CRYO]: -28, [ZONE.GLASS]: 31, [ZONE.MAGMA]: 58, [ZONE.ACID]: 27, [ZONE.EDGE]: 12,
+  [ZONE.VERDANT]: 19, [ZONE.ASH]: 24, [ZONE.SCORCHED]: 46, [ZONE.FROST]: -24, [ZONE.WRAITH]: -12, [ZONE.DUNES]: 41,
+  [ZONE.LAKE]: 16, [ZONE.SPIRES]: 52, [ZONE.PASS]: 30, [ZONE.RUSTBOLT]: 26, [ZONE.DIVOT]: 33, [ZONE.EDGE]: 12,
 };
 export const outsideTemp = (g: Game): number => OUTSIDE[g.map.zoneAt(g.player.x, g.player.y)] ?? 20;
 
@@ -341,9 +343,9 @@ export function updateTitan(g: Game, dt: number): void {
   const inside = 21 + burning * 3;
   s.temp += ((out - s.temp) * 0.004 * (1 - hvac) + (inside - s.temp) * 0.03 * hvac) * dt * (p.stats.protects.has((out < 0 ? 'cold' : 'heat') as never) ? 1.5 : 1);
 
-  // Docked at the Mothership: topped up for free.
-  const ms = g.gen.mothership;
-  if (ms && Math.hypot(p.x - ms.x, p.y - ms.y) < 420) {
+  // Docked in the Mega Hangar: topped up for free.
+  const hg = g.gen.hangar;
+  if (hg && Math.abs(p.x - hg.x) < HANGAR.w / 2 && Math.abs(p.y - hg.y) < HANGAR.d / 2) {
     s.fuel = Math.min(FUEL_MAX, s.fuel + 25 * dt);
     s.water = Math.min(WATER_MAX, s.water + 15 * dt);
   }

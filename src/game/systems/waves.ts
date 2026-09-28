@@ -1,12 +1,13 @@
-import { CENTER, MAP_SIZE } from '../../shared/constants';
+import { MAP_SIZE } from '../../shared/constants';
 import { ZONE } from '../../shared/map';
-import { REGION_INFO, threatAt, type Faction } from '../../shared/mapgen';
-import { ENEMIES, FACTION_UNITS } from '../enemyDefs';
+import { REGION_INFO, threatAt } from '../../shared/mapgen';
+import { ENEMIES, zoneHorde } from '../enemyDefs';
 import type { Game } from '../game';
+import { nearHome } from './spawns';
 
 /**
  * Horde waves, World War Z style. A calm spell, a warning that says where it's coming from, then a surge: for a
- * minute or more, a flood pours in from that side (from the nearest enemy region, and it's that faction), sprinting,
+ * minute or more, a flood pours in from that side (from the nearest hostile place, and it's that zone's creatures), sprinting,
  * piling against the hull and climbing aboard. Every wave lasts longer, comes thicker and brings heavier things;
  * every third one brings a boss. The longer you survive, the stronger they get.
  */
@@ -45,29 +46,28 @@ export function hordeAlive(g: Game): number {
   return k;
 }
 
-/** Where the next horde comes from: the nearest enemy region, or whatever the land around you breeds. */
-function hordeSource(g: Game): { dir: number; faction: Faction; from: string } {
+/** Where the next horde comes from: the nearest hostile place, or whatever the land around you breeds. */
+function hordeSource(g: Game): { dir: number; zone: number; from: string } {
   const p = g.player;
-  let best: { d: number; a: number; f: Faction; name: string } | null = null;
+  let best: { d: number; a: number; zone: number; name: string } | null = null;
   for (const r of g.gen.regions) {
-    if (r.kind === 'mothership') continue;
+    if (!REGION_INFO[r.kind].hostile) continue;
     const d = Math.hypot(r.x - p.x, r.y - p.y);
-    if (d < 1500 && (!best || d < best.d)) best = { d, a: Math.atan2(r.y - p.y, r.x - p.x), f: REGION_INFO[r.kind].faction, name: r.name };
+    if (d < r.r + 3000 && (!best || d < best.d)) best = { d, a: Math.atan2(r.y - p.y, r.x - p.x), zone: r.zone, name: r.name };
   }
-  // Minor regions nearby count too.
+  // Minor places nearby count too.
   for (let k = 0; k < 16; k++) {
     const a = (k / 16) * Math.PI * 2;
-    const reg = g.gen.regionAt(p.x + Math.cos(a) * 250, p.y + Math.sin(a) * 250);
-    if (reg && reg.kind !== 'mothership' && !reg.major) {
+    const reg = g.gen.regionAt(p.x + Math.cos(a) * 900, p.y + Math.sin(a) * 900);
+    if (reg && !reg.major && REGION_INFO[reg.kind].hostile) {
       const d = Math.hypot(reg.x - p.x, reg.y - p.y);
-      if (!best || d < best.d) best = { d, a: Math.atan2(reg.y - p.y, reg.x - p.x), f: REGION_INFO[reg.kind].faction, name: reg.name };
+      if (!best || d < best.d) best = { d, a: Math.atan2(reg.y - p.y, reg.x - p.x), zone: reg.zone, name: reg.name };
     }
   }
-  if (best) return { dir: best.a + (Math.random() - 0.5) * 0.6, faction: best.f, from: best.name };
-  const dir = Math.random() * Math.PI * 2;
-  const z = g.map.zoneAt(p.x + Math.cos(dir) * 60, p.y + Math.sin(dir) * 60);
-  const lean: Partial<Record<number, Faction>> = { [ZONE.CRYO]: 'zombie', [ZONE.MAGMA]: 'necro', [ZONE.GLASS]: 'cyborg', [ZONE.DUNES]: 'military', [ZONE.ACID]: 'monster' };
-  return { dir, faction: lean[z] ?? 'monster', from: '' };
+  if (best && best.zone !== ZONE.DIVOT) return { dir: best.a + (Math.random() - 0.5) * 0.6, zone: best.zone, from: best.name };
+  const dir = best ? best.a : Math.random() * Math.PI * 2;
+  const z = g.map.zoneAt(p.x + Math.cos(dir) * 600, p.y + Math.sin(dir) * 600);
+  return { dir, zone: z === ZONE.EDGE || z === ZONE.DIVOT ? g.map.zoneAt(p.x, p.y) : z, from: best?.name ?? '' };
 }
 
 function spawnPoint(g: Game, dir: number, spread: number): { x: number; y: number } {
@@ -75,7 +75,7 @@ function spawnPoint(g: Game, dir: number, spread: number): { x: number; y: numbe
   const ext = p.stats.length / 2;
   const a = dir + (Math.random() - 0.5) * spread;
   // Out past the edge of sight, so the wall of them comes over the horizon.
-  const d = ext + (p.fortress ? 110 + Math.random() * 30 : 44 + Math.random() * 16);
+  const d = ext + (p.fortress ? 330 + Math.random() * 60 : 44 + Math.random() * 16);
   return {
     x: Math.max(4, Math.min(MAP_SIZE - 4, p.x + Math.cos(a) * d)),
     y: Math.max(4, Math.min(MAP_SIZE - 4, p.y + Math.sin(a) * d)),
@@ -91,18 +91,16 @@ function spawnOne(g: Game, kind: string, elite = false): void {
   e.aggro = true;
   // Later waves are tougher and faster.
   e.maxHp = e.hp = e.hp * (1 + 0.06 * (w.n - 1));
-  if (ENEMIES[kind].r < 0.45 && !ENEMIES[kind].flying) e.speed *= 1 + Math.min(0.25, 0.02 * w.n) + (Math.random() - 0.5) * 0.15;
+  // Horde runners sprint: they have a long way to come to reach a Titan.
+  if ((ENEMIES[kind].size ?? 1) < 8 && !ENEMIES[kind].flying) e.speed *= 1.35 + Math.min(0.25, 0.02 * w.n) + (Math.random() - 0.5) * 0.15;
   w.spawned++;
 }
 
-/** One horde runner of the wave's faction (sometimes a flyer, a leaper or a burster). */
+/** One horde runner from the wave's zone (sometimes a flyer). */
 function hordeKind(g: Game): string {
   const w = g.wave;
-  const u = FACTION_UNITS[w.faction];
-  const r = Math.random();
-  if (u.flyer && w.n >= 3 && r < 0.04) return u.flyer;
-  if (w.faction === 'monster' && w.n >= 2 && r < 0.2) return 'leaper';
-  if (w.n >= 4 && r > 0.93) return w.faction === 'zombie' ? 'z_bloater' : 'bomber';
+  const u = zoneHorde(w.zone);
+  if (u.flyer && w.n >= 3 && Math.random() < 0.05) return u.flyer;
   return u.horde[Math.floor(Math.random() * u.horde.length)];
 }
 
@@ -127,8 +125,8 @@ export function updateWaves(g: Game, dt: number): void {
     w.t = WARNING;
     const src = hordeSource(g);
     w.dir = src.dir;
-    w.faction = src.faction;
-    const inCamp = Math.hypot(p.x - CENTER, p.y - CENTER) < 30;
+    w.zone = src.zone;
+    const inCamp = nearHome(g, p.x, p.y);
     w.rate = surgeRate(w.n, threatAt(p.x, p.y), inCamp, g.escalation());
     w.dur = surgeTime(w.n);
     w.total = Math.round(w.rate * w.dur);
@@ -137,7 +135,7 @@ export function updateWaves(g: Game, dt: number): void {
     w.elapsed = 0;
     w.bossDone = false;
     const boss = w.n % 3 === 0;
-    g.hooks.toast(`HORDE ${w.n}: ${FACTION_UNITS[w.faction].name} ${src.from ? `from ${src.from} ` : ''}in the ${compassName(w.dir)}. About ${w.total} of them over ${Math.round(w.dur)}s${boss ? ', and a BOSS' : ''}. Get ready!`, '#ff5252');
+    g.hooks.toast(`HORDE ${w.n}: the creatures of ${zoneHorde(w.zone).name} ${src.from ? `from ${src.from} ` : ''}in the ${compassName(w.dir)}. About ${w.total} of them over ${Math.round(w.dur)}s${boss ? ', and a BOSS' : ''}. Get ready!`, '#ff5252');
     g.hooks.sound('alarm');
     return;
   }
@@ -146,7 +144,6 @@ export function updateWaves(g: Game, dt: number): void {
     w.phase = 'surge';
     w.t = 0;
     g.hooks.sound('roar');
-    g.fx.push({ t: 'shake', amt: 0.6 });
   }
   // Surge: pour them in for the whole surge time, as fast as the cap allows.
   w.elapsed += dt;
@@ -161,13 +158,13 @@ export function updateWaves(g: Game, dt: number): void {
       for (let i = 0; i < n; i++) spawnOne(g, hordeKind(g));
       // Heavies every 12 seconds from wave 2.
       if (w.n >= 2 && Math.floor((w.elapsed - dt) / 12) !== Math.floor(w.elapsed / 12)) {
-        const u = FACTION_UNITS[w.faction];
+        const u = zoneHorde(w.zone);
         for (let i = 0; i < Math.min(4, 1 + Math.floor(w.n / 4)); i++) spawnOne(g, u.heavy[Math.floor(Math.random() * u.heavy.length)], w.n >= 5);
       }
       // Every third wave: the boss arrives a third of the way in.
       if (w.n % 3 === 0 && !w.bossDone && w.elapsed > w.dur * 0.33) {
         w.bossDone = true;
-        const kind = FACTION_UNITS[w.faction].boss;
+        const kind = zoneHorde(w.zone).boss;
         const { x, y } = spawnPoint(g, w.dir, 0.3);
         const e = g.spawnEnemy(kind, x, y, threatAt(x, y));
         e.horde = true;
@@ -178,7 +175,6 @@ export function updateWaves(g: Game, dt: number): void {
         e.name = `${ENEMIES[kind].name} (horde)`;
         g.hooks.toast(`BOSS: ${ENEMIES[kind].name} leads the horde!`, '#ff1744');
         g.hooks.sound('roar');
-        g.fx.push({ t: 'shake', amt: 1 });
       }
     }
     return;

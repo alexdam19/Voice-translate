@@ -14,8 +14,9 @@ import { makeAlly } from './allies';
  * and harvest resource nodes, then drive the haul home).
  */
 
-/** How far from the fortress scavengers will go looking for work. */
+/** How far from the fortress scavengers will go looking for work (a Titan sends them a long way out). */
 export const SCAVENGE_RANGE = 70;
+const scavRange = (g: Game): number => (g.player.fortress ? g.player.stats.length / 2 + 400 : SCAVENGE_RANGE);
 
 /** The building that trains a squad type (the highest-level one, if you somehow have several). */
 export function squadBuilding(g: Game, type: SquadType): ModuleInst | null {
@@ -135,7 +136,7 @@ function pickTarget(g: Game, type: SquadType, lead: Ally) {
   for (const k of g.pickups) {
     if (k.kind !== 'stack' || k.delay > 0) continue;
     const dp = Math.hypot(k.x - p.x, k.y - p.y);
-    if (dp > SCAVENGE_RANGE || p.edgeDist(k.x, k.y) < 5) continue;
+    if (dp > scavRange(g) || p.edgeDist(k.x, k.y) < 5) continue;
     const d = Math.hypot(k.x - lead.x, k.y - lead.y) * 0.6;
     if (d < bd && !taken.has(`loot${k.id}`)) {
       bd = d;
@@ -144,7 +145,7 @@ function pickTarget(g: Game, type: SquadType, lead: Ally) {
   }
   for (const n of g.gen.nodes) {
     if (n.respawnAt > 0 || NODE_INFO[n.type].tier > p.stats.drill) continue;
-    if (Math.abs(n.x - p.x) > SCAVENGE_RANGE || Math.abs(n.y - p.y) > SCAVENGE_RANGE) continue;
+    if (Math.abs(n.x - p.x) > scavRange(g) || Math.abs(n.y - p.y) > scavRange(g)) continue;
     if (g.harvestId === n.id || taken.has(`node${n.id}`)) continue;
     const d = Math.hypot(n.x - lead.x, n.y - lead.y);
     if (d < bd) {
@@ -196,7 +197,7 @@ function scavenge(g: Game, type: SquadType, units: Ally[], level: number, dt: nu
   if (sq.target) {
     const t = sq.target;
     const ok = t.kind === 'node' ? g.gen.nodes.some((n) => n.id === t.id && n.respawnAt === 0) : g.pickups.some((k) => k.id === t.id);
-    if (!ok || Math.hypot(t.x - p.x, t.y - p.y) > SCAVENGE_RANGE + 15) {
+    if (!ok || Math.hypot(t.x - p.x, t.y - p.y) > scavRange(g) + 15) {
       sq.target = null;
       sq.phase = 'going';
     }

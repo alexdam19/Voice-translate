@@ -52,13 +52,13 @@ item('xeno_alloy', 'Xeno Alloy', 'material', 'alloy', '#ff6ae6', '#7a2a8a', { va
 item('explosive', 'Explosive Charge', 'material', 'explosive', '#e84a3a', '#ffe246', { value: 6 });
 item('tech_parts', 'Salvaged Tech', 'material', 'tech', '#80d8ff', '#ff6e40', { value: 25, desc: 'Military components from raider tanks, outposts, titans and rune chests. Spent on research.' });
 item('mythic_essence', 'Mythic Essence', 'material', 'crystal', '#ff4f7b', '#ffd740', { value: 80, desc: 'Condensed magic. Drops from titans, rune chests and deep outposts, or distil it at an Arcane Sanctum. Forges 6★ weapons and powers arcane gear.' });
-/* Mothership parts: each region's stronghold boss guards one. Install them at the Mothership. */
-item('core_city', 'Fusion Core', 'material', 'core', '#ffb74d', '#ff6d00', { value: 500, desc: "The Warlord's reactor heart. Install it at the Mothership: it powers the shipyard." });
-item('core_military', 'Titan Plating', 'material', 'plate', '#aed581', '#33691e', { value: 500, desc: 'Prototype armor from Project Goliath. A Mothership part.' });
-item('core_zombie', 'Bio-Reactor', 'material', 'core', '#9ccc65', '#827717', { value: 500, desc: "The Abomination's heart, still beating. A Mothership part." });
-item('core_cyborg', 'Neural Core', 'material', 'chip', '#4dd0e1', '#006064', { value: 500, desc: "Overmind Prime's mind. A Mothership part." });
-item('core_necro', 'Soul Engine', 'material', 'crystal', '#b388ff', '#4a148c', { value: 500, desc: "The Lich King's phylactery. A Mothership part." });
-item('core_monster', "Queen's Heart", 'material', 'crystal', '#ff5252', '#880e4f', { value: 800, desc: 'The Brood Queen\'s heart. The last Mothership part: it wakes the ship.' });
+/* Crater cores: each stronghold's boss guards one. Install them in the Mega Hangar's shipyard. */
+item('core_pass', 'Warlord Reactor', 'material', 'core', '#ffb74d', '#ff6d00', { value: 500, desc: "Pulled from the Road Hog, the Dead Man's Pass warlord's rig. Install it at the Mega Hangar: it powers the shipyard." });
+item('core_ash', 'Ash Plating', 'material', 'plate', '#bdbdbd', '#424242', { value: 500, desc: "The Ash Titan's hide, harder than steel. A Crater core." });
+item('core_rust', 'Forge Heart', 'material', 'core', '#ffd740', '#bf360c', { value: 500, desc: 'The Forge\'s furnace, still glowing. A Crater core.' });
+item('core_lake', 'Abyssal Pump', 'material', 'chip', '#1de9b6', '#004d40', { value: 500, desc: "The Drowned's heart, a pump that never stops. A Crater core." });
+item('core_spires', 'Spire Crystal', 'material', 'crystal', '#e040fb', '#4a148c', { value: 500, desc: 'The Spire\'s anomaly, caged in glass. A Crater core.' });
+item('core_divot', "Guardian's Heart", 'material', 'crystal', '#ff5252', '#880e4f', { value: 800, desc: "The Crater Guardian's heart from the bottom of the Divot. The last core: it lights the Ark Engine." });
 
 /* Consumables */
 item('repair_kit', 'Repair Kit', 'consumable', 'kit', '#e8e8e8', '#ffb300', { value: 8, desc: 'Press 5: restores 25% hull over 3 seconds.' });

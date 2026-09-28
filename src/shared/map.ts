@@ -3,7 +3,7 @@ import type { DriveKey } from './types';
 /** Ground terrain types (one per tile). */
 export const TER = {
   RUST: 0, DIRT: 1, ROAD: 2, SAND: 3, DUNE: 4, ICE: 5, SNOW: 6, ASH: 7, BASALT: 8, LAVA: 9,
-  GLASS: 10, CRATER: 11, MUD: 12, ACID: 13, CONCRETE: 14, METAL: 15, CAMP: 16, GRASS: 17,
+  GLASS: 10, CRATER: 11, MUD: 12, ACID: 13, CONCRETE: 14, METAL: 15, CAMP: 16, GRASS: 17, WATER: 18,
 } as const;
 export type Ter = (typeof TER)[keyof typeof TER];
 
@@ -33,6 +33,8 @@ TERRAIN[TER.CONCRETE] = { name: 'Concrete', liquid: false, color: '#77777c' };
 TERRAIN[TER.METAL] = { name: 'Deck Plating', liquid: false, color: '#5c646e' };
 TERRAIN[TER.CAMP] = { name: 'Camp', liquid: false, color: '#8a7050' };
 TERRAIN[TER.GRASS] = { name: 'Scrub', liquid: false, color: '#5c6a34' };
+// Rivers are fordable (slow going), unlike the acid lakes.
+TERRAIN[TER.WATER] = { name: 'River', liquid: false, color: '#2f5f7a' };
 
 /** Speed multiplier for each drive train on each terrain (0 = impassable). */
 const T = (rust: number, sand: number, dune: number, ice: number, snow: number, lava: number, mud: number, acid: number, road: number): number[] => {
@@ -40,7 +42,7 @@ const T = (rust: number, sand: number, dune: number, ice: number, snow: number, 
   t[TER.RUST] = rust; t[TER.DIRT] = rust; t[TER.ROAD] = road; t[TER.SAND] = sand; t[TER.DUNE] = dune;
   t[TER.ICE] = ice; t[TER.SNOW] = snow; t[TER.ASH] = rust * 0.95; t[TER.BASALT] = rust; t[TER.LAVA] = lava;
   t[TER.GLASS] = rust; t[TER.CRATER] = rust * 0.95; t[TER.MUD] = mud; t[TER.ACID] = acid;
-  t[TER.CONCRETE] = road * 0.95; t[TER.METAL] = road * 0.95; t[TER.CAMP] = rust; t[TER.GRASS] = rust;
+  t[TER.CONCRETE] = road * 0.95; t[TER.METAL] = road * 0.95; t[TER.CAMP] = rust; t[TER.GRASS] = rust; t[TER.WATER] = Math.max(0.35, mud * 0.6);
   return t;
 };
 
@@ -55,7 +57,7 @@ export const TRACTION: Record<DriveKey, number[]> = {
 /** Obstacles are solid, raised blocks on a tile. */
 export const OBS = {
   NONE: 0, ROCK: 1, BOULDER: 2, RUIN: 3, SANDSTONE: 4, ICE_SPIRE: 5, BASALT: 6, SHARD: 7, FUNGUS: 8,
-  CLIFF: 9, WRECK: 10, WALL: 11, PILLAR: 12,
+  CLIFF: 9, WRECK: 10, WALL: 11, PILLAR: 12, TREE: 13,
 } as const;
 export type Obs = (typeof OBS)[keyof typeof OBS];
 
@@ -72,8 +74,12 @@ OBS_COLOR[OBS.CLIFF] = '#3a3430';
 OBS_COLOR[OBS.WRECK] = '#6a5446';
 OBS_COLOR[OBS.WALL] = '#6e6e72';
 OBS_COLOR[OBS.PILLAR] = '#3c3c50';
+OBS_COLOR[OBS.TREE] = '#3e5a2a';
 
-export const ZONE = { RUSTBELT: 0, DUNES: 1, CRYO: 2, GLASS: 3, MAGMA: 4, ACID: 5, EDGE: 6 } as const;
+/** The Crater's zones (see shared/crater.ts for where they are). */
+export const ZONE = {
+  VERDANT: 0, ASH: 1, SCORCHED: 2, FROST: 3, WRAITH: 4, DUNES: 5, LAKE: 6, SPIRES: 7, PASS: 8, RUSTBOLT: 9, DIVOT: 10, EDGE: 11,
+} as const;
 export type ZoneId = (typeof ZONE)[keyof typeof ZONE];
 
 /**

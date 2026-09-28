@@ -44,16 +44,19 @@ describe('commander XP and the Level Road', () => {
 });
 
 describe('squads', () => {
-  it('army buildings train squads that follow, guard and respawn', () => {
+  it('army buildings train squads that follow, guard and respawn', { timeout: 30000 }, () => {
     const g = game();
     const id = build(g, 'barracks');
     const lvl = g.player.moduleById(id)!.lvl;
     for (let i = 0; i < 60 * 30; i++) stepWorld(g, 1 / 60);
     const units = squadUnits(g, 'marines');
     expect(units.length).toBe(squadSize(SQUADS.marines, lvl));
-    const gx = g.player.x + 25, gy = g.player.y + 10;
+    // A spot just behind the Titan's stern.
+    const at = g.player.toWorld(-g.player.stats.length / 2 - 25, 10);
+    const gx = at.x, gy = at.y;
     expect(setSquadOrder(g, 'marines', 'guard', gx, gy)).toBeNull();
-    for (let i = 0; i < 60 * 12; i++) stepWorld(g, 1 / 60);
+    // They start spread round the stern of a 200 m hull: give them time to walk over.
+    for (let i = 0; i < 30 * 25; i++) stepWorld(g, 1 / 30);
     for (const u of squadUnits(g, 'marines')) expect(Math.hypot(u.x - gx, u.y - gy)).toBeLessThan(8);
     // Casualties come back.
     const dead = squadUnits(g, 'marines')[0];

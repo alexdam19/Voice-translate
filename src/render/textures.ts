@@ -150,6 +150,10 @@ const TERRAIN_ART: Record<number, (p: Pix) => void> = {
     p.ground(['#5a4630', '#664f36', '#72583c', '#7e6244'], 4, 0.35);
     p.speck('#a08a5a', 5);
   },
+  [TER.WATER]: (p) => {
+    p.ground(['#244e66', '#2a5870', '#30627a', '#2f5f7a'], 4, 0.3);
+    for (let i = 0; i < 4; i++) p.rect(Math.floor(p.rnd() * 12), Math.floor(p.rnd() * 15), 4, 1, '#5a8ea8');
+  },
   [TER.GRASS]: (p) => {
     p.ground(['#46502a', '#505a30', '#5a6436', '#646e3c'], 4, 0.4);
     for (let i = 0; i < 5; i++) {
@@ -279,6 +283,16 @@ const OBS_ART: Record<number, { top: (p: Pix) => void; side: (p: Pix) => void }>
       p.ground(['#58585c', '#606064', '#68686c', '#707074'], 4, 0.3);
       p.rect(0, 0, 16, 1, '#48484c');
       p.rect(0, 8, 16, 1, '#48484c');
+    },
+  },
+  [OBS.TREE]: {
+    top: (p) => {
+      p.ground(['#2e4a22', '#365428', '#3e5e2e', '#466834'], 4, 0.45);
+      p.speck('#5a7a3a', 6);
+    },
+    side: (p) => {
+      p.ground(['#2a3a1e', '#304222', '#364a26'], 3, 0.4);
+      p.rect(7, 10, 2, 6, '#4a3424');
     },
   },
   [OBS.PILLAR]: {

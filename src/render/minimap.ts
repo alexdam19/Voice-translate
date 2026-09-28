@@ -241,26 +241,16 @@ export class Minimap {
       ctx.lineTo(sg.bx * s, sg.by * s);
     }
     ctx.stroke();
-    // Camp.
-    const [cx, cy] = P(g.gen.spawn.x, g.gen.spawn.y);
-    diamond(ctx, cx, cy, 6, '#ffd740');
     ctx.font = '10px Silkscreen, monospace';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#ffe082';
-    ctx.fillText('CAMP', cx, cy - 9);
     // Regions: majors always (their signals reach the whole wasteland), minors once you've seen them.
     for (const reg of g.gen.regions) {
       const [x, y] = P(reg.x, reg.y);
       const info = REGION_INFO[reg.kind];
       ring(ctx, x, y, Math.max(5, reg.r * s), info.color);
-      if (reg.kind === 'mothership') {
-        ctx.fillStyle = info.color;
-        ctx.beginPath();
-        ctx.ellipse(x, y, 7, 4, -0.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      if (reg.kind === 'hangar') diamond(ctx, x, y, 7, info.color);
       ctx.fillStyle = info.color;
-      ctx.fillText(reg.kind === 'mothership' ? 'MOTHERSHIP' : reg.name.toUpperCase(), x, y - Math.max(6, reg.r * s) - 3);
+      ctx.fillText(reg.name.toUpperCase(), x, y - Math.max(6, reg.r * s) - 3);
     }
     for (const t of g.tanks) {
       if (t.dead || t.kind !== 'rival') continue;

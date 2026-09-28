@@ -1,4 +1,4 @@
-import { CENTER, KIT_KEY } from './shared/constants';
+import { KIT_KEY } from './shared/constants';
 import { NODE_INFO, RUNE_INFO, SITE_INFO } from './shared/mapgen';
 import { wrapAngle } from './shared/types';
 import { Audio } from './game/audio';
@@ -897,10 +897,6 @@ export class App {
   centerOnPlayer(): void {
     this.view.cam.x = this.game.player.x;
     this.view.cam.y = this.game.player.y;
-  }
-
-  get center(): number {
-    return CENTER;
   }
 
   get castRange(): number {

@@ -3,15 +3,8 @@ import type { Rarity } from '../shared/rarity';
 import type { PoolKind, ProjKind, Special, WeaponItem } from '../shared/weapons';
 import type { CrewMember } from './crew';
 
-export type EnemyKind =
-  | 'rat' | 'drone' | 'raider' | 'bomber' | 'buggy' | 'stalker' | 'spitter' | 'brute' | 'rocketeer' | 'mech' | 'wraith' | 'guardian'
-  | 'swarmer' | 'leaper' | 'bat'
-  | 'z_walker' | 'z_runner' | 'z_bloater' | 'z_brute'
-  | 'skeleton' | 'skel_archer' | 'necromancer' | 'bone_golem' | 'phantom'
-  | 'cy_hound' | 'cy_trooper' | 'cy_enforcer' | 'cy_sniper'
-  | 'mil_bot' | 'mil_artillery' | 'gunship'
-  | 'boss_warlord' | 'boss_goliath' | 'boss_abomination' | 'boss_overmind' | 'boss_lich' | 'boss_queen' | 'boss_devourer'
-  | 'titan_walker' | 'titan_beast' | 'titan_worm';
+/** Enemy kind ids: the classic ones plus every zone's roster (generated in enemyDefs). */
+export type EnemyKind = string;
 
 export interface Enemy {
   id: number;

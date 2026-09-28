@@ -1,10 +1,10 @@
-import { CENTER, CHUNK, MAX_BASE_CREW } from '../shared/constants';
+import { CHUNK, MAX_BASE_CREW } from '../shared/constants';
 import { Fog } from '../shared/fog';
 import { canAfford, payCost, type Cost, type Stack } from '../shared/inventory';
 import { getItem } from '../shared/items';
 import { rollLoot } from '../shared/loot';
 import type { GameMap } from '../shared/map';
-import { generateWorld, threatAt, type Faction, type Prop, type RuneKind, type WorldGen } from '../shared/mapgen';
+import { generateWorld, threatAt, type Prop, type RuneKind, type WorldGen } from '../shared/mapgen';
 import { RNG } from '../shared/rng';
 import type { WeaponItem } from '../shared/weapons';
 import type { DriveKey } from '../shared/types';
@@ -191,7 +191,7 @@ export class Game {
    * Horde waves (World War Z style): calm, a warning with the direction, then a surge that pours in from there.
    * `n` is the wave number (it only goes up), `total`/`spawned` count this wave's horde.
    */
-  wave = { n: 0, phase: 'calm' as 'calm' | 'warning' | 'surge', t: 100, dir: 0, total: 0, spawned: 0, batchT: 0, faction: 'monster' as Faction, rate: 0, dur: 0, elapsed: 0, bossDone: false };
+  wave = { n: 0, phase: 'calm' as 'calm' | 'warning' | 'surge', t: 100, dir: 0, total: 0, spawned: 0, batchT: 0, zone: 5 as number, rate: 0, dur: 0, elapsed: 0, bossDone: false };
   /** Neighbour lookups for the crowd (rebuilt each step). */
   grid = new EnemyGrid();
   private enemyIndex = new Map<number, Enemy>();
@@ -253,6 +253,8 @@ export class Game {
     this.map = this.gen.map;
     this.rng = new RNG(seed ^ 0x9e3779b9);
     this.player = buildStarterTank(this.gen.spawn.x, this.gen.spawn.y, klass);
+    this.player.rot = this.gen.spawnRot ?? this.player.rot;
+    for (const m of this.player.modules) m.aim = this.player.rot;
     this.gen.focus(this.player.x, this.player.y);
     this.crew = starterCrew();
     this.tech = new Set(techsForLevel(1));
@@ -545,12 +547,12 @@ export class Game {
 
   markDirty(tx: number, ty: number): void {
     const cx = Math.floor(tx / CHUNK), cy = Math.floor(ty / CHUNK);
-    this.dirtyChunks.add(cy * 1000 + cx);
+    this.dirtyChunks.add(cy * 8192 + cx);
     // Obstacles on a chunk border also change the neighbour's side faces.
-    if (tx % CHUNK === 0 && cx > 0) this.dirtyChunks.add(cy * 1000 + cx - 1);
-    if (tx % CHUNK === CHUNK - 1) this.dirtyChunks.add(cy * 1000 + cx + 1);
-    if (ty % CHUNK === 0 && cy > 0) this.dirtyChunks.add((cy - 1) * 1000 + cx);
-    if (ty % CHUNK === CHUNK - 1) this.dirtyChunks.add((cy + 1) * 1000 + cx);
+    if (tx % CHUNK === 0 && cx > 0) this.dirtyChunks.add(cy * 8192 + cx - 1);
+    if (tx % CHUNK === CHUNK - 1) this.dirtyChunks.add(cy * 8192 + cx + 1);
+    if (ty % CHUNK === 0 && cy > 0) this.dirtyChunks.add((cy - 1) * 8192 + cx);
+    if (ty % CHUNK === CHUNK - 1) this.dirtyChunks.add((cy + 1) * 8192 + cx);
   }
 
   /** Props in a chunk (they're generated with the chunk). */
@@ -733,7 +735,7 @@ export class Game {
       speed: d.speed * (elite ? 1.1 : 1), dmg: d.dmg * dmgScale, range: d.range, atkCd: 1 + Math.random(), atkRate: d.rate, threat, elite,
       flying: !!d.flying, state: 'idle', stateT: 0, targetId: 0, homeX: x, homeY: y, leash: 0, camp: 0, stun: 0, slow: 0, slowAmt: 0, burn: 0, burnDps: 0,
       hitFlash: 0, anim: Math.random() * 10, burrowed: false, lastHitBy: 0, aggro: false, parts: [], loot: d.loot, xp: d.xp * (elite ? 2 : 1),
-      titan: kind.startsWith('titan') || !!d.boss, boss: !!d.boss, name: d.name, z: d.flying ? 1.6 : 0, horde: false, latch: null,
+      titan: kind.startsWith('titan') || !!d.titanStyle || !!d.boss, boss: !!d.boss, name: d.name, z: d.flying ? 1.6 : 0, horde: false, latch: null,
     };
     this.enemies.push(e);
     return e;
@@ -760,7 +762,9 @@ export class Game {
     this.stats.time += dt;
   }
 
-  playerDistToCenter(): number {
-    return Math.hypot(this.player.x - CENTER, this.player.y - CENTER);
+  /** How far the player is from the Mega Hangar (from the arena's middle in the Dead Zone). */
+  playerDistHome(): number {
+    const h = this.gen.hangar ?? this.gen.spawn;
+    return Math.hypot(this.player.x - h.x, this.player.y - h.y);
   }
 }

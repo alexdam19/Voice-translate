@@ -20,7 +20,8 @@ export const STORMS: Record<StormKind, { name: string; color: string; vision: nu
 };
 
 const BY_ZONE: Record<number, StormKind> = {
-  [ZONE.RUSTBELT]: 'dust', [ZONE.DUNES]: 'sand', [ZONE.CRYO]: 'blizzard', [ZONE.GLASS]: 'ion', [ZONE.MAGMA]: 'fire', [ZONE.ACID]: 'acid',
+  [ZONE.VERDANT]: 'dust', [ZONE.ASH]: 'dust', [ZONE.SCORCHED]: 'fire', [ZONE.FROST]: 'blizzard', [ZONE.WRAITH]: 'blizzard', [ZONE.DUNES]: 'sand',
+  [ZONE.LAKE]: 'acid', [ZONE.SPIRES]: 'ion', [ZONE.PASS]: 'dust', [ZONE.RUSTBOLT]: 'dust', [ZONE.DIVOT]: 'ion',
 };
 
 export interface Storm {

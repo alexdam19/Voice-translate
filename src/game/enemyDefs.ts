@@ -1,4 +1,5 @@
 import { ZONE } from '../shared/map';
+import { MEGA_ENEMIES, ZONE_INFO } from '../shared/crater';
 import type { ProjKind } from '../shared/weapons';
 import type { EnemyKind } from './entities';
 import type { Faction } from '../shared/mapgen';
@@ -38,22 +39,38 @@ export interface EnemyDef {
   aimed?: 'line' | 'circle';
   /** Doesn't move (turrets, mortar pits). */
   still?: boolean;
+  /** Body plan, for the sprite generator and behaviour. */
+  arch?: Arch;
+  /** Real size (m): how big it is drawn and hits. */
+  size?: number;
+  /** Home zone (zone rosters). */
+  zone?: number;
+  /** Burrows and lunges (stalkers). */
+  burrow?: boolean;
+  /** Fights like a titan (big multi-limbed walker, charging beast or burrowing worm). */
+  titanStyle?: 'walker' | 'beast' | 'worm';
+  /** Classic side-view sprite to use in the 3D (first-person) view. */
+  sprite3d?: string;
 }
 
-const ALL = (w: number): Partial<Record<number, number>> => ({
-  [ZONE.RUSTBELT]: w, [ZONE.DUNES]: w, [ZONE.CRYO]: w, [ZONE.GLASS]: w, [ZONE.MAGMA]: w, [ZONE.ACID]: w,
-});
+export type Arch = 'swarm' | 'canine' | 'beast' | 'humanoid' | 'vehicle' | 'worm' | 'flyer' | 'dragon' | 'golem' | 'bot' | 'fish' | 'entity' | 'insect';
+
+/** The classic wasteland kinds no longer spawn on their own (the zone rosters do); summons, cards and hordes use them. */
+const ALL = (w: number): Partial<Record<number, number>> => {
+  void w;
+  return {};
+};
 
 export const ENEMIES: Record<string, EnemyDef> = {
-  rat: { kind: 'rat', name: 'Scrap Rat', hp: 26, r: 0.38, speed: 5.2, dmg: 5, range: 0.5, rate: 1.2, loot: 'creature', xp: 4, minThreat: 1, zones: { ...ALL(4), [ZONE.RUSTBELT]: 8 }, color: '#8d6e63' },
+  rat: { kind: 'rat', name: 'Scrap Rat', hp: 26, r: 0.38, speed: 5.2, dmg: 5, range: 0.5, rate: 1.2, loot: 'creature', xp: 4, minThreat: 1, zones: {}, color: '#8d6e63' },
   drone: { kind: 'drone', name: 'Rust Drone', hp: 22, r: 0.42, speed: 4.2, flying: true, dmg: 4, range: 9, rate: 0.8, proj: 'bullet', projSpeed: 20, loot: 'creature', xp: 5, minThreat: 1, zones: ALL(3), color: '#90a4ae' },
-  raider: { kind: 'raider', name: 'Scav Raider', hp: 40, r: 0.42, speed: 3.4, dmg: 6, range: 10, rate: 0.9, proj: 'bullet', projSpeed: 22, loot: 'trooper', xp: 6, minThreat: 1.2, zones: { ...ALL(3), [ZONE.RUSTBELT]: 6 }, color: '#ff7043' },
+  raider: { kind: 'raider', name: 'Scav Raider', hp: 40, r: 0.42, speed: 3.4, dmg: 6, range: 10, rate: 0.9, proj: 'bullet', projSpeed: 22, loot: 'trooper', xp: 6, minThreat: 1.2, zones: {}, color: '#ff7043' },
   bomber: { kind: 'bomber', name: 'Bomb Rat', hp: 30, r: 0.45, speed: 4.8, dmg: 38, range: 0.6, rate: 1, splash: 2.4, loot: 'creature', xp: 7, minThreat: 1.8, zones: ALL(2), color: '#ff5252' },
-  buggy: { kind: 'buggy', name: 'Raider Buggy', hp: 110, r: 0.85, speed: 7, dmg: 9, range: 11, rate: 1.5, proj: 'bullet', projSpeed: 24, loot: 'trooper', xp: 14, minThreat: 2.1, zones: { ...ALL(2), [ZONE.DUNES]: 5 }, color: '#ffb74d' },
-  stalker: { kind: 'stalker', name: 'Dune Stalker', hp: 150, r: 0.65, speed: 5.5, dmg: 22, range: 0.8, rate: 0.8, loot: 'creature', xp: 18, minThreat: 2.4, zones: { [ZONE.DUNES]: 6, [ZONE.GLASS]: 2, [ZONE.MAGMA]: 2, [ZONE.ACID]: 2 }, color: '#d7a860' },
-  spitter: { kind: 'spitter', name: 'Acid Spitter', hp: 90, r: 0.55, speed: 2.6, dmg: 16, range: 13, rate: 0.5, proj: 'spit', projSpeed: 11, splash: 1.6, loot: 'creature', xp: 16, minThreat: 2.8, zones: { [ZONE.ACID]: 7, [ZONE.GLASS]: 4, [ZONE.MAGMA]: 2 }, color: '#76ff03' },
-  wraith: { kind: 'wraith', name: 'Cryo Wraith', hp: 180, r: 0.6, speed: 5, flying: true, dmg: 18, range: 8, rate: 0.9, proj: 'plasma', projSpeed: 16, loot: 'creature', xp: 30, minThreat: 3.8, zones: { [ZONE.CRYO]: 7, [ZONE.ACID]: 2, [ZONE.GLASS]: 2 }, color: '#80d8ff' },
-  brute: { kind: 'brute', name: 'Scrap Brute', hp: 420, r: 1, speed: 2.4, dmg: 38, range: 1.1, rate: 0.6, loot: 'trooper', xp: 40, minThreat: 3.5, zones: { ...ALL(2), [ZONE.MAGMA]: 4 }, color: '#a1887f' },
+  buggy: { kind: 'buggy', name: 'Raider Buggy', hp: 110, r: 0.85, speed: 7, dmg: 9, range: 11, rate: 1.5, proj: 'bullet', projSpeed: 24, loot: 'trooper', xp: 14, minThreat: 2.1, zones: {}, color: '#ffb74d' },
+  stalker: { kind: 'stalker', name: 'Dune Stalker', hp: 150, r: 0.65, speed: 5.5, dmg: 22, range: 0.8, rate: 0.8, loot: 'creature', xp: 18, minThreat: 2.4, zones: {}, color: '#d7a860' },
+  spitter: { kind: 'spitter', name: 'Acid Spitter', hp: 90, r: 0.55, speed: 2.6, dmg: 16, range: 13, rate: 0.5, proj: 'spit', projSpeed: 11, splash: 1.6, loot: 'creature', xp: 16, minThreat: 2.8, zones: {}, color: '#76ff03' },
+  wraith: { kind: 'wraith', name: 'Cryo Wraith', hp: 180, r: 0.6, speed: 5, flying: true, dmg: 18, range: 8, rate: 0.9, proj: 'plasma', projSpeed: 16, loot: 'creature', xp: 30, minThreat: 3.8, zones: {}, color: '#80d8ff' },
+  brute: { kind: 'brute', name: 'Scrap Brute', hp: 420, r: 1, speed: 2.4, dmg: 38, range: 1.1, rate: 0.6, loot: 'trooper', xp: 40, minThreat: 3.5, zones: {}, color: '#a1887f' },
   rocketeer: { kind: 'rocketeer', name: 'Rocketeer', hp: 100, r: 0.45, speed: 3, dmg: 26, range: 15, rate: 0.4, proj: 'missile', projSpeed: 13, splash: 1.5, loot: 'trooper', xp: 20, minThreat: 3.4, zones: ALL(3), color: '#ef5350' },
   mech: { kind: 'mech', name: 'Walker Mech', hp: 900, r: 1.35, speed: 2.2, dmg: 16, range: 16, rate: 2.2, proj: 'bullet', projSpeed: 26, loot: 'elite', xp: 80, minThreat: 5, zones: ALL(1.5), color: '#78909c' },
   swarmer: { kind: 'swarmer', name: 'Swarmer', hp: 16, r: 0.32, speed: 6.2, dmg: 4, range: 0.4, rate: 1.4, loot: 'swarm', xp: 1.2, minThreat: 99, zones: {}, color: '#a5a58d' },
@@ -95,7 +112,8 @@ export const ENEMIES: Record<string, EnemyDef> = {
 };
 
 export const TITAN_STYLE: Record<number, EnemyKind> = {
-  [ZONE.RUSTBELT]: 'titan_walker', [ZONE.DUNES]: 'titan_worm', [ZONE.CRYO]: 'titan_walker', [ZONE.GLASS]: 'titan_walker', [ZONE.MAGMA]: 'titan_beast', [ZONE.ACID]: 'titan_worm',
+  [ZONE.VERDANT]: 'titan_beast', [ZONE.ASH]: 'titan_walker', [ZONE.SCORCHED]: 'titan_beast', [ZONE.FROST]: 'titan_walker', [ZONE.WRAITH]: 'titan_walker',
+  [ZONE.DUNES]: 'titan_worm', [ZONE.LAKE]: 'titan_worm', [ZONE.SPIRES]: 'titan_walker', [ZONE.PASS]: 'titan_beast', [ZONE.RUSTBOLT]: 'titan_walker', [ZONE.DIVOT]: 'titan_walker',
 };
 
 export const TITAN_NAMES: Record<string, string[]> = {
@@ -124,4 +142,155 @@ export function pickFactionKind(f: Faction, threat: number): string {
     if (r <= 0) return k;
   }
   return pool[0]?.[0] ?? 'rat';
+}
+
+/* ---------------------------------------------------------------------- */
+/* The Crater's zone rosters (crater_world_1.json)                          */
+/* ---------------------------------------------------------------------- */
+
+const ZONE_PREFIX: Record<number, string> = {
+  [ZONE.VERDANT]: 'v', [ZONE.ASH]: 'a', [ZONE.SCORCHED]: 's', [ZONE.FROST]: 'f', [ZONE.WRAITH]: 'w', [ZONE.DUNES]: 'd',
+  [ZONE.LAKE]: 'l', [ZONE.SPIRES]: 'x', [ZONE.PASS]: 'p', [ZONE.RUSTBOLT]: 'r', [ZONE.DIVOT]: 'm', [ZONE.EDGE]: 'e',
+};
+
+/** Each zone's palette: body colour for its creatures and machines. */
+const ZONE_TINT: Record<number, string[]> = {
+  [ZONE.VERDANT]: ['#a1887f', '#8d6e63', '#6d4c41', '#7cb342', '#558b2f', '#33691e', '#795548'],
+  [ZONE.ASH]: ['#9e9e9e', '#8d8d8d', '#757575', '#616161', '#bdbdbd', '#78909c', '#546e7a'],
+  [ZONE.SCORCHED]: ['#d84315', '#bf360c', '#ff7043', '#ff5722', '#c6ff00', '#6d4c41', '#ff3d00'],
+  [ZONE.FROST]: ['#b3e5fc', '#e1f5fe', '#90caf9', '#80deea', '#4fc3f7', '#e3f2fd', '#81d4fa'],
+  [ZONE.WRAITH]: ['#bcaaa4', '#8d6e63', '#6d4c41', '#7e57c2', '#90a4ae', '#5e35b1', '#b0bec5'],
+  [ZONE.DUNES]: ['#d7a860', '#c49a50', '#ffb74d', '#c0a060', '#a1887f', '#d4a056', '#ffd54f'],
+  [ZONE.LAKE]: ['#26a69a', '#00897b', '#4db6ac', '#00695c', '#1de9b6', '#004d40', '#80cbc4'],
+  [ZONE.SPIRES]: ['#e040fb', '#ff6d00', '#b388ff', '#7c4dff', '#212121', '#ff1744', '#aa00ff'],
+  [ZONE.PASS]: ['#ff7043', '#8d6e63', '#a1887f', '#c0a060', '#6d4c41', '#bf360c', '#ffb74d'],
+  [ZONE.RUSTBOLT]: ['#a1887f', '#ffb300', '#ffd740', '#8d6e63', '#6d4c41', '#bf360c', '#ff6d00'],
+};
+
+function archOf(name: string): Arch {
+  const n = name.toLowerCase();
+  if (/fish/.test(n)) return 'fish';
+  if (/swarm|\brat\b|crawler/.test(n)) return n.includes('rock') ? 'insect' : 'swarm';
+  if (/scorpion/.test(n)) return 'insect';
+  if (/dog|wolf|hound/.test(n)) return 'canine';
+  if (/dragon|wyrm/.test(n)) return 'dragon';
+  if (/entity/.test(n)) return 'entity';
+  if (/drone|reaver/.test(n)) return 'flyer';
+  if (/worm|leviathan/.test(n)) return 'worm';
+  if (/rig|bike|truck|hog|tank|barge/.test(n)) return 'vehicle';
+  if (/bot|unit|forge/.test(n)) return 'bot';
+  if (/golem|colossus|titan|giant|behemoth|guardian|troll|spire\b|gatekeeper|drowned/.test(n)) return 'golem';
+  if (/scout|scavenger|scav|burner|swimmer/.test(n)) return 'humanoid';
+  return 'beast';
+}
+
+const SPRITE3D: Record<Arch, string> = {
+  swarm: 'rat', canine: 'cy_hound', beast: 'stalker', humanoid: 'raider', vehicle: 'buggy', worm: 'stalker', flyer: 'drone', dragon: 'bat',
+  golem: 'bone_golem', bot: 'mil_bot', fish: 'spitter', entity: 'phantom', insect: 'spitter',
+};
+
+const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+/**
+ * Turns a roster entry into an enemy: stats scale with its real size (a 1 m rat to a 150 m war machine), and its
+ * body plan decides how it fights (swarms rush, hounds run, raiders and vehicles shoot, worms burrow, flyers dive,
+ * golems slam; anything 20 m or more fights like a titan).
+ */
+function rosterDef(zone: number, idx: number, [name, min, max]: [string, number, number | null], boss = false): EnemyDef {
+  const size = max === null ? min * 1.25 : (min + max) / 2;
+  const arch = archOf(name);
+  const kind = `${ZONE_PREFIX[zone]}_${slug(name)}`;
+  const n = name.toLowerCase();
+  const danger = ZONE_INFO[zone]?.danger ?? 1;
+  const hp = Math.round(18 * Math.pow(size, 1.6) * (arch === 'swarm' || arch === 'fish' ? 0.8 : 1));
+  const dmg = Math.round(3 + 2.2 * Math.pow(size, 0.9));
+  const baseSpeed: Record<Arch, number> = { swarm: 6.5, canine: 9, beast: 6.5, humanoid: 3.8, vehicle: 17, worm: 7, flyer: 12, dragon: 14, golem: 3.5, bot: 4, fish: 6, entity: 8, insect: 6 };
+  const speed = Math.min(16, baseSpeed[arch] + (arch === 'golem' || arch === 'worm' ? size * 0.08 : 0));
+  const ranged = arch === 'humanoid' || arch === 'vehicle' || arch === 'flyer' || arch === 'dragon' || arch === 'entity' || n.includes('spitter') || n.includes('mining drone') || n.includes('pharaoh');
+  const flying = arch === 'flyer' || arch === 'dragon' || arch === 'entity';
+  const r = Math.max(0.35, size / 2);
+  const range = ranged ? Math.round(18 + size * 1.2) : r + 1;
+  const def: EnemyDef = {
+    kind, name, hp, r, speed, dmg, range, rate: ranged ? 0.7 + (arch === 'vehicle' ? 0.8 : 0) : size > 20 ? 0.45 : 1,
+    flying, loot: size >= 25 ? 'titan' : size >= 10 ? 'elite' : arch === 'humanoid' || arch === 'vehicle' || arch === 'bot' ? 'trooper' : idx < 2 ? 'swarm' : 'creature',
+    xp: Math.round(2 + Math.pow(size, 1.1) * 1.6), minThreat: 1 + (danger - 1) * 1.5 + Math.max(0, idx - 2) * 0.35, zones: {},
+    color: ZONE_TINT[zone]?.[idx % 7] ?? '#9e9e9e', arch, size, zone, sprite3d: SPRITE3D[arch],
+  };
+  if (ranged) {
+    def.proj = n.includes('spitter') ? 'spit' : arch === 'dragon' || arch === 'entity' ? 'plasma' : n.includes('burner') ? 'flame' : arch === 'vehicle' && size > 10 ? 'missile' : 'bullet';
+    def.projSpeed = def.proj === 'missile' ? 30 : def.proj === 'spit' ? 22 : 45;
+    if (def.proj !== 'bullet') def.splash = Math.max(1.5, size * 0.15);
+  }
+  if (arch === 'golem' || n.includes('behemoth') || n.includes('troll')) def.slam = true;
+  if (n.includes('stalker') || (arch === 'worm' && size < 20)) def.burrow = true;
+  if (n.includes('lava imp')) {
+    def.explode = true;
+    def.splash = 6;
+  }
+  // Anomaly wolves phase out of reach of guns: only cards, abilities and squads touch them.
+  if (n.includes('anomaly')) def.immune = true;
+  if (size >= 20 && !boss) def.titanStyle = arch === 'worm' ? 'worm' : arch === 'beast' || arch === 'canine' || arch === 'vehicle' ? 'beast' : 'walker';
+  if (boss) {
+    def.boss = true;
+    def.hp = Math.round(def.hp * 1.5);
+    def.minThreat = 99;
+  }
+  return def;
+}
+
+/** Every zone's roster, smallest first (kind ids). */
+export const ZONE_ROSTER: Record<number, string[]> = {};
+for (const [z, info] of Object.entries(ZONE_INFO)) {
+  const zone = Number(z);
+  ZONE_ROSTER[zone] = [];
+  info.roster.forEach((entry, i) => {
+    const d = rosterDef(zone, i, entry);
+    ENEMIES[d.kind] = d;
+    ZONE_ROSTER[zone].push(d.kind);
+  });
+}
+
+/** Mega enemies: world events and the endgame (kind ids by name). */
+export const MEGA: Record<string, string> = {};
+for (const m of MEGA_ENEMIES) {
+  const d = rosterDef(ZONE.DIVOT, 6, [m.name, m.size, m.size], true);
+  d.kind = `m_${slug(m.name)}`;
+  d.color = m.name.includes('Worm') ? '#c0a060' : m.name.includes('Guardian') ? '#90a4ae' : m.name.includes('Colossus') ? '#bcaaa4' : '#4a148c';
+  d.summon = { kind: 'swarmer', n: 12, every: 8 };
+  ENEMIES[d.kind] = d;
+  MEGA[m.name] = d.kind;
+}
+
+/** Stronghold bosses: the apex of the zone each stronghold sits in (the roster entry made a boss). */
+export function strongholdBoss(zone: number, name: string): string {
+  const entry = ZONE_INFO[zone]?.roster.find((e) => e[0] === name);
+  const kind = `boss_${slug(name)}`;
+  if (!ENEMIES[kind] && entry) {
+    const d = rosterDef(zone, 6, entry, true);
+    d.kind = kind;
+    d.summon = { kind: ZONE_ROSTER[zone][0], n: 8, every: 9 };
+    ENEMIES[kind] = d;
+  }
+  return ENEMIES[kind] ? kind : 'boss_warlord';
+}
+
+/** A zone creature for a spawn: the small ones are common, the big ones rare, all within the spot's danger. */
+export function pickZoneKind(zone: number, threat: number): string {
+  const list = ZONE_ROSTER[zone]?.length ? ZONE_ROSTER[zone] : ZONE_ROSTER[ZONE.DUNES];
+  const ok = list.filter((k) => ENEMIES[k].minThreat <= threat + 0.6);
+  const pool = ok.length ? ok : [list[0]];
+  const w = pool.map((_, i) => [9, 6, 4, 2.2, 1.2, 0.35, 0.08][i] ?? 0.05);
+  let r = Math.random() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) {
+    r -= w[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[0];
+}
+
+/** What a zone's hordes are made of: its two smallest creatures, then heavies and a boss for the big waves. */
+export function zoneHorde(zone: number): { horde: string[]; heavy: string[]; boss: string; flyer: string | null; name: string } {
+  const list = ZONE_ROSTER[zone]?.length ? ZONE_ROSTER[zone] : ZONE_ROSTER[ZONE.DUNES];
+  const flyer = list.find((k) => ENEMIES[k].flying && (ENEMIES[k].size ?? 1) < 30) ?? null;
+  return { horde: [list[0], list[0], list[1]], heavy: [list[2], list[3]], boss: list[4], flyer, name: ZONE_INFO[zone]?.name ?? 'the wastes' };
 }

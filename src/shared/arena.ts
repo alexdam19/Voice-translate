@@ -21,7 +21,7 @@ export function generateArena(seed: number): ArenaGen {
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
       const r = Math.hypot(x - C, y - C) + p.fbm2(x / (20 * S), y / (20 * S), 3) * 8 * S;
-      map.set(x, y, { zone: r > 74 * S ? ZONE.EDGE : ZONE.RUSTBELT });
+      map.set(x, y, { zone: r > 74 * S ? ZONE.EDGE : ZONE.RUSTBOLT });
       const nv = p.fbm2(x / (16 * S) + 40, y / (16 * S), 3);
       map.set(x, y, { ter: nv > 0.18 ? TER.CONCRETE : nv < -0.2 ? TER.ASH : TER.RUST });
       if (r > 74 * S) {
