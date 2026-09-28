@@ -65,7 +65,7 @@ export function updateHarvest(g: Game, dt: number): void {
     p.path = [];
     p.goal = null;
   }
-  let rate = p.stats.harvest * (p.hasBuff('harvestUp') ? 1 + p.buff('harvestUp')!.v : 1);
+  let rate = p.stats.harvest * g.statMods.harvest * (p.hasBuff('harvestUp') ? 1 + p.buff('harvestUp')!.v : 1);
   if (g.runeBuff?.rune === 'gilded') rate *= 1.3;
   harvestTimer.t += dt * rate;
   if (Math.random() < dt * 8) g.fx.push({ t: 'spark', x: n.x, y: n.y, color: info.color, n: 1 });

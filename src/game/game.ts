@@ -9,7 +9,7 @@ import { RNG } from '../shared/rng';
 import type { WeaponItem } from '../shared/weapons';
 import type { DriveKey } from '../shared/types';
 import { BASE_MAX_ENERGY, CARDS, deckSlots, ENERGY_REGEN, HAND_SIZE, levelPower, MAX_CARD_LEVEL, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
-import { computeCrewBonus, giveXp, makeRecruit, type CrewMember } from './crew';
+import { computeCrewBonus, giveXp, makeRecruit, signatureCard, type CrewMember } from './crew';
 import { eid, type Ally, type ChestKind, type Enemy, type FloatText, type Pickup, type Projectile, type Reward, type Telegraph, type Zone } from './entities';
 import { ENEMIES } from './enemyDefs';
 import { MODULES } from './defs';
@@ -19,6 +19,7 @@ import type { SquadState, SquadType } from './squads';
 import { crewFx, emptyCrewFx, type CrewFx } from './tech';
 import type { HullClass } from './classes';
 import { newCampaign, type Campaign } from './campaign';
+import { autoAssign, noStationMods } from './stations';
 import { newCrewLife, type CrewLife } from './systems/crewlife';
 import { newStorm, type Storm } from './systems/weather';
 import { newDeploy, type Deploy } from './systems/camp';
@@ -187,6 +188,11 @@ export class Game {
   helm = { lever: 0, overdrive: false, detent: false };
   /** Cruise time-warp (1, 4 or 8): the Crater is 140 km across. Drops to 1 when anything hostile comes near. */
   warp = 1;
+  /** What the officers on the stations add up to, whether shifts change on their own, and the officers' meal tab. */
+  statMods = noStationMods();
+  autoRotate = true;
+  stationT = 0;
+  officerMeals = 0;
   /** Tank-style controls: W/S throttle, A/D turn. Off = screen-relative. */
   tankControls = true;
   /**
@@ -250,7 +256,7 @@ export class Game {
   /** Crawler track marks pressed into the ground: a ring buffer of (x, y, heading), newest at `head - 1`. */
   trackMarks = { buf: new Float32Array(TRACK_MARKS * 3), n: 0, head: 0, ver: 0 };
 
-  constructor(seed: number, gen?: WorldGen, klass: HullClass = 'juggernaut') {
+  constructor(seed: number, gen?: WorldGen, klass: HullClass = 'juggernaut', crew?: CrewMember[]) {
     this.gen = gen ?? generateWorld(seed);
     this.map = this.gen.map;
     this.rng = new RNG(seed ^ 0x9e3779b9);
@@ -258,14 +264,18 @@ export class Game {
     this.player.rot = this.gen.spawnRot ?? this.player.rot;
     for (const m of this.player.modules) m.aim = this.player.rot;
     this.gen.focus(this.player.x, this.player.y);
-    this.crew = starterCrew();
+    // Your main crew, picked in the Mega Hangar (or the default four).
+    this.crew = crew?.length ? crew : starterCrew();
     this.tech = new Set(techsForLevel(1));
     for (const id of STARTER_DECK) this.cards[id] = { level: 1, shards: 0 };
+    // Everyone you signed on brings their card.
+    for (const c of this.crew) if (CARDS[signatureCard(c)] && !this.cards[signatureCard(c)]) this.cards[signatureCard(c)] = { level: 1, shards: 0 };
     this.fog = new Fog(this.map.size);
     this.applyCrew();
     this.player.hp = this.player.stats.maxHp;
     this.rollRecruits();
     this.resetHand();
+    autoAssign(this);
   }
 
   get seed(): number {
@@ -710,7 +720,7 @@ export class Game {
   }
 
   dropLoot(x: number, y: number, table: string, rolls: number): void {
-    const f = rolls * this.player.stats.loot;
+    const f = rolls * this.player.stats.loot * this.statMods.loot;
     const n = Math.max(1, Math.floor(f) + (Math.random() < f % 1 ? 1 : 0));
     this.dropStacks(x, y, rollLoot(table, () => this.rng.next(), n));
   }

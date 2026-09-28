@@ -16,6 +16,7 @@ import { updateTankWeapons } from './weapons';
 import { updateAutoDrive } from './drives';
 import { updateWaves } from './waves';
 import { updateCampaign } from '../campaign';
+import { updateStations } from '../stations';
 import { updateTesla } from './tesla';
 import { updateSoldiers } from './soldiers';
 import { updateTroops } from './troops';
@@ -181,6 +182,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateAutoDrive(g, dt);
       updateTroops(g, dt);
       updateCrewLife(g, dt);
+      updateStations(g, dt);
       updateTitan(g, dt);
     }
     updateCamp(g, dt);

@@ -42,7 +42,7 @@ export function shift(g: Game): Shift {
   const mess = p.modules.some((m) => m.key === 'mess_hall' && m.crew > 0);
   return {
     people, onDuty, resting: people - onDuty, needRest: Math.ceil(onDuty / 3),
-    eatPerMin: people * RATION_RATE * 60 * (mess ? 0.7 : 1),
+    eatPerMin: people * RATION_RATE * 60 * (mess ? 0.7 : 1) * g.statMods.rations,
     growPerMin: (p.stats.food * 60) / 25,
   };
 }

@@ -230,7 +230,7 @@ export function damageControl(g: Game): number {
   const p = g.player;
   const d = p.stats.depts.works;
   const off = Math.max(0, p.troops - Math.min(p.troops, p.stats.crewManned));
-  return (d ? d[0] : 0) + off * 0.25;
+  return ((d ? d[0] : 0) + off * 0.25) * g.statMods.damage;
 }
 
 export function updateTitan(g: Game, dt: number): void {
@@ -303,7 +303,7 @@ export function updateTitan(g: Game, dt: number): void {
 
   // Fuel: the diesels burn it in proportion to how hard they work (a full tank is about 40 minutes flat out).
   const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
-  const burnRate = (p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1);
+  const burnRate = (p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1) * g.statMods.fuel;
   const hadFuel = s.fuel > 0;
   s.fuel = Math.max(0, s.fuel - burnRate * dt);
   if (hadFuel && s.fuel <= 0) g.hooks.toast('OUT OF FUEL: running on the reactors alone at a crawl. Refinery, the Mothership, or burn scrap.', '#ff1744');
@@ -380,8 +380,14 @@ export function updateTitan(g: Game, dt: number): void {
     s.owed -= 1;
   }
 
-  // Push the effects onto the hull.
+  // Push the effects onto the hull (with what the officers on the stations add).
   const m = titanMods(s);
+  const st = g.statMods;
+  m.speed *= st.speed;
+  m.steering *= st.turn;
+  m.weapons *= st.dmg;
+  m.sensors *= st.vision;
+  m.power *= st.power;
   const t = p.titanMods;
   if (Math.abs(t.power - m.power) > 0.01 || Math.abs(t.speed - m.speed) > 0.01 || Math.abs(t.sensors - m.sensors) > 0.01 || Math.abs(t.weapons - m.weapons) > 0.01) {
     p.titanMods = m;

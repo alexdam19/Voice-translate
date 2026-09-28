@@ -39,6 +39,7 @@ const PLAYER: Look = {
 };
 const RIVAL: Look = { ...PLAYER, hull: '#43383b', dark: '#2a2224', light: '#65565a', plate: '#4d4043', deck: '#3a3033', strip: '#ff3b30', mark: '#ffcdd2' };
 const REMOTE: Look = { ...PLAYER, strip: '#e040fb', mark: '#f3e5f5' };
+const CLASS_STRIP: Record<string, string> = { juggernaut: '#38c8ff', bastion: '#ffd740', ark: '#76ff03', nightrunner: '#b388ff', dredge: '#ffab40' };
 
 export interface Painted {
   canvas: HTMLCanvasElement;
@@ -69,7 +70,9 @@ export function paintTitan(t: Tank, ppm: number, g: Game | null, time: number): 
   }
   const x = ctx2d(c);
   x.clearRect(0, 0, cw, chh);
-  const look = t.kind === 'rival' ? RIVAL : t.kind === 'remote' ? REMOTE : PLAYER;
+  const base = t.kind === 'rival' ? RIVAL : t.kind === 'remote' ? REMOTE : PLAYER;
+  // Each hull class runs its own colour down the light strips (the Juggernaut keeps the flagship blue).
+  const look = t.kind === 'main' && CLASS_STRIP[t.klass] ? { ...base, strip: CLASS_STRIP[t.klass] } : base;
   const ox = (L / 2 + PADM) * ppm, oy = (W / 2 + PADM) * ppm;
   const X = (m: number): number => Math.round(ox + m * ppm), Y = (m: number): number => Math.round(oy + m * ppm);
   /** Rectangle in hull metres (x forward from the centre, y to starboard). */

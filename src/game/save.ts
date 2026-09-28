@@ -1,3 +1,4 @@
+import { stationMods } from './stations';
 import { TRACTION } from '../shared/map';
 import type { DriveKey } from '../shared/types';
 import type { OpenWorld, RuneKind } from '../shared/mapgen';
@@ -19,7 +20,7 @@ import { loadTitanState, type TitanState } from './systems/titan';
 export const SAVE_KEY = 'ironcrawl3d-save-v1';
 
 export interface SaveData {
-  v: 3 | 4 | 5 | 6 | 7 | 8;
+  v: 3 | 4 | 5 | 6 | 7 | 8 | 9;
   seed: number;
   time: number;
   tank: TankSave;
@@ -63,6 +64,8 @@ export interface SaveData {
   life?: CrewLife;
   titan?: Partial<TitanState>;
   home?: { x: number; y: number } | null;
+  /* v9: The Crater (a new 140 km world) and officer stations */
+  autoRotate?: boolean;
 }
 
 export function serialize(g: Game): SaveData {
@@ -71,7 +74,7 @@ export function serialize(g: Game): SaveData {
   for (const [k, s] of Object.entries(g.squads)) if (s) squads[k as SquadType] = { order: s.order, gx: s.gx, gy: s.gy };
   const tr = g.tracked;
   return {
-    v: 8, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
+    v: 9, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
     armory: g.armory, tech: [...g.tech], stats: g.stats, explored: '', fog: g.fog.serialize(),
     ...featureState(g),
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
@@ -81,6 +84,7 @@ export function serialize(g: Game): SaveData {
     squads,
     tracked: !tr ? null : tr.kind === 'upgrade' ? { kind: 'upgrade', mod: idx(tr.modId) } : tr,
     drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n, campaign: g.campaign, life: g.life, titan: g.titan, home: g.deploy.home,
+    autoRotate: g.autoRotate,
   };
 }
 
@@ -165,7 +169,8 @@ export function deserialize(d: SaveData): Game {
   g.forgeJob = d.forgeJob ?? null;
   bumpUid(Math.max(d.nextUid ?? 1, ...g.armory.map((w) => w.uid), ...g.player.modules.map((m) => m.weapon?.uid ?? 0)));
   g.stats = { ...g.stats, ...d.stats };
-  if (d.v >= 7) {
+  // v9 moved everything to The Crater: older saves keep their ship, crew and progress but start again at the Mega Hangar.
+  if (d.v >= 9) {
     g.fog.load(d.fog ?? []);
     const w = g.gen as OpenWorld;
     if (w.saved) {
@@ -176,7 +181,7 @@ export function deserialize(d: SaveData): Game {
     }
     g.outpostsDown = new Set(d.outpostsDown ?? []);
   } else {
-    // The world is a different (much bigger) place now: the fortress drives out of the new camp.
+    // The world is a different place now: the Titan rolls out of the Mega Hangar.
     g.player.x = g.gen.spawn.x;
     g.player.y = g.gen.spawn.y;
     g.player.rot = g.gen.spawnRot ?? -Math.PI / 2;
@@ -213,10 +218,12 @@ export function deserialize(d: SaveData): Game {
       applyOutriderCrew(g);
     }
   }
-  if (d.campaign) g.campaign = { ...newCampaign(), ...d.campaign, finale: d.campaign.finale === 'won' ? 'won' : 'none' };
+  if (d.campaign && d.v >= 9) g.campaign = { ...newCampaign(), ...d.campaign, finale: d.campaign.finale === 'won' ? 'won' : 'none' };
   if (d.life) g.life = { ...newCrewLife(), ...d.life };
   g.titan = loadTitanState(d.titan);
-  if (d.home && d.v >= 7) g.deploy.home = d.home;
+  if (d.home && d.v >= 9) g.deploy.home = d.home;
+  g.autoRotate = d.autoRotate ?? true;
+  g.statMods = stationMods(g);
   g.gen.focus(g.player.x, g.player.y);
   return g;
 }

@@ -1,3 +1,4 @@
+import type { CrewMember } from './game/crew';
 import { KIT_KEY } from './shared/constants';
 import { NODE_INFO, RUNE_INFO, SITE_INFO } from './shared/mapgen';
 import { wrapAngle } from './shared/types';
@@ -139,9 +140,9 @@ export class App {
   /* Lifecycle                                                         */
   /* ---------------------------------------------------------------- */
 
-  newGame(klass: HullClass = 'juggernaut', seed = Math.floor(Math.random() * 1e9)): void {
-    this.start(new Game(seed, undefined, klass));
-    this.hud.toast(`Welcome, Commander. ${this.touch ? 'Drive with the stick (bottom left) or tap the ground' : 'Drive with WASD'}. Your guns fire on their own. Drag a card onto the battlefield to play it.`, '#ffd740');
+  newGame(klass: HullClass = 'juggernaut', seed = Math.floor(Math.random() * 1e9), crew?: CrewMember[]): void {
+    this.start(new Game(seed, undefined, klass, crew));
+    this.hud.toast(`Captain, the Hangar door is open. ${this.touch ? 'Push the throttle up with the stick (bottom left) or tap the ground' : 'W pushes the throttle lever up, A and D steer'}. Your guns fire on their own; your officers run the stations (CREW).`, '#ffd740');
   }
 
   continueGame(): boolean {

@@ -6,7 +6,7 @@ import { planPath } from './movement';
 export function updateCrew(g: Game, dt: number): void {
   const p = g.player;
   let changed = false;
-  const medicRate = 1 + p.crew.recovery + (p.stats.medbay ? 2 : 0) + (p.stats.mess ? 0.5 : 0) + (p.modules.some((m) => m.key === 'quarters') ? 0.5 : 0);
+  const medicRate = g.statMods.heal * (1 + p.crew.recovery) + (p.stats.medbay ? 2 : 0) + (p.stats.mess ? 0.5 : 0) + (p.modules.some((m) => m.key === 'quarters') ? 0.5 : 0);
   for (const c of g.crew) {
     if (c.cd > 0) c.cd = Math.max(0, c.cd - dt);
     if (c.injured > 0) {

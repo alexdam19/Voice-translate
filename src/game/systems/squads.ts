@@ -235,7 +235,7 @@ function scavenge(g: Game, type: SquadType, units: Ally[], level: number, dt: nu
   }
   const n = g.gen.nodes.find((k) => k.id === t.id);
   if (!n) return;
-  sq.work += dt * units.length * 0.9 * (type === 'buggies' ? 1.3 : 1) * p.stats.harvest;
+  sq.work += dt * units.length * 0.9 * (type === 'buggies' ? 1.3 : 1) * p.stats.harvest * g.statMods.harvest;
   if (Math.random() < dt * 6) g.fx.push({ t: 'spark', x: n.x, y: n.y, color: NODE_INFO[n.type].color, n: 1 });
   if (sq.work < 1.2) return;
   sq.work = 0;

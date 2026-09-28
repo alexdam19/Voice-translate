@@ -192,7 +192,15 @@ export interface CrewMember {
   cd: number;
   /** For crew away from the fortress: seconds until they walk back. */
   returnIn: number;
+  /** The ship's station this officer is running (see stations.ts), or null. */
+  station: StationKey | null;
+  /** 0 fresh .. 1 exhausted; 0 fed .. 1 starving. Officers on a station tire; off it they sleep and eat. */
+  fatigue: number;
+  hunger: number;
 }
+
+/** The ship's stations an officer can run (definitions and effects in stations.ts). */
+export type StationKey = 'helm' | 'gunnery' | 'engines' | 'damage' | 'sensors' | 'medical' | 'galley' | 'logistics';
 
 const FIRST = ['Vex', 'Rook', 'Juno', 'Kade', 'Mara', 'Ozzy', 'Tamsin', 'Brick', 'Nyx', 'Solder', 'Wren', 'Grit', 'Pike', 'Echo', 'Dusk', 'Riva', 'Hex', 'Moth', 'Cinder', 'Talon', 'Ash', 'Bolt', 'Kestrel', 'Nova', 'Sable', 'Tank', 'Lug', 'Sprocket', 'Faye', 'Dex'];
 const LAST = ['Kowalski', 'Ashgrove', 'Nine', 'Rustfang', 'Okafor', 'Vance', 'Ironside', 'Marrow', 'Quill', 'Duarte', 'Sato', 'Holloway', 'Reyes', 'Blackwell', 'Voss', 'Mbeki', 'Castellan', 'Pryce', 'Lindqvist'];
@@ -210,6 +218,7 @@ export function makeCrew(role: CrewRole, rarity: Rarity, level = 1, rng: () => n
   return {
     id: nextCrewId++, name: crewName(rng), role, rarity, level: Math.max(1, Math.min(MAX_LEVEL, level)), xp: XP_LEVELS[level - 1] ?? 0,
     perks: [], draft: null, champion: null, exclusive: null, face: Math.floor(rng() * 1e9), injured: 0, loc: 'main', officer: -1, cd: 0, returnIn: 0,
+    station: null, fatigue: 0, hunger: 0,
   };
 }
 
@@ -333,6 +342,9 @@ export function normalizeCrew(raw: Partial<CrewMember> & { name: string }): Crew
   c.officer = raw.officer ?? -1;
   c.cd = 0;
   c.returnIn = raw.returnIn ?? 0;
+  c.station = raw.station ?? null;
+  c.fatigue = raw.fatigue ?? 0;
+  c.hunger = raw.hunger ?? 0;
   if (c.loc === 'away' && c.returnIn <= 0) c.loc = 'main';
   return c;
 }
@@ -458,3 +470,29 @@ export function computeCrewBonus(crew: CrewMember[]): CrewBonus {
 
 export const rarityOfCrew = (c: CrewMember): Rarity => c.rarity;
 export const rarityMult = (r: Rarity): number => RARITIES[r].mult;
+
+/**
+ * Who's waiting on the Mega Hangar's crew deck at the start of a run: one of every trade and one more, mostly
+ * green, a couple of old hands and one standout. You sign on four.
+ */
+export function hangarRoster(seed: number): CrewMember[] {
+  let s = seed >>> 0 || 1;
+  const rng = (): number => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const roles: CrewRole[] = [...ROLE_LIST.map((r) => r.key), randomRole(rng)];
+  const rar: Rarity[] = [0, 0, 0, 0, 0, 1, 1, 1, 2, 3];
+  // Shuffle the rarities over the trades.
+  for (let i = rar.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [rar[i], rar[j]] = [rar[j], rar[i]];
+  }
+  return roles.map((r, i) => makeCrew(r, rar[i], rar[i] >= 2 ? 1 : 1 + Math.floor(rng() * 2), rng));
+}
+
+/** How many officers you sign on in the Mega Hangar. */
+export const HANGAR_PICKS = 4;
