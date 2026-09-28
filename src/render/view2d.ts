@@ -19,6 +19,7 @@ import { BLOCK, Terrain2D } from './px/terrain2d';
 import { paintSmallTank } from './px/titan2d';
 import { paintTitanHD, type PaintedHD, type StackLayer } from './px/titanhd';
 import { hatFor, topPerson } from './px/people';
+import { quantizeSize } from './px/creaturesHD';
 import type { Aboard } from '../game/aboard';
 
 /**
@@ -350,7 +351,9 @@ export class View2D {
     if (rot) c.setTransform(this.ct * ppm, this.st * ppm, -this.st * ppm, this.ct * ppm, this.bx(0, 0), this.by(0, 0));
     for (const [bx, by] of list) {
       if (bx < 0 || by < 0 || bx * BLOCK >= g.map.size || by * BLOCK >= g.map.size) continue;
-      const img = t.get(bx, by, lod, budget);
+      let img = t.get(bx, by, lod, budget);
+      // Close in, the high-resolution copy (two or four pixels a tile) once it's ready.
+      if (img && lod === 0 && ppm >= 1.4) img = t.getHD(bx, by, ppm >= 3 ? 4 : 2, 2) ?? img;
       const wx = bx * BLOCK, wy = by * BLOCK;
       if (rot) {
         if (img) c.drawImage(img, wx - 0.25, wy - 0.25, BLOCK + 0.5, BLOCK + 0.5);
@@ -901,21 +904,25 @@ export class View2D {
       }
       const def = ENEMIES[e.kind];
       const arch = archFor(e.kind, def?.arch);
-      const real = e.r * 2 * ppm * (arch === 'worm' || arch === 'dragon' ? 1.35 : 1.15);
-      const min = e.boss ? 22 : e.titan ? 15 : e.elite ? 10 : e.horde ? 6 : 7;
+      // Drawn a little larger than life, and never too small to read at full resolution.
+      const real = e.r * 2 * ppm * (arch === 'worm' || arch === 'dragon' ? 1.7 : 1.5);
+      const min = e.boss ? 48 : e.titan ? 34 : e.elite ? 22 : e.horde ? 13 : 16;
       const size = Math.max(min, real);
       const toP = Math.atan2(p.y - e.y, p.x - e.x);
       const a = this.headingOf(e.id, e.x, e.y, toP) + this.th;
       const frame = Math.floor(e.anim * (e.titan ? 1 : 2)) & 1;
       const variant = e.boss ? 'boss' : e.elite ? 'elite' : 'normal';
-      const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', size, frame, variant);
+      // Painted at quantised sizes and scaled the rest of the way (zooming doesn't repaint every creature).
+      const q = quantizeSize(size);
+      const ks = size / q;
+      const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', q, frame, variant);
       const sx = Math.round(this.bx(e.x, e.y)), sy = Math.round(this.by(e.x, e.y) - (e.flying ? Math.max(2, (1.6 + e.z) * ppm * ZK * 1.3) : e.z * ppm * ZK));
       // Shadow on the ground (flyers' is further off).
       const so = e.flying ? Math.max(3, size * 0.4) : Math.max(1, size * 0.08);
       c.fillStyle = 'rgba(0,0,0,0.3)';
       c.fillRect(Math.round(sx - size * 0.35 + so), Math.round(this.by(e.x, e.y) - size * 0.25 + so), Math.round(size * 0.7), Math.round(size * 0.5));
       const ca = Math.cos(a), sa = Math.sin(a);
-      c.setTransform(ca, sa, -sa, ca, sx, sy);
+      c.setTransform(ca * ks, sa * ks, -sa * ks, ca * ks, sx, sy);
       c.drawImage(img, -img.width / 2, -img.height / 2);
       c.setTransform(1, 0, 0, 1, 0, 0);
       // Burning, slowed and stunned creatures show it.
@@ -948,7 +955,7 @@ export class View2D {
       const flyer = a.kind === 'jet' || a.kind === 'drone' || a.kind === 'dragon' || a.z > 0.5;
       if (flyer !== air || !this.near(a.x, a.y, 10)) continue;
       const real = a.kind === 'dragon' ? 14 : a.kind === 'mech' ? 5 : a.kind === 'minitank' ? 6 : a.kind === 'buggy' ? 4 : a.kind === 'jet' ? 8 : a.kind === 'drone' ? 2 : a.kind === 'mine' ? 1 : 1.2;
-      const size = Math.max(a.kind === 'mine' ? 3 : 4, real * ppm);
+      const size = Math.max(a.kind === 'mine' ? 6 : 10, real * ppm * 1.4);
       const vehicle = a.kind === 'buggy' || a.kind === 'minitank' || a.kind === 'jet' || a.kind === 'drone' || a.kind === 'dragon';
       const rot = vehicle ? a.rot : this.headingOf(a.id + 1e9, a.x, a.y, a.rot);
       const img = allySprite(a.kind, size, Math.floor(a.anim));

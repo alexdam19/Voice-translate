@@ -1,5 +1,6 @@
 import type { Arch } from '../../game/enemyDefs';
 import { ctx2d, makeCanvas, shade } from './pixels';
+import { creatureHD } from './creaturesHD';
 
 /**
  * Creatures from above, as pixel art. Every body plan is drawn on a 16-unit grid facing right (+x), at the exact
@@ -197,6 +198,8 @@ const cache = new Map<string, HTMLCanvasElement>();
 /** A creature sprite `px` pixels across (plus a 1 px outline), facing right. */
 export function creatureSprite(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss' = 'normal'): HTMLCanvasElement {
   const S = Math.max(3, Math.min(640, Math.round(px)));
+  // Big enough for detail: the high-resolution painter.
+  if (S >= 10) return creatureHD(arch, color, S, frame, kind);
   const key = `${arch}|${color}|${S}|${frame}|${kind}`;
   const hit = cache.get(key);
   if (hit) return hit;

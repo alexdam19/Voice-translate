@@ -22,7 +22,32 @@ const CPB = BLOCK / CH;
 interface Block {
   lod: (HTMLCanvasElement | null)[];
   used: number;
+  /** Baked colours and what's on each tile (with a one-tile border), for the high-resolution versions. */
+  px: Uint8ClampedArray;
+  tb: Uint8Array;
+  ob: Uint8Array;
+  /** High-resolution copies: 2 and 4 pixels per tile. */
+  hd2: HTMLCanvasElement | null;
+  hd4: HTMLCanvasElement | null;
+  hdUsed: number;
 }
+
+/** How much each ground's colour varies pixel to pixel at high resolution. */
+const GRAIN: number[] = [];
+for (let i = 0; i < 24; i++) GRAIN[i] = 0.1;
+GRAIN[TER.SAND] = 0.07;
+GRAIN[TER.DUNE] = 0.06;
+GRAIN[TER.SNOW] = 0.04;
+GRAIN[TER.ICE] = 0.05;
+GRAIN[TER.GRASS] = 0.2;
+GRAIN[TER.MUD] = 0.12;
+GRAIN[TER.ROAD] = 0.12;
+GRAIN[TER.CONCRETE] = 0.09;
+GRAIN[TER.METAL] = 0.06;
+GRAIN[TER.WATER] = 0.05;
+GRAIN[TER.LAVA] = 0.16;
+GRAIN[TER.ASH] = 0.14;
+GRAIN[TER.BASALT] = 0.16;
 
 const TER_RGB: RGB[] = TERRAIN.map((t) => rgb(t.color));
 const OBS_RGB: RGB[] = OBS_COLOR.map((c) => (c ? rgb(c) : [0, 0, 0]));
@@ -82,6 +107,8 @@ export class Terrain2D {
   private img: ImageData | null = null;
   /** Blocks built this frame (building is spread over frames). */
   private built = 0;
+  private builtHD = 0;
+  private hdCount = 0;
 
   constructor(private map: GameMap) {}
 
@@ -102,7 +129,15 @@ export class Terrain2D {
 
   beginFrame(): void {
     this.built = 0;
+    this.builtHD = 0;
     this.tick++;
+    // High-resolution copies are big: keep only the ones in use lately.
+    if (this.hdCount > 48) {
+      for (const b of this.blocks.values()) if ((b.hd2 || b.hd4) && this.tick - b.hdUsed > 90) {
+        b.hd2 = b.hd4 = null;
+        this.hdCount--;
+      }
+    }
     // Forget blocks nobody has drawn for a while.
     if (this.blocks.size > 700) {
       for (const [k, b] of this.blocks) if (this.tick - b.used > 240) this.blocks.delete(k);
@@ -116,7 +151,8 @@ export class Terrain2D {
     if (!b) {
       if (this.built >= budget) return null;
       this.built++;
-      b = { lod: [this.build(bx, by), null, null], used: this.tick };
+      const built = this.build(bx, by);
+      b = { lod: [built.canvas, null, null], used: this.tick, px: built.px, tb: built.tb, ob: built.ob, hd2: null, hd4: null, hdUsed: 0 };
       this.blocks.set(k, b);
     }
     b.used = this.tick;
@@ -178,7 +214,102 @@ export class Terrain2D {
     return Math.min(PAD - 2, Math.round(this.oh[i] * 0.5 * 0.3));
   }
 
-  private build(bx: number, by: number): HTMLCanvasElement {
+  /** The block at 2 or 4 pixels a tile: its colours with fine grain, dithered edges between grounds and bevelled rocks. */
+  getHD(bx: number, by: number, f: 2 | 4, budget: number): HTMLCanvasElement | null {
+    const b = this.blocks.get(this.key(bx, by));
+    if (!b) return null;
+    b.used = this.tick;
+    b.hdUsed = this.tick;
+    const have = f === 4 ? b.hd4 : b.hd2;
+    if (have) return have;
+    if (this.builtHD >= budget) return null;
+    this.builtHD++;
+    const c = this.buildHD(b, bx, by, f);
+    if (f === 4) b.hd4 = c;
+    else b.hd2 = c;
+    this.hdCount++;
+    return c;
+  }
+
+  private buildHD(b: Block, bx: number, by: number, f: number): HTMLCanvasElement {
+    const S = BLOCK * f;
+    const img = new ImageData(S, S);
+    const d = img.data;
+    const px = b.px, tb = b.tb, ob = b.ob;
+    const B2 = BLOCK + 2;
+    const gx0 = bx * BLOCK * f, gy0 = by * BLOCK * f;
+    for (let ty = 0; ty < BLOCK; ty++) {
+      for (let tx = 0; tx < BLOCK; tx++) {
+        const i = (ty * BLOCK + tx) * 4;
+        const r0 = px[i];
+        const j = (ty + 1) * B2 + tx + 1;
+        const t = tb[j], o = ob[j];
+        const amp = o ? 0.16 : GRAIN[t] ?? 0.1;
+        const nb = (dx: number, dy: number): number => {
+          const x = tx + dx, y = ty + dy;
+          return x < 0 || y < 0 || x >= BLOCK || y >= BLOCK ? i : (y * BLOCK + x) * 4;
+        };
+        const iL = nb(-1, 0), iR = nb(1, 0), iU = nb(0, -1), iD = nb(0, 1);
+        const oU = ob[j - B2], oD = ob[j + B2], oL = ob[j - 1], oR = ob[j + 1];
+        for (let sy = 0; sy < f; sy++) {
+          for (let sx = 0; sx < f; sx++) {
+            const gx = gx0 + tx * f + sx, gy = gy0 + ty * f + sy;
+            const hh = hash2(gx, gy, 71);
+            // Within one kind of open ground the colour flows smoothly from tile to tile (bilinear); where
+            // grounds meet, or at rocks and walls, the edge stays crisp and dithers.
+            const ux = (sx + 0.5) / f - 0.5, uy = (sy + 0.5) / f - 0.5;
+            const nx = ux < 0 ? -1 : 1, ny = uy < 0 ? -1 : 1;
+            const jx = j + nx, jy = j + ny * B2, jxy = jy + nx;
+            let r: number, gg: number, bb: number;
+            if (!o && !ob[jx] && !ob[jy] && !ob[jxy] && tb[jx] === t && tb[jy] === t && tb[jxy] === t) {
+              const ix = nb(nx, 0), iy = nb(0, ny), ixy = nb(nx, ny);
+              const wx = Math.abs(ux), wy = Math.abs(uy);
+              const w0 = (1 - wx) * (1 - wy), w1 = wx * (1 - wy), w2 = (1 - wx) * wy, w3 = wx * wy;
+              r = px[i] * w0 + px[ix] * w1 + px[iy] * w2 + px[ixy] * w3;
+              gg = px[i + 1] * w0 + px[ix + 1] * w1 + px[iy + 1] * w2 + px[ixy + 1] * w3;
+              bb = px[i + 2] * w0 + px[ix + 2] * w1 + px[iy + 2] * w2 + px[ixy + 2] * w3;
+            } else {
+              let src = i;
+              if (hh < 0.4) {
+                if (sx === 0 && px[iL] !== r0) src = iL;
+                else if (sx === f - 1 && px[iR] !== r0) src = iR;
+                else if (sy === 0 && px[iU] !== r0) src = iU;
+                else if (sy === f - 1 && px[iD] !== r0) src = iD;
+              }
+              r = px[src];
+              gg = px[src + 1];
+              bb = px[src + 2];
+            }
+            let k = 1 + (hh - 0.5) * amp * 1.6;
+            if (o) {
+              // Rock and roof tops: bevelled edges catch the light or fall into shadow.
+              if (sy === 0 && !oU) k *= 1.22;
+              else if (sy === f - 1 && !oD) k *= 0.7;
+              if (sx === 0 && !oL) k *= 1.1;
+              else if (sx === f - 1 && !oR) k *= 0.84;
+              k *= 0.92 + 0.16 * hash2(gx >> 1, gy >> 1, 5);
+            } else if (t === TER.DUNE || t === TER.SAND) k += Math.sin(gx * 0.45 + gy * 0.18 + Math.sin(gy * 0.02) * 3) * 0.045;
+            else if (t === TER.GRASS && hh > 0.84) k *= 0.7;
+            else if (t === TER.WATER && hh > 0.985) k += 0.35;
+            else if (t === TER.SNOW && hh > 0.992) k += 0.2;
+            else if ((t === TER.DIRT || t === TER.RUST || t === TER.ASH) && hh > 0.97) k *= 0.75;
+            const q = ((ty * f + sy) * S + tx * f + sx) * 4;
+            d[q] = r * k;
+            d[q + 1] = gg * k;
+            d[q + 2] = bb * k;
+            d[q + 3] = 255;
+          }
+        }
+      }
+    }
+    const out = document.createElement('canvas');
+    out.width = S;
+    out.height = S;
+    out.getContext('2d')!.putImageData(img, 0, 0);
+    return out;
+  }
+
+  private build(bx: number, by: number): { canvas: HTMLCanvasElement; px: Uint8ClampedArray; tb: Uint8Array; ob: Uint8Array } {
     const x0 = bx * BLOCK, y0 = by * BLOCK;
     this.read(x0, y0);
     if (!this.img) this.img = new ImageData(BLOCK, BLOCK);
@@ -299,7 +430,15 @@ export class Terrain2D {
     out.width = BLOCK;
     out.height = BLOCK;
     out.getContext('2d')!.putImageData(this.img, 0, 0);
-    return out;
+    // Keep what the high-resolution copies need: the colours, and the tiles with a one-tile border.
+    const B2 = BLOCK + 2;
+    const tb = new Uint8Array(B2 * B2), ob = new Uint8Array(B2 * B2);
+    for (let y = 0; y < B2; y++) for (let x = 0; x < B2; x++) {
+      const i = (y + PAD - 1) * W + x + PAD - 1;
+      tb[y * B2 + x] = ter[i];
+      ob[y * B2 + x] = obs[i] && obs[i] !== OBS.TREE ? 1 : 0;
+    }
+    return { canvas: out, px: new Uint8ClampedArray(d), tb, ob };
   }
 
   /** Writes a pixel with a little extra saturation and contrast (the wasteland should pop, not wash out). */
