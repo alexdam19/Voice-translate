@@ -48,6 +48,8 @@ export interface HullLight {
   r: number;
   color: string;
   k: number;
+  /** Height (m) it sits at (the view lifts it with the hull). */
+  z?: number;
 }
 
 export interface Painted {

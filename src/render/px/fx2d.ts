@@ -29,7 +29,7 @@ interface Particle {
 }
 
 type Trans =
-  | { k: 'flash'; x: number; y: number; r: number; color: string; t: number; max: number }
+  | { k: 'flash'; x: number; y: number; r: number; color: string; t: number; max: number; z: number }
   | { k: 'ring'; x: number; y: number; r: number; color: string; t: number; max: number }
   | { k: 'beam'; x0: number; y0: number; x1: number; y1: number; w: number; color: string; t: number; max: number }
   | { k: 'bolt'; pts: { x: number; y: number }[]; color: string; t: number; max: number }
@@ -50,8 +50,8 @@ export class Fx2D {
     this.ps.push({ x, y, z, vx, vy, vz, life, max: life, size, grow: opts.grow ?? 0, color, add: opts.add ?? false, grav: opts.grav ?? 0, alpha: opts.alpha ?? 1 });
   }
 
-  flash(x: number, y: number, r: number, color: string, life: number): void {
-    this.tr.push({ k: 'flash', x, y, r, color, t: life, max: life });
+  flash(x: number, y: number, r: number, color: string, life: number, z = 0): void {
+    this.tr.push({ k: 'flash', x, y, r, color, t: life, max: life, z });
   }
 
   ring(x: number, y: number, r: number, color: string, life = 0.45): void {
@@ -124,7 +124,7 @@ export class Fx2D {
       for (const p of this.ps) {
         if (p.add !== pass) continue;
         const s = Math.max(1, Math.round(p.size * ppm));
-        const x = Math.round(m.sx(p.x, p.y) - s / 2), y = Math.round(m.sy(p.x, p.y) - p.z * ppm * 0.6 - s / 2);
+        const x = Math.round(m.sx(p.x, p.y) - s / 2), y = Math.round(m.sy(p.x, p.y) - p.z * ppm * 0.4 - s / 2);
         if (x < -s || y < -s || x > w || y > h) continue;
         c.globalAlpha = Math.min(1, (p.life / p.max) * 1.4) * p.alpha;
         c.fillStyle = p.color;
@@ -138,7 +138,7 @@ export class Fx2D {
       switch (t.k) {
         case 'flash': {
           const r = Math.max(2, t.r * ppm * (1.3 - f * 0.4));
-          const x = m.sx(t.x, t.y), y = m.sy(t.x, t.y);
+          const x = m.sx(t.x, t.y), y = m.sy(t.x, t.y) - t.z * ppm * 0.4;
           const col = t.color.length === 7 ? t.color : '#ffcc80';
           const big = glowSprite(col, r * 4);
           c.globalAlpha = Math.min(1, f * 1.2);

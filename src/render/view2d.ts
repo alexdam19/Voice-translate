@@ -16,7 +16,8 @@ import { allySprite, archFor, creatureSprite } from './px/creatures2d';
 import { Fx2D, glowSprite, type ScreenMap } from './px/fx2d';
 import { makeCanvas, mix, shade } from './px/pixels';
 import { BLOCK, Terrain2D } from './px/terrain2d';
-import { paintSmallTank, paintTitan } from './px/titan2d';
+import { paintSmallTank } from './px/titan2d';
+import { paintTitanHD, type PaintedHD, type StackLayer } from './px/titanhd';
 import { hatFor, topPerson } from './px/people';
 import type { Aboard } from '../game/aboard';
 
@@ -104,6 +105,9 @@ class FogLayer {
     this.canvas.getContext('2d')!.putImageData(this.img, 0, 0);
   }
 }
+
+/** How far up the screen one metre of height lifts things (hulls, shots, climbing creatures, particles). */
+export const ZK = 0.4;
 
 export class View2D {
   /** Camera target, distance, heading of "up the screen" (radians), and (kept for the 3D view) pitch and fov. */
@@ -239,14 +243,8 @@ export class View2D {
     const w = window.innerWidth, h = window.innerHeight;
     this.width = w;
     this.height = h;
-    // Two screen pixels to the art pixel (three on very big screens): enough resolution for real detail.
-    let ps = w * h > 3600000 ? 3 : 2;
-    const dpr = window.devicePixelRatio || 1;
-    if (Math.min(w, h) < 560 && dpr > 1) {
-      // Phones: ~300 buffer lines on the short side, each a whole number of device pixels.
-      const k = Math.max(2, Math.round((Math.min(w, h) * dpr) / 360));
-      ps = k / dpr;
-    }
+    // High-resolution pixel art: one art pixel to the screen pixel (two on very big screens).
+    const ps = w * h > 5000000 ? 2 : 1;
     this.pixelScale = ps;
     this.rw = Math.max(64, Math.floor(w / ps));
     this.rh = Math.max(64, Math.floor(h / ps));
@@ -570,7 +568,7 @@ export class View2D {
     const c = this.ctx;
     for (const k of g.pickups) {
       if (!this.near(k.x, k.y, 5)) continue;
-      const bob = Math.round(Math.sin(this.time * 4 + k.id) * 1 - k.z * this.ppm * 0.6);
+      const bob = Math.round(Math.sin(this.time * 4 + k.id) * 1 - k.z * this.ppm * ZK);
       const x = Math.round(this.bx(k.x, k.y)), y = Math.round(this.by(k.x, k.y)) + bob;
       let col = '#bdbdbd', s = 3;
       if (k.kind === 'chest') {
@@ -615,28 +613,51 @@ export class View2D {
       if (!this.near(t.x, t.y, ext)) continue;
       if (t.team === 'enemy' && g.mode === 'world' && !g.isVisible(t.x, t.y)) continue;
       if (t !== g.player && t.dead && t.kind !== 'raider') continue;
-      const p = t.fortress ? paintTitan(t, ppm, g, this.time) : paintSmallTank(t, ppm, this.time);
-      const a = t.rot + this.th;
+      // Titans are painted at quarter-octave zoom steps and scaled the rest of the way (so zooming doesn't repaint them).
+      const q = Math.pow(2, Math.round(Math.log2(ppm) * 4) / 4);
+      const sc = ppm / q;
+      const hd = t.fortress ? paintTitanHD(t, q, g, this.time) : null;
+      const p = hd ?? paintSmallTank(t, ppm, this.time);
+      // A stacked hull turns in half-degree steps (its sides are cached per step).
+      const a = hd ? Math.round((t.rot + this.th) * 360 / Math.PI) * Math.PI / 360 : t.rot + this.th;
       const ca = Math.cos(a), sa = Math.sin(a);
       const sx = Math.round(this.bx(t.x, t.y)), sy = Math.round(this.by(t.x, t.y));
-      // Drop shadow to the south-east (a Titan's is a big one).
-      const sh = this.shadowOf(p.canvas);
-      const off = Math.max(1, Math.round((t.fortress ? 7 : 1.2) * ppm));
-      c.globalAlpha = 0.38;
-      c.setTransform(ca, sa, -sa, ca, sx + off, sy + off);
+      // In the base view the hull lies flat (the deck plans line up with it); out in the world it stands up.
+      const lift = this.deckView > 0 && t === g.player ? 0 : ZK * (hd ? q : ppm);
+      // Drop shadow to the south-east (a Titan's is a big one, and falls further the taller it is).
+      const sh = hd ? hd.shadow : this.shadowOf(p.canvas);
+      const off = Math.max(1, Math.round((t.fortress ? 7 + (lift ? 10 : 0) : 1.2) * ppm));
+      const k = hd ? sc : 1;
+      c.globalAlpha = 0.42;
+      c.setTransform(ca * k, sa * k, -sa * k, ca * k, sx + off, sy + off * 0.8);
       c.drawImage(sh, -p.cx, -p.cy);
       c.globalAlpha = 1;
-      c.setTransform(ca, sa, -sa, ca, sx, sy);
-      c.drawImage(p.canvas, -p.cx, -p.cy);
+      if (hd) {
+        // Stacked: each layer's sides (pre-built for this heading), then its top.
+        hd.layers.forEach((L, li) => {
+          const z1 = L.z1 * lift * sc;
+          if (lift > 0) {
+            const st = this.stackFor(t, li, L, hd, a, lift);
+            c.setTransform(1, 0, 0, 1, 0, 0);
+            c.drawImage(st.canvas, Math.round(sx - st.ox * sc), Math.round(sy - st.oy * sc), Math.round(st.canvas.width * sc), Math.round(st.canvas.height * sc));
+          }
+          c.setTransform(ca * sc, sa * sc, -sa * sc, ca * sc, sx, sy - Math.round(z1));
+          c.drawImage(L.top, -p.cx, -p.cy);
+        });
+      } else {
+        c.setTransform(ca, sa, -sa, ca, sx, sy);
+        c.drawImage(p.canvas, -p.cx, -p.cy);
+      }
       c.setTransform(1, 0, 0, 1, 0, 0);
       // Its lights glow: strips, headlights (and their beams on the ground), tail lights, hot stacks, fires.
       if (p.lights?.length) {
         c.globalCompositeOperation = 'lighter';
+        const lz = this.deckView > 0 && t === g.player ? 0 : ZK * ppm;
         for (const l of p.lights) {
           const w = t.toWorld(l.x, l.y);
           const gs = glowSprite(l.color, l.r * 2 * ppm);
           c.globalAlpha = Math.min(1, l.k);
-          c.drawImage(gs, Math.round(this.bx(w.x, w.y) - gs.width / 2), Math.round(this.by(w.x, w.y) - gs.height / 2));
+          c.drawImage(gs, Math.round(this.bx(w.x, w.y) - gs.width / 2), Math.round(this.by(w.x, w.y) - (l.z ?? 0) * lz - gs.height / 2));
         }
         c.globalAlpha = 1;
         c.globalCompositeOperation = 'source-over';
@@ -665,6 +686,47 @@ export class View2D {
         c.setTransform(1, 0, 0, 1, 0, 0);
       }
     }
+  }
+
+  private stacks = new WeakMap<Tank, { key: string; canvas: HTMLCanvasElement; ox: number; oy: number }[]>();
+
+  /**
+   * A layer's stacked sides, rotated to the hull's heading on a screen-aligned canvas: one slice of its side bands
+   * per screen pixel of height. Rebuilt only when the heading (half-degree steps), the zoom or the hull changes.
+   */
+  private stackFor(t: Tank, li: number, L: StackLayer, hd: PaintedHD, a: number, lift: number): { canvas: HTMLCanvasElement; ox: number; oy: number } {
+    let arr = this.stacks.get(t);
+    if (!arr) {
+      arr = [];
+      this.stacks.set(t, arr);
+    }
+    const key = `${hd.key}|${a.toFixed(4)}|${lift.toFixed(3)}`;
+    let e = arr[li];
+    if (e && e.key === key) return e;
+    const cw = L.sides[0].canvas.width, ch = L.sides[0].canvas.height;
+    const D = Math.ceil(Math.hypot(cw, ch)) + 2;
+    const H = Math.ceil(L.z1 * lift) + 1;
+    const cv = e?.canvas ?? document.createElement('canvas');
+    if (cv.width !== D || cv.height !== D + H) {
+      cv.width = D;
+      cv.height = D + H;
+    }
+    const x = cv.getContext('2d')!;
+    x.imageSmoothingEnabled = false;
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.clearRect(0, 0, cv.width, cv.height);
+    const ca = Math.cos(a), sa = Math.sin(a);
+    const ox = D / 2, oy = D / 2 + H;
+    let bi = 0;
+    for (let z = Math.round(L.z0 * lift); z < Math.round(L.z1 * lift); z++) {
+      const zm = z / lift;
+      while (bi + 1 < L.sides.length && L.sides[bi + 1].z <= zm) bi++;
+      x.setTransform(ca, sa, -sa, ca, ox, oy - z);
+      x.drawImage(L.sides[bi].canvas, -hd.cx, -hd.cy);
+    }
+    e = { key, canvas: cv, ox, oy };
+    arr[li] = e;
+    return e;
   }
 
   /** A black copy of a sprite, for its shadow. */
@@ -847,7 +909,7 @@ export class View2D {
       const frame = Math.floor(e.anim * (e.titan ? 1 : 2)) & 1;
       const variant = e.boss ? 'boss' : e.elite ? 'elite' : 'normal';
       const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', size, frame, variant);
-      const sx = Math.round(this.bx(e.x, e.y)), sy = Math.round(this.by(e.x, e.y) - (e.flying ? Math.max(2, (1.6 + e.z) * ppm * 0.8) : e.z * ppm * 0.6));
+      const sx = Math.round(this.bx(e.x, e.y)), sy = Math.round(this.by(e.x, e.y) - (e.flying ? Math.max(2, (1.6 + e.z) * ppm * ZK * 1.3) : e.z * ppm * ZK));
       // Shadow on the ground (flyers' is further off).
       const so = e.flying ? Math.max(3, size * 0.4) : Math.max(1, size * 0.08);
       c.fillStyle = 'rgba(0,0,0,0.3)';
@@ -890,7 +952,7 @@ export class View2D {
       const vehicle = a.kind === 'buggy' || a.kind === 'minitank' || a.kind === 'jet' || a.kind === 'drone' || a.kind === 'dragon';
       const rot = vehicle ? a.rot : this.headingOf(a.id + 1e9, a.x, a.y, a.rot);
       const img = allySprite(a.kind, size, Math.floor(a.anim));
-      const sx = Math.round(this.bx(a.x, a.y)), sy = Math.round(this.by(a.x, a.y) - a.z * ppm * 0.6);
+      const sx = Math.round(this.bx(a.x, a.y)), sy = Math.round(this.by(a.x, a.y) - a.z * ppm * ZK);
       if (flyer) {
         c.fillStyle = 'rgba(0,0,0,0.25)';
         c.fillRect(Math.round(sx - size * 0.3 + size * 0.5), Math.round(this.by(a.x, a.y) + size * 0.4), Math.round(size * 0.6), Math.round(size * 0.4));
@@ -908,7 +970,7 @@ export class View2D {
     c.globalCompositeOperation = 'lighter';
     for (const p of g.projectiles) {
       if (!this.near(p.x, p.y, 10)) continue;
-      const x = this.bx(p.x, p.y), y = this.by(p.x, p.y) - p.z * ppm * 0.6;
+      const x = this.bx(p.x, p.y), y = this.by(p.x, p.y) - p.z * ppm * ZK;
       const sp = Math.hypot(p.vx, p.vy);
       const len = Math.max(2, Math.min(24, sp * 0.035 * ppm));
       const vx = sp > 0 ? p.vx / sp : 1, vy = sp > 0 ? p.vy / sp : 0;
@@ -1078,10 +1140,10 @@ export class View2D {
       }
       case 'muzzle':
         if (!this.near(e.x, e.y, 30)) return;
-        f.flash(e.x, e.y, 0.35 * e.size + 0.6, '#fff59d', 0.06);
+        f.flash(e.x, e.y, 0.35 * e.size + 0.6, '#fff59d', 0.06, e.z ?? 0);
         for (let i = 0; i < 2 * e.size; i++) {
           const a = e.a + (Math.random() - 0.5) * 0.5, s = 5 + Math.random() * 8;
-          f.emit(e.x, e.y, 1, Math.cos(a) * s, Math.sin(a) * s, 0, 0.1 + Math.random() * 0.08, 0.35, e.color, { add: true });
+          f.emit(e.x, e.y, e.z ?? 1, Math.cos(a) * s, Math.sin(a) * s, 0, 0.1 + Math.random() * 0.08, 0.35, e.color, { add: true });
         }
         break;
       case 'spark':

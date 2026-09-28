@@ -31,7 +31,7 @@ import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates'
 
 export type FxEvent =
   | { t: 'boom'; x: number; y: number; r: number; color: string; big?: boolean }
-  | { t: 'muzzle'; x: number; y: number; a: number; color: string; size: number }
+  | { t: 'muzzle'; x: number; y: number; a: number; color: string; size: number; z?: number }
   | { t: 'spark'; x: number; y: number; color: string; n: number }
   | { t: 'beam'; x0: number; y0: number; x1: number; y1: number; color: string; w: number; life: number }
   | { t: 'bolt'; pts: { x: number; y: number }[]; color: string }

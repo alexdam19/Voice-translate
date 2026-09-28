@@ -187,7 +187,7 @@ export function fire(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponSta
   if (!quiet) g.hooks.sound(d.sound, x, y, d.size === 'heavy' ? 1 : d.size === 'medium' ? 0.7 : 0.45);
   if (t === g.player) g.onFire?.(d.kind, mx, my, a, d.color, s.speed, Math.min(dist, s.range), s.pellets);
   const wkey = m.weapon!.key, wr = m.weapon!.rarity;
-  if (d.kind !== 'sky' && d.kind !== 'meteor' && d.kind !== 'jet') g.fx.push({ t: 'muzzle', x: mx, y: my, a, color: d.color, size: d.size === 'heavy' ? 1.6 : d.size === 'medium' ? 1.1 : 0.7 });
+  if (d.kind !== 'sky' && d.kind !== 'meteor' && d.kind !== 'jet') g.fx.push({ t: 'muzzle', x: mx, y: my, a, color: d.color, size: d.size === 'heavy' ? 1.6 : d.size === 'medium' ? 1.1 : 0.7, z: t.fortress ? t.deckY(0) + 1 : 1 });
   if (d.size === 'heavy' && t.team === 'player' && t === g.player) g.fx.push({ t: 'shake', amt: 0.15 });
   const fx = shotFx(s, d, dmg);
   const o: HitOpts = { srcTank: t.id, lifesteal: s.lifesteal + soul(t), burn: burn || undefined, wkey, wr, fx };
