@@ -17,6 +17,8 @@ import { Fx2D, glowSprite, type ScreenMap } from './px/fx2d';
 import { makeCanvas, mix, shade } from './px/pixels';
 import { BLOCK, Terrain2D } from './px/terrain2d';
 import { paintSmallTank, paintTitan } from './px/titan2d';
+import { hatFor, topPerson } from './px/people';
+import type { Aboard } from '../game/aboard';
 
 /**
  * The world from straight above, as pixel art: the Crater's ground baked a metre to the pixel, your Titan and
@@ -120,6 +122,8 @@ export class View2D {
   /** Which deck of your fortress the base view shows (0 = roof; lower decks are drawn as a cutaway). */
   deckView = 0;
   /** Screen shake is off unless you turn it on in the menu: the view holds steady on the ship. */
+  /** Everyone aboard (the base view draws them on the deck being shown). */
+  aboard: Aboard | null = null;
   shakeOn = readShakeSetting();
   private ctx: CanvasRenderingContext2D;
   private terrain: Terrain2D | null = null;
@@ -730,6 +734,16 @@ export class View2D {
       for (let k = 1; k < d.w * 2; k++) c.fillRect(x0 + 2, y0 + (k * h) / (d.w * 2) - 0.3, Math.max(1, w * 0.25), 0.6);
     }
     c.setTransform(1, 0, 0, 1, 0, 0);
+    // The crew on this deck, from above: at their posts, asleep, walking the Spine.
+    const ab = this.aboard;
+    if (!ab) return;
+    const big = ppm * cell >= 14;
+    for (const pr of ab.people) {
+      if (pr.deck !== deck || pr.ride > 0) continue;
+      const w = t.toWorld(X(pr.y), Y(pr.x));
+      const img = topPerson(pr.color, hatFor(pr.act, pr.color, pr.id), big);
+      c.drawImage(img, Math.round(this.bx(w.x, w.y) - img.width / 2), Math.round(this.by(w.x, w.y) - img.height / 2));
+    }
   }
 
   /** Smoke from the stacks, dust off the crawlers, bow wake in rivers, smoke from fires and broken crawlers. */

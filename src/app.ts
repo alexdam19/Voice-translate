@@ -25,6 +25,8 @@ import { isDocked, mission } from './game/campaign';
 import { Overlay, type VillageState } from './render/overlay';
 import { View2D } from './render/view2d';
 import { Cabin } from './ui/cabin';
+import { Interior } from './ui/interior';
+import { Aboard } from './game/aboard';
 import { ChestUI } from './ui/chest';
 import { CURSORS, initCursors } from './ui/cursors';
 import { hideTip } from './ui/dom';
@@ -64,6 +66,10 @@ export class App {
   villageUI: VillageUI;
   /** The captain's cabin (first person, at the bow). */
   cabin: Cabin;
+  /** Inside the Titan: every deck cut open, with the crew. */
+  interior: Interior;
+  /** Everyone aboard, one by one (for the interior views). */
+  aboard = new Aboard();
   /** Inside the base (the village view). */
   village = false;
   paused = false;
@@ -121,6 +127,7 @@ export class App {
         }
       },
       cabin: () => this.toggleCabin(),
+      interior: () => this.toggleInterior(),
     });
     this.mapCtx = this.hud.minimap.getContext('2d')!;
     this.villageUI = new VillageUI(uiRoot, this);
@@ -135,6 +142,11 @@ export class App {
       sound: (n) => this.sound(n),
     });
     this.hud.onToast = (t, c) => this.cabin.isOpen && this.cabin.message(t, c);
+    this.interior = new Interior(uiRoot, {
+      close: () => this.toggleInterior(false),
+      toast: (t, c) => this.hud.toast(t, c),
+      sound: (n) => this.sound(n),
+    });
     this.panels = new Panels(uiRoot, this);
     this.chest = new ChestUI(uiRoot, this);
     this.title = new Title(uiRoot, this);
@@ -495,8 +507,10 @@ export class App {
     this.input.update();
     this.readDrive();
     if (this.cabin.isOpen && (g.player.dead || g.mode !== 'world' || !g.player.titan)) this.toggleCabin(false);
-    if (!this.uiBlocking && !this.cabin.isOpen) this.handleMouse(dt);
-    if (!this.cabin.isOpen) this.handleZoom();
+    if (this.interior.isOpen && (g.mode !== 'world' || !g.player.titan)) this.toggleInterior(false);
+    const firstPerson = this.cabin.isOpen || this.interior.isOpen;
+    if (!this.uiBlocking && !firstPerson) this.handleMouse(dt);
+    if (!firstPerson) this.handleZoom();
     const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen;
     if (!paused) {
       this.checkWarp();
@@ -524,6 +538,21 @@ export class App {
       this.view.beacon = tgt && tgt.kind !== 'base' ? { x: tgt.x, y: tgt.y, color: '#ffd740' } : null;
     }
     this.view.deckView = this.village ? this.villageUI.deck : 0;
+    if (this.village && g.player.titan) {
+      this.aboard.update(g, paused ? 0 : dt);
+      this.view.aboard = this.aboard;
+    } else this.view.aboard = null;
+    if (this.interior.isOpen) {
+      // Inside: the cutaway of every deck; the world outside keeps going but isn't drawn.
+      this.aboard.update(g, paused ? 0 : dt);
+      this.interior.render(g, this.aboard, paused ? 0 : dt);
+      g.fx.length = 0;
+      this.hud.update(g, dt, this.village);
+      this.panels.tick();
+      this.audio.engine(g.player.speed, !g.player.dead && !paused);
+      this.autosave(dt);
+      return;
+    }
     if (this.cabin.isOpen) {
       // In the cab the world is drawn from the bow; the tactical view and its overlay rest.
       this.cabin.render(g, paused ? 0 : dt);
@@ -654,6 +683,22 @@ export class App {
     this.sound('alarm');
   }
 
+  /** Inside the Titan (the all-decks cutaway), or back out. */
+  toggleInterior(on = !this.interior.isOpen): void {
+    const g = this.game;
+    if (on) {
+      if (!g || g.mode !== 'world' || !g.player.titan) {
+        this.hud.toast('The interior view is for a Titan Crawler in the open world.', '#ff8a80');
+        return;
+      }
+      if (this.cabin.isOpen) this.cabin.close();
+      this.panels.close();
+      this.cancelArmed();
+      this.interior.open(g);
+    } else this.interior.close();
+    this.sound('ui');
+  }
+
   /** Into the captain's cabin at the bow (first person), or back out to the tactical view. */
   toggleCabin(on = !this.cabin.isOpen): void {
     const g = this.game;
@@ -663,6 +708,7 @@ export class App {
         return;
       }
       if (this.village) this.setVillage(false);
+      if (this.interior.isOpen) this.interior.close();
       this.panels.close();
       this.cancelArmed();
       this.cabin.open();
@@ -684,7 +730,7 @@ export class App {
     const i = this.input;
     const di = g.driveInput;
     const joy = this.hud.joy;
-    joy.visible = this.touch && !this.village && !this.uiBlocking && !g.player.dead && !this.cabin.isOpen;
+    joy.visible = this.touch && !this.village && !this.uiBlocking && !g.player.dead && !this.cabin.isOpen && !this.interior.isOpen;
     if (this.uiBlocking || g.player.dead) {
       di.active = false;
       return;
@@ -738,6 +784,7 @@ export class App {
     if (i.consume('Escape')) {
       if (this.sendMode) this.sendMode = false;
       else if (this.cabin.isOpen && !this.panels.isOpen && !this.chest.isOpen) this.toggleCabin(false);
+      else if (this.interior.isOpen && !this.panels.isOpen && !this.chest.isOpen) this.toggleInterior(false);
       else if (this.chest.isOpen) this.chest.escape();
       else if (this.panels.isOpen) this.panels.close();
       else if (this.hud.armed >= 0) this.cancelArmed();
@@ -754,6 +801,7 @@ export class App {
     }
     if (i.consume('KeyT')) this.toggleCamp();
     if (i.consume('KeyF')) this.toggleCabin();
+    if (i.consume('KeyG')) this.toggleInterior();
     if (i.consume('KeyU') && this.game && isDocked(this.game)) this.panels.toggle('shipyard');
     const panelKeys: [string, string][] = [
       ['KeyC', 'cards'], ['KeyV', 'arsenal'], ['KeyK', 'crew'], ['KeyL', 'progress'], ['KeyI', 'cargo'], ['KeyM', 'map'], ['KeyH', 'help'], ['F1', 'help'], ['KeyN', 'blueprint'], ['KeyY', 'bridge'],

@@ -82,7 +82,8 @@ export function serialize(g: Game): SaveData {
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
     objective: g.objective, counters: g.objectiveCounters, runeBuff: g.runeBuff, nextUid: peekUid(), savedAt: Date.now(),
     commander: { ...g.commander }, cards: g.cards, deck: g.deck, relics: g.relics, packs: g.packs, energy: g.energy,
-    builds: g.builds.map(({ modId, ...b }) => ({ ...b, mod: idx(modId) })).filter((b) => b.mod >= 0),
+    // Work orders don't survive a reload, so their jobs go back to being ordinary builders' jobs.
+    builds: g.builds.map(({ modId, order: _o, ...b }) => ({ ...b, mod: idx(modId) })).filter((b) => b.mod >= 0),
     squads,
     tracked: !tr ? null : tr.kind === 'upgrade' ? { kind: 'upgrade', mod: idx(tr.modId) } : tr,
     drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n, campaign: g.campaign, life: g.life, titan: g.titan, home: g.deploy.home,

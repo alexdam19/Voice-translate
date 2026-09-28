@@ -25,6 +25,7 @@ import { FUEL_MAX, newTitanState, updateTitan, WATER_MAX } from './titan';
 import { updateCamp } from './camp';
 import { updateHelm } from './helm';
 import { updateTeams } from './crewops';
+import { updateOrders } from './workorders';
 import { stormSpeed, updateWeather } from './weather';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
 
@@ -90,6 +91,7 @@ function respawn(g: Game): void {
   g.titan = t;
   g.reserves += g.teams.reduce((a, k) => a + k.reserve, 0);
   g.teams = [];
+  g.orders = [];
   p.detached = 0;
   p.titanMods = { power: 1, speed: 1, steering: 1, weapons: 1, sensors: 1, pull: 0 };
   p.recalc();
@@ -194,6 +196,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateTitan(g, dt);
       updateHelm(g, dt);
       updateTeams(g, dt);
+      updateOrders(g, dt);
     }
     updateCamp(g, dt);
     updateWeather(g, dt);

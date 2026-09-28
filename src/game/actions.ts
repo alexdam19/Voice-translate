@@ -31,7 +31,7 @@ const bump = (g: Game, k: string): void => {
 export const countOf = (g: Game, key: string): number => g.player.modules.filter((m) => m.key === key).length;
 
 /** Why a building can't be bought right now (ignores cost), or null. */
-export function buildBlock(g: Game, key: string): string | null {
+export function buildBlock(g: Game, key: string, crew = false): string | null {
   const d = MODULES[key];
   if (!d) return 'Unknown building.';
   if (d.required) return 'You only get one Command Center.';
@@ -43,7 +43,8 @@ export function buildBlock(g: Game, key: string): string | null {
     if (lim === 0 || (!d.unique && d.limit && lim < d.limit[d.limit.length - 1])) return `Upgrade the Command Center to build ${lim === 0 ? 'this' : 'more'}.`;
     return lim === 1 ? 'You can only have one.' : `You have the most allowed (${lim}).`;
   }
-  if (g.freeBuilders() <= 0) return 'All builders are busy.';
+  // A work order brings its own crew.
+  if (!crew && g.freeBuilders() <= 0) return 'All builders are busy.';
   return null;
 }
 
@@ -54,8 +55,8 @@ function footprintReserved(key: string, cx: number, cy: number, deck: number): b
 }
 
 /** Buys a building and places it; a builder puts it together over time. */
-export function placeBuilding(g: Game, key: string, cx: number, cy: number, deck = defaultDeck(MODULES[key] ?? MODULES.armor)): Result {
-  const block = buildBlock(g, key);
+export function placeBuilding(g: Game, key: string, cx: number, cy: number, deck = defaultDeck(MODULES[key] ?? MODULES.armor), order = 0): Result {
+  const block = buildBlock(g, key, order > 0);
   if (block) return NO(block);
   const d = MODULES[key];
   if (!deckAllows(d, deck, g.player.stories)) return NO(deckKind(d) === 'roof' ? 'That goes on the roof.' : 'That goes inside, on one of the decks below the roof.');
@@ -67,7 +68,7 @@ export function placeBuilding(g: Game, key: string, cx: number, cy: number, deck
   m.built = false;
   m.aim = g.player.rot;
   g.player.version++;
-  g.builds.push({ modId: m.id, kind: 'build', to: 1, t: 0, total: buildTime(d), cost: { ...d.cost } });
+  g.builds.push({ modId: m.id, kind: 'build', to: 1, t: 0, total: buildTime(d), cost: { ...d.cost }, ...(order ? { order } : {}) });
   if (g.tracked?.kind === 'build' && g.tracked.key === key) g.tracked = null;
   g.applyCrew();
   bump(g, 'placed');
@@ -75,7 +76,7 @@ export function placeBuilding(g: Game, key: string, cx: number, cy: number, deck
 }
 
 /** Why a building can't be upgraded right now (ignores cost), or null. */
-export function upgradeBlock(g: Game, modId: number): string | null {
+export function upgradeBlock(g: Game, modId: number, crew = false): string | null {
   const m = g.player.moduleById(modId);
   if (!m) return 'Nothing there.';
   const d = MODULES[m.key];
@@ -88,7 +89,7 @@ export function upgradeBlock(g: Game, modId: number): string | null {
     // Big hull changes need the Mothership's shipyard (and its parts).
     if (m.lvl >= 2) return `Hull expansions past level 2 are built at the Mothership: dock there and open the SHIPYARD (${partsForCC(m.lvl + 1)} part${partsForCC(m.lvl + 1) > 1 ? 's' : ''} installed needed).`;
   } else if (m.lvl >= g.player.stats.cc) return `Upgrade the Command Center to level ${m.lvl + 1} first.`;
-  if (g.freeBuilders() <= 0) return 'All builders are busy.';
+  if (!crew && g.freeBuilders() <= 0) return 'All builders are busy.';
   return null;
 }
 
@@ -101,14 +102,14 @@ export function upgradeCostOf(g: Game, modId: number): Cost {
   return disc > 0 ? scaleCost(c, 1 - disc) : c;
 }
 
-export function upgradeBuilding(g: Game, modId: number): Result {
-  const block = upgradeBlock(g, modId);
+export function upgradeBuilding(g: Game, modId: number, order = 0): Result {
+  const block = upgradeBlock(g, modId, order > 0);
   if (block) return NO(block);
   const m = g.player.moduleById(modId)!;
   const d = MODULES[m.key];
   const cost = upgradeCostOf(g, modId);
   if (!g.pay(cost)) return NO('Not enough materials. Tap TRACK to see where to find them.');
-  g.builds.push({ modId, kind: 'upgrade', to: m.lvl + 1, t: 0, total: levelTime(d, m.lvl), cost });
+  g.builds.push({ modId, kind: 'upgrade', to: m.lvl + 1, t: 0, total: levelTime(d, m.lvl), cost, ...(order ? { order } : {}) });
   if (g.tracked?.kind === 'upgrade' && g.tracked.modId === modId) g.tracked = null;
   bump(g, 'upgrade_started');
   return OK(`Upgrading ${d.name} to level ${m.lvl + 1}...`);

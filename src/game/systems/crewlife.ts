@@ -57,7 +57,7 @@ export function updateCrewLife(g: Game, dt: number): void {
   if (p.dead || g.mode !== 'world') return;
   const l = g.life;
   // Builders work in crews of two teams.
-  const want = g.builds.length * 2 * CREW_SCALE;
+  const want = g.builds.filter((b) => !b.order).length * 2 * CREW_SCALE;
   if (p.buildCrew !== want) {
     p.buildCrew = want;
     p.recalc();

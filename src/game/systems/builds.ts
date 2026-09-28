@@ -16,7 +16,7 @@ export function updateBuilds(g: Game, dt: number): void {
   // Builders work in crews of two: short-handed, jobs go slower. Camped, they go twice as fast.
   const p = g.player;
   const crew = p.buildCrew > 0 ? Math.max(0.25, p.builderStaff / p.buildCrew) : 1;
-  dt *= crew * p.efficiency * campBonus(g).build;
+  const k = p.efficiency * campBonus(g).build;
   for (let i = g.builds.length - 1; i >= 0; i--) {
     const job = g.builds[i];
     const m = g.player.moduleById(job.modId);
@@ -24,7 +24,8 @@ export function updateBuilds(g: Game, dt: number): void {
       g.builds.splice(i, 1);
       continue;
     }
-    job.t += dt;
+    // A work order's crew works at full strength; the builders at however many turned up.
+    job.t += dt * k * (job.order ? 1 : crew);
     if (job.t < job.total) continue;
     g.builds.splice(i, 1);
     completeJob(g, job);

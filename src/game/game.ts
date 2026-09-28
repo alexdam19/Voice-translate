@@ -25,6 +25,7 @@ import { newStorm, type Storm } from './systems/weather';
 import { newDeploy, type Deploy } from './systems/camp';
 import { newTitanState, type TitanState } from './systems/titan';
 import type { RepairTeam } from './systems/crewops';
+import type { WorkOrder } from './systems/workorders';
 import { Tank } from './tank';
 import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates';
 
@@ -53,6 +54,8 @@ export interface BuildJob {
   t: number;
   total: number;
   cost: Record<string, number>;
+  /** A work order's crew is doing it (it doesn't take up one of your builders). */
+  order?: number;
 }
 
 /** What the objective tracker is following. */
@@ -195,6 +198,8 @@ export class Game {
   reserves = 0;
   /** Repair teams out on jobs. */
   teams: RepairTeam[] = [];
+  /** Work orders being carried out. */
+  orders: WorkOrder[] = [];
   /** What the officers on the stations add up to, whether shifts change on their own, and the officers' meal tab. */
   statMods = noStationMods();
   autoRotate = true;
@@ -336,7 +341,7 @@ export class Game {
   }
 
   freeBuilders(): number {
-    return this.builders() - this.builds.length;
+    return this.builders() - this.builds.filter((b) => !b.order).length;
   }
 
   relicSlots(): number {

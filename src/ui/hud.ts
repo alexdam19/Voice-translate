@@ -63,6 +63,8 @@ export interface HudActions {
   helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp'): void;
   /** Into the captain's cabin (first person). */
   cabin(): void;
+  /** The all-decks interior cutaway. */
+  interior(): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -81,6 +83,7 @@ const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls
   { key: 'base', label: 'BASE', sub: 'B', cls: 'big base' },
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
   { key: 'cabin', label: 'CABIN', sub: 'F', cls: 'cabin' },
+  { key: 'inside', label: 'INSIDE', sub: 'G', cls: 'inside' },
   { key: 'bridge', label: 'VITALS', sub: 'Y', cls: 'bridge' },
   { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
   { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
@@ -212,6 +215,7 @@ export class Hud {
         if (m.key === 'base') act.village(!this.village);
         else if (m.key === 'camp') act.camp();
         else if (m.key === 'cabin') act.cabin();
+        else if (m.key === 'inside') act.interior();
         else act.openPanel(m.key);
       });
       this.menu.appendChild(b);
@@ -522,7 +526,7 @@ export class Hud {
       b.style.display = !f || c.level >= f.level || (m.key === 'arsenal' && g.armory.length > 0) ? '' : 'none';
       b.classList.toggle('on', (m.key === 'base' && village) || (m.key === 'camp' && g.deploy.state !== 'mobile'));
       if (m.key === 'shipyard') b.style.display = g.mode === 'world' && isDocked(g) ? '' : 'none';
-      if (m.key === 'bridge' || m.key === 'cabin') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
+      if (m.key === 'bridge' || m.key === 'cabin' || m.key === 'inside') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
       if (m.key === 'camp') {
         b.style.display = g.mode === 'world' ? '' : 'none';
         setHTML(b.querySelector('b')!, g.deploy.state === 'up' ? 'PACK UP' : g.deploy.state === 'deploying' ? 'DEPLOYING' : g.deploy.state === 'packing' ? 'PACKING' : 'CAMP');
