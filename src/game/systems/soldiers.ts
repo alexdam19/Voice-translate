@@ -1,4 +1,4 @@
-import { MODULES, type NestKind } from '../defs';
+import { CREW_SCALE, MODULES, type NestKind } from '../defs';
 import type { Enemy } from '../entities';
 import type { Game, Target } from '../game';
 import type { ModuleInst, Tank } from '../tank';
@@ -98,8 +98,8 @@ export function updateSoldiers(g: Game, t: Tank, dt: number): void {
       m.cd = 0.3;
       continue;
     }
-    // Soldiers take turns, so a full nest fires twice as often.
-    m.cd = n.cd / crew;
+    // Soldiers take turns, so a full nest fires twice as often (a Titan's nests hold teams, not pairs).
+    m.cd = n.cd / (t.kind === 'main' ? Math.max(0.25, crew / CREW_SCALE) : crew);
     const dmg = n.dmg * nestMult(t, m) * (t.team === 'player' ? 1 : t.dmgScale);
     const a = Math.atan2(tgt.y - at.y, tgt.x - at.x);
     m.aim = a;

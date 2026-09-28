@@ -325,7 +325,7 @@ export function trade(g: Game, i: number): Result {
   return OK('Traded.');
 }
 
-export const TROOP_COST = 12;
+export const TROOP_COST = 3;
 
 /** Hire troops to fill empty bunks, straight away. */
 export function hireTroops(g: Game, n: number): Result {

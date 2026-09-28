@@ -38,6 +38,8 @@ interface PanelDef {
   render: (ctx: PanelCtx) => void;
   wide?: boolean;
   cls?: string;
+  /** Live: the game keeps running and the body redraws twice a second. */
+  live?: boolean;
 }
 
 export class Panels {
@@ -83,8 +85,8 @@ export class Panels {
         tabs: [['parts', 'Parts'], ['refit', 'Rebuild'], ['trade', 'Trade'], ['hire', 'Hire']], render: renderShipyard, wide: true, cls: 'shipyard',
       },
       bridge: {
-        title: 'BRIDGE STATUS', sub: 'The Titan Crawler at a glance: hull and armour, crawlers, systems, supplies, fires and flooding, and who is aboard.',
-        render: renderBridge, wide: true, cls: 'bridge',
+        title: 'SHIP VITALS', sub: 'Every number the Titan has, live (the game keeps running). SEND TEAM puts six people on a problem; STABILIZE sends teams to the worst of it.',
+        render: renderBridge, wide: true, cls: 'bridge vitals', live: true,
       },
       drive: { title: 'DRIVE TRAIN', sub: 'Different treads for different ground. Craft them at a Workshop (CARGO > Workshop).', render: (c) => this.renderDrive(c), wide: true },
       cargo: { title: 'CARGO', sub: 'Your hold, and the Refinery and Workshop where ore becomes parts.', tabs: [['hold', 'Hold'], ['workshop', 'Refine & Craft']], render: renderCargo, wide: true },
@@ -109,7 +111,7 @@ export class Panels {
     if (!d || !this.app.game) return;
     this.current = name;
     this.tab = tab ?? (this.current === name && this.tab && d.tabs?.some((t) => t[0] === this.tab) ? this.tab : d.tabs?.[0][0] ?? '');
-    this.pauses = this.app.game.mode === 'world';
+    this.pauses = this.app.game.mode === 'world' && !d.live;
     this.root.style.display = 'flex';
     this.render();
     this.app.sound('ui');
@@ -123,8 +125,28 @@ export class Panels {
     this.app.save();
   }
 
+  private liveAt = 0;
+
+  /** Live panels redraw their body twice a second (the others re-render on actions; the game is paused under them). */
   tick(): void {
-    /* panels re-render on actions; the game is paused while they're open */
+    if (!this.current || !this.defs[this.current].live || !this.body) return;
+    const now = performance.now();
+    if (now - this.liveAt < 500) return;
+    this.liveAt = now;
+    this.refreshBody();
+  }
+
+  private body: HTMLElement | null = null;
+  private ctx: PanelCtx | null = null;
+
+  /** Redraws just the body, keeping the scroll position. */
+  private refreshBody(): void {
+    const b = this.body, c = this.ctx;
+    if (!b || !c || !this.current) return;
+    const top = b.scrollTop;
+    b.innerHTML = '';
+    this.defs[this.current].render(c);
+    b.scrollTop = top;
   }
 
   render(): void {
@@ -168,9 +190,12 @@ export class Panels {
         this.tab = t;
         this.render();
       },
-      rerender: () => this.render(),
+      rerender: () => (d.live ? this.refreshBody() : this.render()),
       msg: (text, ok = true) => this.msg(text, ok),
     };
+    this.body = body;
+    this.ctx = ctx;
+    this.liveAt = performance.now();
     d.render(ctx);
   }
 

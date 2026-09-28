@@ -20,7 +20,7 @@ import { loadTitanState, type TitanState } from './systems/titan';
 export const SAVE_KEY = 'ironcrawl3d-save-v1';
 
 export interface SaveData {
-  v: 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  v: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
   seed: number;
   time: number;
   tank: TankSave;
@@ -66,6 +66,8 @@ export interface SaveData {
   home?: { x: number; y: number } | null;
   /* v9: The Crater (a new 140 km world) and officer stations */
   autoRotate?: boolean;
+  /* v10: a Titan's worth of crew (4x), the Barracks reserve */
+  reserves?: number;
 }
 
 export function serialize(g: Game): SaveData {
@@ -74,7 +76,7 @@ export function serialize(g: Game): SaveData {
   for (const [k, s] of Object.entries(g.squads)) if (s) squads[k as SquadType] = { order: s.order, gx: s.gx, gy: s.gy };
   const tr = g.tracked;
   return {
-    v: 9, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
+    v: 10, reserves: g.reserves, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
     armory: g.armory, tech: [...g.tech], stats: g.stats, explored: '', fog: g.fog.serialize(),
     ...featureState(g),
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
@@ -223,6 +225,12 @@ export function deserialize(d: SaveData): Game {
   g.titan = loadTitanState(d.titan);
   if (d.home && d.v >= 9) g.deploy.home = d.home;
   g.autoRotate = d.autoRotate ?? true;
+  // v10 crews are four times the size: older saves come aboard with every bunk filled.
+  if (d.v < 10) {
+    g.player.troops = g.player.stats.bunks;
+    g.player.recalc();
+  }
+  g.reserves = Math.max(0, d.reserves ?? 0);
   g.statMods = stationMods(g);
   g.gen.focus(g.player.x, g.player.y);
   return g;
@@ -255,7 +263,7 @@ export function loadSave(): SaveData | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw) as SaveData;
-    return d && d.v >= 3 && d.v <= 7 ? d : null;
+    return d && d.v >= 3 && d.v <= 10 ? d : null;
   } catch {
     return null;
   }

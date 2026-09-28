@@ -1,3 +1,4 @@
+import { CREW_SCALE } from '../defs';
 import type { Game } from '../game';
 import { comfort } from './titan';
 
@@ -42,7 +43,7 @@ export function shift(g: Game): Shift {
   const mess = p.modules.some((m) => m.key === 'mess_hall' && m.crew > 0);
   return {
     people, onDuty, resting: people - onDuty, needRest: Math.ceil(onDuty / 3),
-    eatPerMin: people * RATION_RATE * 60 * (mess ? 0.7 : 1) * g.statMods.rations,
+    eatPerMin: (people / CREW_SCALE) * RATION_RATE * 60 * (mess ? 0.7 : 1) * g.statMods.rations,
     growPerMin: (p.stats.food * 60) / 25,
   };
 }
@@ -55,8 +56,8 @@ export function updateCrewLife(g: Game, dt: number): void {
   const p = g.player;
   if (p.dead || g.mode !== 'world') return;
   const l = g.life;
-  // Builders work in crews of two.
-  const want = g.builds.length * 2;
+  // Builders work in crews of two teams.
+  const want = g.builds.length * 2 * CREW_SCALE;
   if (p.buildCrew !== want) {
     p.buildCrew = want;
     p.recalc();

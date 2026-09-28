@@ -127,7 +127,7 @@ add(M({ key: 'nest_flame', name: 'Flamer Nest', w: 2, h: 2, cat: 'army', unlock:
 add(M({ key: 'radar', name: 'Radar Mast', w: 1, h: 1, cat: 'defense', unique: true, unlock: 5, cost: { copper_wire: 8, circuit: 2 }, height: 1.6, vision: 8, radar: 50, use: 1, deck: 'roof', desc: '+8 vision. Shows enemies within 50 units on the minimap.' }));
 
 /* Army & squads */
-add(M({ key: 'barracks', name: 'Barracks', w: 3, h: 4, cat: 'army', unlock: 3, cost: { scrap: 40, iron_plate: 10 }, height: 0.9, crew: 5, squad: 'marines', limit: [1, 1, 2, 2, 2, 3], bunks: 8, desc: 'Bunks 5 officers and 8 troops (+4 per level), and trains a Marine squad that fights beside you. Upgrade it to upgrade the squad.' }));
+add(M({ key: 'barracks', name: 'Barracks', w: 3, h: 4, cat: 'army', unlock: 3, cost: { scrap: 40, iron_plate: 10 }, height: 0.9, crew: 5, squad: 'marines', limit: [1, 1, 2, 2, 2, 3], bunks: 8, desc: 'Bunks 5 officers and 32 troops (+16 per level), keeps a RESERVE of 16 more per level (they step in when someone falls and make up repair teams and work crews), and trains a Marine squad. Upgrade it to upgrade the squad.' }));
 add(M({ key: 'garage', name: 'Garage', w: 4, h: 4, cat: 'army', unique: true, unlock: 5, garage: true, squad: 'buggies', cost: { iron_plate: 30, circuit: 6, scrap: 60 }, height: 1.1, desc: 'Builds Scout Buggies that scavenge ahead and bring loot back, and the Outrider mini tank. Upgrade it to upgrade the buggies.' }));
 add(M({ key: 'drone_bay', name: 'Drone Bay', w: 3, h: 3, cat: 'army', unique: true, unlock: 9, squad: 'drones', cost: { circuit: 10, copper_wire: 16, iron_plate: 10 }, height: 0.7, use: 1, deck: 'roof', desc: 'Launches Guard Drones: fast laser flyers, great at guarding an area.' }));
 add(M({ key: 'jet_hangar', name: 'Jet Hangar', w: 3, h: 4, cat: 'army', unique: true, unlock: 14, squad: 'fighters', cost: { titanium_alloy: 12, circuit: 10, iron_plate: 16 }, height: 0.7, use: 1, deck: 'roof', desc: 'Keeps a wing of mini fighter jets in the air that strafe and bomb anything near you.' }));
@@ -135,7 +135,7 @@ add(M({ key: 'tank_bay', name: 'Tank Bay', w: 4, h: 4, cat: 'army', unique: true
 add(M({ key: 'mech_bay', name: 'Mech Bay', w: 4, h: 4, cat: 'army', unique: true, unlock: 18, squad: 'walker', cost: { titanium_alloy: 30, uranium_rod: 6, circuit: 16 }, height: 1.2, desc: 'Builds a Walker Mech: a slow giant with a cannon and missile racks.' }));
 
 /* Crew */
-add(M({ key: 'quarters', name: 'Living Quarters', w: 2, h: 2, cat: 'crew', cost: { scrap: 25, iron_plate: 4 }, height: 0.9, crew: 3, limit: [3, 4, 5, 6, 7, 8], bunks: 8, desc: 'Bunks for 3 officers (+1 per level) and 8 crew (+4 per level): enough people to run every station in shifts, with some always asleep. Injured crew recover faster.' }));
+add(M({ key: 'quarters', name: 'Living Quarters', w: 2, h: 2, cat: 'crew', cost: { scrap: 25, iron_plate: 4 }, height: 0.9, crew: 3, limit: [3, 4, 5, 6, 7, 8], bunks: 8, desc: 'Bunks for 3 officers (+1 per level) and 32 crew (+16 per level): enough people to run every station in shifts, with some always asleep. Injured crew recover faster.' }));
 add(M({ key: 'medbay', name: 'Medbay', w: 2, h: 2, cat: 'crew', unlock: 4, cost: { iron_plate: 8, circuit: 3, biomass: 6 }, height: 0.8, medbay: true, use: 1, limit: [1, 1, 1, 2, 2, 2], desc: 'Injured crew recover 3x faster.' }));
 add(M({ key: 'hydroponics', name: 'Hydroponics', w: 2, h: 2, cat: 'crew', cost: { scrap: 20, iron_plate: 4, biomass: 8 }, height: 0.6, food: 1, use: 1, limit: [1, 2, 2, 3, 3, 4], desc: 'Grows a ration every 25 seconds (faster per level).' }));
 add(M({ key: 'mess_hall', name: 'Mess Hall', w: 3, h: 3, cat: 'crew', unique: true, unlock: 8, cost: { scrap: 30, iron_plate: 8, biomass: 6 }, height: 0.8, mess: true, food: 1, crew: 1, bunks: 3, desc: 'Injured crew recover 50% faster. Cooks rations and bunks 1.' }));
@@ -282,9 +282,15 @@ export const STAFF: Record<string, [Dept, number]> = {
   garage: ['hangar', 2], drone_bay: ['hangar', 1], jet_hangar: ['hangar', 2], mech_bay: ['hangar', 2], tank_bay: ['hangar', 2], barracks: ['command', 1],
 };
 
-/** Troops it takes to man a weapon of this size: one each, two for the heavies. */
+/**
+ * A Titan carries a small town: every post in the tables above is a team of this many people, every bunk sleeps
+ * this many. (Rations, water, repair and pumping rates are per team, so the balance is the same, just busier.)
+ */
+export const CREW_SCALE = 4;
+
+/** Troops it takes to man a weapon of this size: a team each, two teams on the heavies. */
 export function crewNeed(size: WeaponSize): number {
-  return size === 'heavy' ? 2 : 1;
+  return (size === 'heavy' ? 2 : 1) * CREW_SCALE;
 }
 
 /**

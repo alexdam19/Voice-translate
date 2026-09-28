@@ -1380,3 +1380,52 @@ html.touch .joy { display: block; }
 .cabin { position: fixed; inset: 0; z-index: 15; display: none; background: #000; overflow: hidden; pointer-events: auto; touch-action: none; }
 .cabin canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
 .menu-btn.cabin b { color: #ffb030; }
+
+/* ---------------- Ship vitals (live) ---------------- */
+.panel.vitals .panel-body { background: #07090b; }
+.vt-kpis { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin-bottom: 8px; }
+.vt-kpi { background: #0d1014; border: 1px solid #243038; border-top: 2px solid #3a4a56; padding: 5px 6px; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.vt-kpi small { font-family: var(--px); font-size: 9px; color: #6f8494; letter-spacing: 1px; }
+.vt-kpi b { font-family: var(--px); font-size: 17px; white-space: nowrap; font-variant-numeric: tabular-nums; text-shadow: 0 0 6px currentColor; }
+.vt-act { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.vt-stab { font-family: var(--px); font-size: 13px; padding: 7px 14px; background: #1b3a1e; color: #b2ff59; border: 2px solid #4caf50; cursor: pointer; }
+.vt-stab.hot { background: #4a1208; color: #ffd740; border-color: #ff6d00; animation: vtpulse 1s infinite alternate; }
+@keyframes vtpulse { from { box-shadow: 0 0 0 rgba(255, 109, 0, 0); } to { box-shadow: 0 0 12px rgba(255, 109, 0, 0.8); } }
+.vt-actinfo { font-family: var(--px); font-size: 11px; color: #8fa6ba; }
+.vt-actinfo b { color: #e6edf2; }
+.vt-actinfo small { color: #ff8a80; }
+.vt-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.vt-card { background: #0c0f13; border: 1px solid #243038; padding: 6px 8px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.vt-t { font-family: var(--px); font-size: 12px; color: #9fd0e8; letter-spacing: 1px; border-bottom: 1px solid #1e2830; padding-bottom: 3px; margin-bottom: 2px; }
+.vt-t small { float: right; font-size: 9px; color: #6f8494; margin-top: 2px; }
+.vt-row { display: grid; grid-template-columns: 104px 1fr auto 86px; gap: 6px; align-items: center; font-size: 11px; min-height: 18px; }
+.vt-row > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #b0bec5; }
+.vt-row b { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; font-weight: normal; color: #e0e6ea; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vt-bar { height: 7px; background: #05070a; border: 1px solid #243038; }
+.vt-bar i { display: block; height: 100%; }
+.vt-send { font-family: var(--px); font-size: 9px; padding: 2px 4px; background: #3a2408; color: #ffd740; border: 1px solid #ff9100; cursor: pointer; white-space: nowrap; }
+.vt-send:hover { background: #ff9100; color: #1a0e00; }
+.vt-team { font-family: var(--px); font-size: 8.5px; color: #b2ff59; white-space: nowrap; overflow: hidden; }
+.vt-team.back { color: #78909c; }
+.vt-ok { font-family: var(--px); font-size: 9px; color: #2e5a34; text-align: center; }
+.vt-kv { width: 100%; border-collapse: collapse; font-size: 11px; }
+.vt-kv td { padding: 1px 0; border-bottom: 1px dotted #1a2229; }
+.vt-kv td:first-child { color: #8fa6ba; white-space: pre; }
+.vt-kv td:last-child { text-align: right; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; color: #e0e6ea; font-variant-numeric: tabular-nums; }
+.vt-comp { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 2px; font-size: 10px; }
+.vtc-h { font-family: var(--px); font-size: 8px; color: #6f8494; text-align: center; }
+.vtc-d { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #b0bec5; display: flex; align-items: center; gap: 4px; }
+.vtc-d i { width: 4px; height: 12px; display: inline-block; }
+.vtc { background: #05070a; border: 1px solid #1e2830; text-align: center; color: #2e3a44; font-family: ui-monospace, Menlo, Consolas, monospace; min-height: 16px; }
+.vtc.fire { background: #3a1406; border-color: #ff6d00; color: #ffab40; cursor: pointer; }
+.vtc.flood { background: #06243a; border-color: #40c4ff; color: #80d8ff; cursor: pointer; }
+.vtc.team { outline: 1px solid #b2ff59; cursor: default; }
+.vt-depts { width: 100%; border-collapse: collapse; font-size: 10.5px; margin-top: 4px; }
+.vt-depts th { font-family: var(--px); font-size: 8px; color: #6f8494; text-align: left; }
+.vt-depts td { padding: 1px 2px; border-bottom: 1px dotted #1a2229; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.vt-depts td:nth-child(2) { font-family: inherit; color: #b0bec5; }
+.vt-trow { display: grid; grid-template-columns: 1fr 70px; gap: 6px; align-items: center; font-size: 11px; }
+.vt-trow small { display: block; color: #6f8494; font-size: 9.5px; }
+.vt-dim { color: #6f8494; font-size: 11px; }
+@media (max-width: 1100px) { .vt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .vt-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .vt-grid { grid-template-columns: 1fr; } .vt-kpi b { font-size: 13px; } .vt-row { grid-template-columns: 84px 1fr auto 76px; } }

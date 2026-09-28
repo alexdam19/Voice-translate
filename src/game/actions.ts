@@ -6,7 +6,7 @@ import { canTakeNode, treeNode, WEAPONS, type WeaponItem } from '../shared/weapo
 import { nextRarity, scrapValue, STAR_TIME, starBlock, starCost } from './arsenal';
 import { CARDS, MAX_CARD_LEVEL, rollPack, shardsNeeded, upgradeCost, type PackKind } from './cards';
 import { hireCost, pickPerk } from './crew';
-import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, DECK_OPEN_CC, deckAllows, deckKind, deckName, defaultDeck, titanReserved, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
+import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, CREW_SCALE, DECK_OPEN_CC, deckAllows, deckKind, deckName, defaultDeck, titanReserved, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
 import type { Reward } from './entities';
 import type { Game } from './game';
 import { techLevel } from './progress';
@@ -149,7 +149,7 @@ export function removeModule(g: Game, id: number): Result {
   }
   if (d.garage && g.outrider) return NO('The Outrider is using the Garage.');
   if (d.bunks) {
-    const lost = Math.max(0, p.troops - (p.stats.bunks - Math.round(d.bunks * (1 + 0.5 * (m.lvl - 1)))));
+    const lost = Math.max(0, p.troops - (p.stats.bunks - Math.round(d.bunks * CREW_SCALE * (1 + 0.5 * (m.lvl - 1)))));
     if (lost > 0) g.hooks.toast(`${lost} troop${lost > 1 ? 's' : ''} lost their bunk and left.`, '#ffab40');
   }
   p.removeModule(id);

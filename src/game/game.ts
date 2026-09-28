@@ -24,6 +24,7 @@ import { newCrewLife, type CrewLife } from './systems/crewlife';
 import { newStorm, type Storm } from './systems/weather';
 import { newDeploy, type Deploy } from './systems/camp';
 import { newTitanState, type TitanState } from './systems/titan';
+import type { RepairTeam } from './systems/crewops';
 import { Tank } from './tank';
 import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates';
 
@@ -190,6 +191,10 @@ export class Game {
   helm = { lever: 0, overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0 };
   /** Cruise time-warp (1, 4 or 8): the Crater is 140 km across. Drops to 1 when anything hostile comes near. */
   warp = 1;
+  /** People held in reserve in the Barracks (they step in for casualties and make up repair teams and work crews). */
+  reserves = 0;
+  /** Repair teams out on jobs. */
+  teams: RepairTeam[] = [];
   /** What the officers on the stations add up to, whether shifts change on their own, and the officers' meal tab. */
   statMods = noStationMods();
   autoRotate = true;

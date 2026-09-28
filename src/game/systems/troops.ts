@@ -1,6 +1,7 @@
-import { MODULES } from '../defs';
+import { CREW_SCALE, MODULES } from '../defs';
 import type { Game } from '../game';
 import { campBonus } from './camp';
+import { reserveCap, updateReserve } from './crewops';
 import type { ModuleInst } from '../tank';
 
 /**
@@ -15,7 +16,7 @@ export function troopTrainTime(g: Game): number {
   let barracks = 0;
   for (const m of p.modules) if (m.built && m.key === 'barracks') barracks += m.lvl;
   const inCamp = g.playerDistHome() < 500;
-  return 14 / (1 + 0.35 * barracks) / (inCamp ? 4 : campBonus(g).train);
+  return 14 / CREW_SCALE / (1 + 0.35 * barracks) / (inCamp ? 4 : campBonus(g).train);
 }
 
 export function updateTroops(g: Game, dt: number): void {
@@ -23,19 +24,28 @@ export function updateTroops(g: Game, dt: number): void {
   if (p.dead) return;
   const cap = p.stats.bunks;
   if (p.troops > cap) {
-    // Not enough bunks: the extras walk off (usually after tearing down quarters).
+    // Not enough bunks: the extras go to the reserve if there's room, or walk off (usually after tearing down quarters).
+    const extra = p.troops - cap;
+    g.reserves = Math.min(reserveCap(g), g.reserves + extra);
     p.troops = cap;
     p.recalc();
     return;
   }
-  if (p.troops >= cap) {
+  updateReserve(g);
+  const resCap = reserveCap(g);
+  if (p.troops >= cap && g.reserves >= resCap) {
     g.timers.troop = 0;
     return;
   }
   g.timers.troop += dt;
-  const need = troopTrainTime(g);
+  // With every bunk full, recruits go to the Barracks reserve (at half the pace).
+  const need = troopTrainTime(g) * (p.troops >= cap ? 2 : 1);
   if (g.timers.troop < need) return;
   g.timers.troop -= need;
+  if (p.troops >= cap) {
+    g.reserves++;
+    return;
+  }
   const unmannedBefore = p.stats.crewManned < p.stats.crewWanted;
   p.troops++;
   p.recalc();
@@ -49,7 +59,9 @@ export function troopCasualty(g: Game, from: 'soldier' | 'gunner', why: string):
   const pool = p.modules.filter((m) => m.crew > 0 && (from === 'soldier' ? !!MODULES[m.key].nest : !!MODULES[m.key].hardpoint));
   if (from === 'soldier' && !pool.length) return false;
   const m: ModuleInst | undefined = pool[Math.floor(Math.random() * pool.length)];
-  p.troops--;
+  // A reservist steps into the gap straight away.
+  if (g.reserves > 0) g.reserves--;
+  else p.troops--;
   p.recalc();
   const at = m ? p.moduleWorld(m) : { x: p.x, y: p.y };
   g.float(at.x, at.y, from === 'soldier' ? 'SOLDIER DOWN' : 'GUNNER DOWN', '#ff5252');

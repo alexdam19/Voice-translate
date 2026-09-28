@@ -1,6 +1,6 @@
 import { TER, ZONE } from '../../shared/map';
 import { HANGAR } from '../../shared/mapgen';
-import { TITAN_DECK_INFO } from '../defs';
+import { CREW_SCALE, TITAN_DECK_INFO } from '../defs';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
 import { campBonus } from './camp';
@@ -229,8 +229,8 @@ export function comfort(g: Game): number {
 export function damageControl(g: Game): number {
   const p = g.player;
   const d = p.stats.depts.works;
-  const off = Math.max(0, p.troops - Math.min(p.troops, p.stats.crewManned));
-  return ((d ? d[0] : 0) + off * 0.25) * g.statMods.damage;
+  const off = Math.max(0, p.troops - p.detached - Math.min(p.troops, p.stats.crewManned));
+  return (((d ? d[0] : 0) + off * 0.25) / CREW_SCALE) * g.statMods.damage;
 }
 
 export function updateTitan(g: Game, dt: number): void {
@@ -238,7 +238,6 @@ export function updateTitan(g: Game, dt: number): void {
   if (!p.titan || p.dead || g.mode !== 'world') return;
   const s = g.titan;
   for (const k of Object.keys(s.warn)) s.warn[k] -= dt;
-  const camped = g.deploy.state === 'up';
   const life = sysMult(s, 'life');
   const power = sysMult(s, 'power') * p.stats.powerRatio;
   const out = outsideTemp(g);
@@ -282,7 +281,7 @@ export function updateTitan(g: Game, dt: number): void {
 
   // Flooding: a breached hull in mud or acid lets it in at the bottom; the pumps (engineers, and power) get it out.
   const wet = ter === TER.MUD || ter === TER.ACID;
-  const pumps = (0.01 + 0.004 * (p.stats.depts.engine?.[0] ?? 0)) * power * (g.helm.pumps ? 3 : 1);
+  const pumps = (0.01 + (0.004 * (p.stats.depts.engine?.[0] ?? 0)) / CREW_SCALE) * power * (g.helm.pumps ? 3 : 1);
   for (let sec = 0; sec < 3; sec++) {
     const z: ArmorZone = sec === 0 ? 'bow' : sec === 2 ? 'stern' : Math.min(s.zones.port, s.zones.starboard) === s.zones.port ? 'port' : 'starboard';
     const breach = wet && s.zones[z] < 0.45 ? (0.45 - s.zones[z]) * 0.12 : 0;
@@ -302,8 +301,7 @@ export function updateTitan(g: Game, dt: number): void {
   }
 
   // Fuel: the diesels burn it in proportion to how hard they work (a full tank is about 40 minutes flat out).
-  const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
-  const burnRate = ((p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
+  const burnRate = fuelBurn(g);
   const hadFuel = s.fuel > 0;
   s.fuel = Math.max(0, s.fuel - burnRate * dt);
   if (hadFuel && s.fuel <= 0) g.hooks.toast('OUT OF FUEL: running on the reactors alone at a crawl. Refinery, the Mothership, or burn scrap.', '#ff1744');
@@ -326,13 +324,9 @@ export function updateTitan(g: Game, dt: number): void {
 
   // Water: everyone drinks; life support recycles most of it. The condensers pull it out of snow, ice and mud as
   // you drive over them; a camp drills a well.
-  const drink = p.troops * 0.004 * (1 - 0.7 * life);
-  let gain = 0;
-  if (ter === TER.SNOW || ter === TER.ICE) gain += 1.5;
-  else if (ter === TER.MUD || ter === TER.GRASS) gain += 0.4;
-  if (camped) gain += 0.8;
+  const wr = waterRates(g);
   const hadWater = s.water > 0;
-  s.water = Math.max(0, Math.min(WATER_MAX, s.water + (gain * Math.min(1, power) - drink) * dt));
+  s.water = Math.max(0, Math.min(WATER_MAX, s.water + (wr.gain - wr.drink) * dt));
   if (hadWater && s.water <= 0) g.hooks.toast('OUT OF WATER: the crew are thirsty and slowing down. Drive over snow, ice or mud, camp, or dock at the Mothership.', '#ff1744');
 
   // Air: life support keeps it at 21%; fires eat it, a dead life support lets it go stale.
@@ -398,6 +392,28 @@ export function updateTitan(g: Game, dt: number): void {
     t.steering = m.steering;
     t.pull = m.pull;
   }
+}
+
+/** Fuel burned per second right now: the diesels by load, overdrive, and the pumps and lights on the console. */
+export function fuelBurn(g: Game): number {
+  const p = g.player;
+  const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
+  return ((p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
+}
+
+/** Water per second: what the condensers and a camp well bring in, and what the crew drink (life support recycles). */
+export function waterRates(g: Game): { gain: number; drink: number } {
+  const p = g.player;
+  const s = g.titan;
+  const life = sysMult(s, 'life');
+  const power = sysMult(s, 'power') * p.stats.powerRatio;
+  const ter = g.map.terAt(p.x, p.y);
+  const drink = ((p.troops + g.reserves * 0.5) / CREW_SCALE) * 0.004 * (1 - 0.7 * life);
+  let gain = 0;
+  if (ter === TER.SNOW || ter === TER.ICE) gain += 1.5;
+  else if (ter === TER.MUD || ter === TER.GRASS) gain += 0.4;
+  if (g.deploy.state === 'up') gain += 0.8;
+  return { gain: gain * Math.min(1, power), drink };
 }
 
 /** Short lines for the HUD: what's on fire, flooding or failing right now. */

@@ -3,7 +3,7 @@ import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
 import { emptyBonus, type CrewBonus } from './crew';
 import { classMods, type HullClass } from './classes';
-import { chassisDef, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
+import { chassisDef, CREW_SCALE, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
 
 export type Team = 'player' | 'enemy';
@@ -216,6 +216,8 @@ export class Tank {
   /** People the builders need right now (two per job), and how many are on it. */
   buildCrew = 0;
   builderStaff = 0;
+  /** Crew away from their posts (repair teams and work crews drawn from the watch). */
+  detached = 0;
   /** Ramming damage and Nitro multipliers, and roof soldiers' damage, from the hull class. */
   ram = 1;
   nitroMult = 1;
@@ -479,7 +481,7 @@ export class Tank {
     const protects = new Set<Hazard>();
     let cc = 1;
     const fortress = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
-    const manning = this.man(this.kind === 'main' ? this.troops : Infinity);
+    const manning = this.man(this.kind === 'main' ? Math.max(0, this.troops - this.detached) : Infinity);
     const cmdD = manning.depts.command;
     const cmdK = this.kind === 'main' && cmdD ? cmdD[0] / Math.max(1, cmdD[1]) : 1;
     const eff = this.kind === 'main' ? this.efficiency : 1;
@@ -505,7 +507,7 @@ export class Tank {
       thrust += (d.thrust ?? 0) * f * auto;
       cargo += Math.round((d.cargo ?? 0) * f);
       crewCap += d.crew ? d.crew + (m.lvl - 1) : 0;
-      if (d.bunks) bunks += d.bunks * (1 + 0.5 * (m.lvl - 1));
+      if (d.bunks) bunks += d.bunks * CREW_SCALE * (1 + 0.5 * (m.lvl - 1));
       vision += (d.vision ?? 0) * f * (d.required ? 1 : sf);
       drill = Math.max(drill, sf > 0 || !STAFF[m.key] ? d.drill ?? 1 : 1);
       harvest *= 1 + ((d.harvest ?? 1) - 1) * f * sf;
@@ -610,8 +612,8 @@ export class Tank {
       if (!m.built) continue;
       const d = MODULES[m.key];
       if (m.weapon && d.hardpoint) posts.push({ m, dept: 'gunnery', need: crewNeed(WEAPONS[m.weapon.key]?.size ?? 'light'), o: gunOrder(m) });
-      else if (d.nest) posts.push({ m, dept: 'roof', need: this.indoors ? 0 : d.soldiers ?? 2, o: 0 });
-      else if (STAFF[m.key]) posts.push({ m, dept: STAFF[m.key][0], need: STAFF[m.key][1], o: 0 });
+      else if (d.nest) posts.push({ m, dept: 'roof', need: this.indoors ? 0 : (d.soldiers ?? 2) * CREW_SCALE, o: 0 });
+      else if (STAFF[m.key]) posts.push({ m, dept: STAFF[m.key][0], need: STAFF[m.key][1] * CREW_SCALE, o: 0 });
     }
     if (this.buildCrew > 0) posts.push({ m: null, dept: 'works', need: this.buildCrew, o: -1 });
     posts.sort((a, b) => DEPT_ORDER.indexOf(a.dept) - DEPT_ORDER.indexOf(b.dept) || a.o - b.o || (a.m?.id ?? 0) - (b.m?.id ?? 0));
@@ -637,14 +639,14 @@ export class Tank {
     if (this.kind !== 'main') return 1;
     const st = STAFF[m.key];
     if (!st) return 1;
-    return Math.min(1, m.crew / st[1]) * this.efficiency;
+    return Math.min(1, m.crew / (st[1] * CREW_SCALE)) * this.efficiency;
   }
 
   /** Troops a gun or nest needs to be fully manned. */
   crewNeeded(m: ModuleInst): number {
     const d = MODULES[m.key];
-    if (d.nest) return this.indoors ? 0 : d.soldiers ?? 2;
-    if (STAFF[m.key]) return STAFF[m.key][1];
+    if (d.nest) return this.indoors ? 0 : (d.soldiers ?? 2) * CREW_SCALE;
+    if (STAFF[m.key]) return STAFF[m.key][1] * CREW_SCALE;
     return m.weapon && d.hardpoint ? crewNeed(WEAPONS[m.weapon.key]?.size ?? 'light') : 0;
   }
 
