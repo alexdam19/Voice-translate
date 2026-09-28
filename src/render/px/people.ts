@@ -204,3 +204,198 @@ export function topPerson(uniform: string, hat: string, big: boolean): HTMLCanva
 }
 
 export const shadeHex = (c: string, f: number): string => hex(k(rgb(c), f));
+
+/* ---------------------------------------------------------------------- */
+/* High-resolution crew (the interior cutaway)                             */
+/* ---------------------------------------------------------------------- */
+
+export type PoseHD = 'stand' | 'walk' | 'work' | 'carry' | 'sit' | 'sleep' | 'aim' | 'hose' | 'weld' | 'type';
+export type HatKind = 'none' | 'helmet' | 'hardhat' | 'cap' | 'chef' | 'medic' | 'beret' | 'firehelm';
+
+export interface Look {
+  uniform: string;
+  hat: HatKind;
+  hatCol: string;
+  hair: string;
+  skin: number;
+  /** Hi-vis stripes on the vest (works crews, firefighters). */
+  stripe?: string;
+}
+
+const HD_W = 18, HD_H = 28;
+
+export function hatKindFor(act: Act): HatKind {
+  switch (act) {
+    case 'gun': case 'soldier': return 'helmet';
+    case 'engine': case 'build': case 'weld': case 'drill': case 'mechanic': case 'haul': return 'hardhat';
+    case 'console': return 'cap';
+    case 'cook': return 'chef';
+    case 'medic': return 'medic';
+    case 'hose': case 'pump': case 'fix': return 'firehelm';
+    default: return 'none';
+  }
+}
+
+/**
+ * A crew member 18 x 28 pixels (the figure about 10 x 24), facing right: shaded head with an eye and hair or a
+ * hat for the job, a uniform with a lit and a shaded side, belt, trousers, boots, arms posed for what they're
+ * doing (a four-frame walk), and a one-pixel dark outline.
+ */
+export function personHD(pose: PoseHD, frame: number, lk: Look, carryCol = '#8a6a40'): HTMLCanvasElement {
+  const key = `hd|${pose}|${frame & 3}|${lk.uniform}|${lk.hat}|${lk.hatCol}|${lk.hair}|${lk.skin}|${lk.stripe ?? ''}|${carryCol}`;
+  let c = cache.get(key);
+  if (c) return c;
+  if (cache.size > 1500) cache.clear();
+  const inner = makeCanvas(HD_W, HD_H);
+  const x = ctx2d(inner);
+  const R = (a: number, b: number, w: number, h: number, col: RGB | string): void => {
+    x.fillStyle = typeof col === 'string' ? col : hex(col);
+    x.fillRect(a, b, w, h);
+  };
+  const u = rgb(lk.uniform), uL = k(u, 0.28), uD = k(u, -0.3), uDD = k(u, -0.5);
+  const [s0, s1] = SKINS[lk.skin % SKINS.length];
+  const sk = rgb(s0), skD = rgb(s1);
+  const pants: RGB = [44, 48, 60], pantsD: RGB = [30, 32, 42], boot: RGB = [24, 20, 18], belt: RGB = [60, 46, 32];
+  const hc = rgb(lk.hatCol), hcL = k(hc, 0.3), hcD = k(hc, -0.3);
+  const hair = rgb(lk.hair);
+  const f = frame & 3;
+  // Where things go: feet on the bottom row, the figure centred at x 8.
+  const lying = pose === 'sleep';
+  const sitting = pose === 'sit' || pose === 'type';
+  const dy = sitting ? 5 : 0;
+  const top = 3 + dy;
+  // Legs.
+  if (sitting) {
+    R(7, 19, 7, 3, pants);
+    R(7, 21, 7, 1, pantsD);
+    R(12, 22, 2, 4, pantsD);
+    R(12, 26, 3, 2, boot);
+  } else {
+    const swing = pose === 'walk' ? [2, 0, -2, 0][f] : 0;
+    const back = pose === 'walk' ? -swing : 0;
+    // Back leg (darker), then front leg.
+    R(7 + back, 17, 3, 8, pantsD);
+    R(7 + back, 25, 4, 2, boot);
+    R(9 + swing, 17, 3, 8, pants);
+    R(9 + swing, 17, 1, 8, k(pants, 0.2));
+    R(9 + swing, 25, 4, 2, boot);
+    R(12 + swing, 26, 1, 1, k(boot, 0.4));
+  }
+  // Back arm.
+  const armY = top + 8;
+  if (pose === 'carry') R(6, top + 1, 2, 8, uD);
+  else if (pose === 'work' || pose === 'aim' || pose === 'hose' || pose === 'weld' || pose === 'type') R(7, armY, 6, 2, uD);
+  else {
+    const sw = pose === 'walk' ? [-1, 0, 1, 0][f] : 0;
+    R(6 + sw, armY, 2, 7, uD);
+    R(6 + sw, armY + 7, 2, 2, skD);
+  }
+  // Torso: lit left, shaded right, collar, belt, a vest stripe if they wear one.
+  R(6, top + 7, 6, 8, u);
+  R(6, top + 7, 1, 8, uL);
+  R(10, top + 7, 2, 8, uD);
+  R(7, top + 7, 3, 1, uL);
+  R(6, top + 14, 6, 1, belt);
+  R(8, top + 14, 1, 1, [200, 170, 90]);
+  if (lk.stripe) {
+    R(6, top + 11, 6, 1, lk.stripe);
+    R(7, top + 8, 1, 6, lk.stripe);
+  }
+  // Head: skin with a shaded back, an eye looking forward, hair or a hat.
+  R(7, top + 1, 5, 6, sk);
+  R(7, top + 1, 1, 6, skD);
+  R(10, top + 3, 1, 1, [24, 20, 26]);
+  R(11, top + 5, 1, 1, skD);
+  R(8, top + 6, 3, 1, skD);
+  const hatTop = (): void => {
+    switch (lk.hat) {
+      case 'helmet':
+        R(6, top - 1, 7, 3, hc);
+        R(6, top - 1, 7, 1, hcL);
+        R(5, top + 1, 9, 1, hcD);
+        break;
+      case 'hardhat':
+        R(7, top - 1, 5, 2, hc);
+        R(7, top - 1, 5, 1, hcL);
+        R(6, top + 1, 8, 1, hcD);
+        break;
+      case 'cap':
+        R(7, top, 5, 2, hc);
+        R(11, top + 1, 3, 1, hcD);
+        R(8, top, 1, 1, [220, 190, 80]);
+        break;
+      case 'chef':
+        R(7, top - 3, 5, 4, [244, 244, 240]);
+        R(7, top - 3, 5, 1, [255, 255, 255]);
+        R(7, top + 1, 5, 1, [210, 210, 206]);
+        break;
+      case 'medic':
+        R(7, top, 5, 2, [240, 240, 236]);
+        R(9, top, 1, 2, [220, 40, 40]);
+        break;
+      case 'beret':
+        R(6, top, 6, 2, hc);
+        break;
+      case 'firehelm':
+        R(6, top - 1, 7, 3, hc);
+        R(6, top - 1, 7, 1, hcL);
+        R(5, top + 1, 2, 3, hcD);
+        break;
+      default:
+        R(7, top, 5, 2, hair);
+        R(7, top + 2, 1, 2, hair);
+        R(8, top, 3, 1, k(hair, 0.25));
+    }
+  };
+  hatTop();
+  // Front arm and what's in the hands.
+  if (pose === 'carry') {
+    R(11, top + 1, 2, 8, u);
+    R(4, top - 6, 11, 6, carryCol);
+    R(4, top - 6, 11, 1, k(rgb(carryCol), 0.3));
+    R(4, top - 1, 11, 1, k(rgb(carryCol), -0.35));
+    R(9, top - 5, 1, 4, k(rgb(carryCol), -0.25));
+  } else if (pose === 'work' || pose === 'type' || pose === 'weld') {
+    const reach = pose === 'type' ? (f % 2 ? 1 : 0) : f % 2;
+    R(10, armY, 5 + reach, 2, u);
+    R(15 + reach, armY, 2, 2, sk);
+    if (pose === 'weld') R(16, armY - 1, 2, 1, [140, 150, 160]);
+  } else if (pose === 'aim') {
+    R(10, armY, 5, 2, u);
+    R(9, armY - 1, 9, 2, [52, 56, 62]);
+    R(17, armY - 1, 1, 1, [20, 20, 22]);
+  } else if (pose === 'hose') {
+    R(10, armY, 5, 2, u);
+    R(14, armY - 1, 4, 2, [180, 40, 30]);
+  } else {
+    const sw = pose === 'walk' ? [1, 0, -1, 0][f] : 0;
+    R(10 + sw, armY, 2, 7, u);
+    R(10 + sw, armY + 7, 2, 2, sk);
+  }
+  void uDD;
+  // Outline.
+  const out = makeCanvas(HD_W, HD_H);
+  const o = ctx2d(out);
+  const sil = makeCanvas(HD_W, HD_H);
+  const s = ctx2d(sil);
+  s.drawImage(inner, 0, 0);
+  s.globalCompositeOperation = 'source-in';
+  s.fillStyle = '#0c0a10';
+  s.fillRect(0, 0, HD_W, HD_H);
+  for (const [dx, dy2] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) o.drawImage(sil, dx, dy2);
+  o.drawImage(inner, 0, 0);
+  if (lying) {
+    // Asleep: the same figure on its back.
+    const l = makeCanvas(HD_H, HD_W);
+    const lx = ctx2d(l);
+    lx.translate(0, HD_W);
+    lx.rotate(-Math.PI / 2);
+    lx.drawImage(out, 0, 0);
+    c = l;
+  } else c = out;
+  cache.set(key, c);
+  return c;
+}
+
+export const PERSON_HD = { w: HD_W, h: HD_H };
+export const HAIRS_HD = HAIRS;
