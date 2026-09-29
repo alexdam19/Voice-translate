@@ -1,6 +1,6 @@
 import { COLOSSI, colossusHealth } from '../game/systems/colossus';
 import { ENEMIES } from '../game/enemyDefs';
-import { DoomBar } from './doombar';
+import { ShipConsole } from './shipConsole';
 import { TITAN } from '../game/systems/movement';
 import { DRIVE_ITEM, getItem } from '../shared/items';
 import { titanAlerts } from '../game/systems/titan';
@@ -156,7 +156,7 @@ export class Hud {
   private dragGhost = h('div', 'drag-ghost');
   private bottom = h('div', 'hud-bottom');
   /** The status bar along the bottom (cells, hull, the hand, the captain, armour, supplies). */
-  private doom = new DoomBar();
+  private doom = new ShipConsole();
   minimap: HTMLCanvasElement;
   private mmWrap = h('div', 'minimap');
   /** Touch driving stick (bottom left, touch screens only). */
@@ -426,7 +426,7 @@ export class Hud {
     if (!el) return true;
     if (el.tagName === 'CANVAS' && !el.closest('.minimap')) return false;
     if (el.closest('.joy')) return false;
-    return !!el.closest('.hud-bottom, .doom-bar, .hud-tl, .hud-tr, .squads, .minimap, .perk-box, .panel-backdrop, .rider-card, .village .v-card, .village .v-top');
+    return !!el.closest('.hud-bottom, .ship-console, .hud-tl, .hud-tr, .squads, .minimap, .perk-box, .panel-backdrop, .rider-card, .village .v-card, .village .v-top');
   }
 
   /* ---------------- messages ---------------- */

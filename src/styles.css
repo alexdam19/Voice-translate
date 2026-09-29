@@ -1356,63 +1356,64 @@ html.touch .joy { display: block; }
   .hg-berths, .hg-crew { grid-template-columns: 1fr; }
 }
 
-/* ---------------- The status bar (corridor-shooter style) ---------------- */
-.hud { --dbs: 2; --bar: calc(36px * var(--dbs) + 12px); }
+/* ---------------- The ship console (bottom bar) ---------------- */
+.hud { --dbs: 2; --bar: calc(40px * var(--dbs) + 14px); }
 @media (min-width: 1750px) and (min-height: 900px) { .hud { --dbs: 3; } }
-.doom-bar { position: absolute; left: 0; right: 0; bottom: 0; height: var(--bar); display: flex; align-items: stretch; gap: 5px; padding: 5px 8px; box-sizing: border-box;
-  background-color: #5c5c5c; background-size: 256px 128px; image-rendering: pixelated; pointer-events: auto; z-index: 4;
-  border-top: 3px solid #a8a8a8; box-shadow: inset 0 3px 0 #cfcfcf, inset 0 -4px 0 #2a2a2a, 0 -3px 0 #141414; }
-.db-sec { display: flex; align-items: center; justify-content: center; padding: 2px 6px; background: rgba(30, 30, 30, 0.42);
-  box-shadow: inset 3px 3px 0 rgba(0, 0, 0, 0.6), inset -3px -3px 0 rgba(255, 255, 255, 0.16); }
-.db-sec canvas { image-rendering: pixelated; height: calc(36px * var(--dbs)); }
-.db-cells canvas { width: calc(64px * var(--dbs)); }
-.db-hull canvas, .db-armor canvas { width: calc(86px * var(--dbs)); }
-.db-face { background: #120e0a; padding: 2px; }
-.db-face canvas { width: calc(24px * var(--dbs)); height: calc(29px * var(--dbs)); }
-.db-stats canvas { width: calc(96px * var(--dbs)); height: calc(36px * var(--dbs)); }
-.db-cards { flex: 1; min-width: 0; display: flex; align-items: flex-end; justify-content: center; position: relative; }
-.db-cards .hand-wrap { flex-direction: row; align-items: flex-end; gap: 8px; }
-.db-cards .hand-row { gap: 8px; align-items: flex-end; margin-bottom: -2px; }
-.db-cards .hand-slot, .db-cards .hand-slot .mcard { width: 88px; height: 120px; }
-.db-cards .hand-slot .mcard { border-width: 3px; box-shadow: 0 0 0 2px #1a1a1a, 4px 4px 0 rgba(0, 0, 0, 0.5); }
-.db-cards .hand-slot .hk { font-size: 13px; padding: 1px 5px; background: #2a0400; color: #ff4a2a; border-color: #7a0a04; }
-.db-cards .pack-btn { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); white-space: nowrap; }
+.ship-console { position: absolute; left: 0; right: 0; bottom: 0; height: var(--bar); display: flex; align-items: stretch; gap: 6px; padding: 5px 8px 7px; box-sizing: border-box;
+  pointer-events: auto; z-index: 4; image-rendering: pixelated;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 3px), linear-gradient(180deg, #221a3e, #120d24);
+  border-top: 2px solid #6c4bd8; box-shadow: 0 -2px 0 #05030c, 0 -6px 18px rgba(108, 75, 216, 0.35), inset 0 2px 0 rgba(179, 136, 255, 0.25); }
+.sc-sec { position: relative; display: flex; align-items: center; justify-content: center; padding: 3px 5px 2px; background: #0d0a1c;
+  border: 1px solid #403353; box-shadow: inset 0 0 0 1px #05030c, inset 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(108, 75, 216, 0.35); }
+.sc-sec::before { content: attr(data-title); position: absolute; top: -7px; left: 6px; padding: 0 4px; font-family: var(--px); font-size: 9px; line-height: 12px; letter-spacing: 1px; color: #b388ff; background: #1a1234; border: 1px solid #403353; }
+.sc-sec canvas { image-rendering: pixelated; width: calc(var(--w) * var(--dbs)); height: calc(40px * var(--dbs)); }
+.sc-hull canvas { --w: 96px; }
+.sc-ship canvas { --w: 112px; }
+.sc-energy canvas { --w: 40px; }
+.sc-drive canvas { --w: 96px; }
+.sc-supply canvas { --w: 104px; }
+.sc-hull { border-color: #59c13566; }
+.sc-ship { background: radial-gradient(ellipse at center, #1a1638, #0a0816); }
+.sc-mid { flex: 1; min-width: 0; display: flex; align-items: flex-end; justify-content: center; gap: 8px; }
+.sc-cards { min-width: 0; display: flex; align-items: flex-end; justify-content: center; position: relative; }
+.sc-cards .hand-wrap { flex-direction: row; align-items: flex-end; gap: 8px; }
+.sc-cards .hand-row { gap: 8px; align-items: flex-end; margin-bottom: -2px; }
+.sc-cards .hand-slot, .sc-cards .hand-slot .mcard { width: 88px; height: 120px; }
+.sc-cards .hand-slot .mcard { border-width: 3px; box-shadow: 0 0 0 2px #05030c, 0 0 10px rgba(108, 75, 216, 0.4); }
+.sc-cards .hand-slot .hk { font-size: 13px; padding: 1px 5px; background: #120d24; color: #18ffff; border-color: #403353; }
+.sc-cards .pack-btn { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); white-space: nowrap; }
 .hud .hud-bottom { left: 8px; right: auto; transform: none; bottom: calc(var(--bar) + 8px); }
 .hud .minimap { bottom: calc(var(--bar) + 8px); }
 .hud .squads { bottom: calc(var(--bar) + 250px); }
 .hp-box .hp-bar { display: none; }
-.hud.in-village .doom-bar { display: none; }
-.timestop-tint.aim { background: radial-gradient(transparent 40%, rgba(160, 20, 10, 0.32)); mix-blend-mode: normal; }
-.timestop-tint.aim::after { content: 'AIMING · TIME SLOWED'; position: absolute; top: 34%; left: 50%; transform: translateX(-50%); font-family: var(--px); font-size: 14px; color: #ff5a3c; text-shadow: 2px 2px 0 #000; letter-spacing: 2px; }
+.hud.in-village .ship-console { display: none; }
+.timestop-tint.aim { background: radial-gradient(transparent 40%, rgba(108, 40, 200, 0.3)); mix-blend-mode: normal; }
+.timestop-tint.aim::after { content: 'AIMING · TIME SLOWED'; position: absolute; top: 34%; left: 50%; transform: translateX(-50%); font-family: var(--px); font-size: 14px; color: #b388ff; text-shadow: 2px 2px 0 #000; letter-spacing: 2px; }
 @media (max-width: 1100px) {
-  .db-stats, .db-cards .next-card { display: none; }
-  .db-cards .hand-slot, .db-cards .hand-slot .mcard { width: 66px; height: 90px; }
+  .sc-supply, .sc-cards .next-card { display: none; }
+  .sc-cards .hand-slot, .sc-cards .hand-slot .mcard { width: 66px; height: 90px; }
   .hud .minimap canvas { width: 150px; height: 150px; }
 }
 @media (max-width: 760px) {
-  .db-hull canvas, .db-armor canvas { width: calc(86px * var(--dbs) * 0.75); height: calc(36px * var(--dbs) * 0.75); }
-  .db-cells canvas { width: calc(64px * var(--dbs) * 0.75); height: calc(36px * var(--dbs) * 0.75); }
-  .db-cards .hand-slot, .db-cards .hand-slot .mcard { width: 56px; height: 76px; }
+  .sc-drive, .sc-energy { display: none; }
+  .sc-sec canvas { width: calc(var(--w) * var(--dbs) * 0.75); height: calc(40px * var(--dbs) * 0.75); }
+  .sc-cards .hand-slot, .sc-cards .hand-slot .mcard { width: 56px; height: 76px; }
 }
 
-/* Worn metal everywhere: menu buttons, info boxes, messages and panels. */
+/* The station look everywhere: menu buttons, info boxes, messages and panels. */
 .menu-btn, .hp-box, .zone-banner, .objective, .mission, .cmdr, .resources, .toast, .bossbar, .wave-bar, .tracker, .jobs, .drive-chip, .kit-btn, .squads .sq-chip, .minimap {
-  background-color: #3a3a3a;
-  background-image: linear-gradient(rgba(16, 12, 10, 0.72), rgba(16, 12, 10, 0.72)), var(--metal);
-  background-size: auto, 256px 128px;
+  background-color: #120d24;
+  background-image: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 3px), linear-gradient(180deg, rgba(34, 26, 62, 0.94), rgba(14, 10, 28, 0.94));
   image-rendering: pixelated;
-  border-color: #141414;
-  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.16), inset -2px -2px 0 rgba(0, 0, 0, 0.55), 0 0 0 1px #000;
+  border-color: #403353;
+  box-shadow: inset 0 1px 0 rgba(179, 136, 255, 0.22), 0 0 0 1px #05030c, 0 0 8px rgba(108, 75, 216, 0.25);
 }
-.menu-btn b { color: #ff5a3c; text-shadow: 2px 2px 0 #000; }
-.menu-btn.base b, .menu-btn.cards b { color: #ffcf40; }
-.menu-btn:hover { border-color: #ff5a3c; }
-.mission .mt, .objective .ot { color: #ff5a3c; }
-.mission { border-color: #7a1a10; }
-.panel { background-image: linear-gradient(rgba(14, 12, 12, 0.9), rgba(14, 12, 12, 0.9)), var(--metal); background-size: auto, 256px 128px; border-color: #8a8a8a; box-shadow: 0 0 0 3px #0b0b0e, inset 3px 3px 0 rgba(255, 255, 255, 0.12), 0 12px 40px rgba(0, 0, 0, 0.8); }
-.panel-head { background: linear-gradient(rgba(60, 10, 6, 0.85), rgba(24, 8, 6, 0.9)), var(--metal); background-size: auto, 256px 128px; border-bottom-color: #3a0a06; }
-.panel-head .pt { color: #ff5a3c; text-shadow: 3px 3px 0 #000; letter-spacing: 1px; }
-.bossbar { border-color: #7a0a04; }
+.menu-btn b { color: #d8c8ff; text-shadow: 0 0 6px rgba(179, 136, 255, 0.6), 2px 2px 0 #000; }
+.menu-btn.base b, .menu-btn.cards b, .menu-btn.cabin b { color: #ffd541; text-shadow: 0 0 6px rgba(249, 163, 27, 0.6), 2px 2px 0 #000; }
+.menu-btn:hover { border-color: #b388ff; }
+.mission .mt, .objective .ot { color: #f9a31b; }
+.mission { border-color: #6c4bd8; }
+.bossbar { border-color: #b4202a; }
 
 /* ---------------- The captain's cabin (first person) ---------------- */
 .cabin:not(.menu-btn) { position: fixed; inset: 0; z-index: 15; display: none; background: #000; overflow: hidden; pointer-events: auto; touch-action: none; }
