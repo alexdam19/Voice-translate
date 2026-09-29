@@ -1,10 +1,12 @@
 # IRONCRAWL
 
-An overhead 3D, pixel-art wasteland game about commanding a **Titan Crawler**: a building that learned how to move. It is 200 m long, 90 m wide and 42 m tall, rides on **eight independent crawlers** and has **seven decks** inside, from the Command deck down to Engineering. It plays with mouse and keyboard or on a **phone** (touch stick, taps, drag-and-drop cards). It is heavy but readable to drive: it builds speed slowly to about 25 km/h, takes seconds to stop and turns in wide differential arcs, while a HUD gauge and a predicted-path lane show what it will do. It goes anywhere, crushing buildings, climbing cliffs and wading through lava, and its guns aim and fire on their own. **Hordes** of hundreds come at you in waves, World War Z style, and climb your hull. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
+A top-down, high-resolution pixel-art wasteland game about commanding a **Titan Crawler**: a building that learned how to move. It is 200 m long, 90 m wide and 42 m tall, rides on **eight independent crawlers** and has **seven decks** inside, from the Command deck down to Engineering. The Titan is drawn straight from its design sheet (its main battery turns to its targets), and you can also run it from the **captain's cabin** in first person or look **inside** at every deck, Fallout Shelter style. It plays with mouse and keyboard or on a **phone** (touch stick, taps, drag-and-drop cards). It drives like 30,000 tonnes should: slow off the mark while the engine spools up, then faster and faster once she has way on (about 75 km/h stock, far more with a rebuilt engine and overdrive). It goes anywhere, crushing buildings, climbing cliffs and wading through lava, and its guns aim and fire on their own. **Hordes** of hundreds come at you in waves, World War Z style, and climb your hull. You fight with **battle cards** (drag one onto the battlefield, Clash Royale style), run the inside of your fortress **like a Clash of Clans village**, and level up by **killing things**.
 
 The pieces:
 - **Battle cards**, in the spirit of Magic: The Gathering. There are 42 cards in five schools (Iron, Volt, Rust, Void, Aegis) and six rarities, plus 12 permanent **relics**. You hold 4 cards from a deck of 8 and spend energy to play them: artillery, rocket salvos, drop squads, EMP, lightning storms, a dragon, a mech, a nuke. **Card packs** drop from elites, raider tanks, outposts, runes and titans. Duplicates level your cards up.
-- **Hordes.** Every minute or so a warning says where the next wave comes from, then a wall of swarmers pours in, piles against the hull and climbs aboard. Drive hard to shake them off, let the guns work, build **Tesla Coils**. Every wave is bigger.
+- **Hordes.** Every minute or so a warning says where the next wave comes from, then a wall of swarmers pours in, piles against the hull and climbs aboard. You can't just run them down: the hull throws them clear and the quick ones grab on and climb. Let the guns and roof soldiers work, build **Tesla Coils**, drive flat out to shake a few off. Every wave is bigger.
+- **Engine Workshop.** Rebuild the drive in five parts from the shop: a bigger engine block (top speed, for more fuel and reactor draw), turbochargers (getting going), the gearbox (pull at speed), nitro injectors (overdrive) and radiators (how long overdrive runs before the engine overheats).
+- **The Mega Hangar airlift.** Raise the Hangar on the radio and order supplies, crew and refits that never top out; heavy cargo airships fly them out and lower them onto your deck.
 - **Rival dreadnoughts.** From commander level 6, enemy fortresses built like yours and as strong as yours hunt you across the map.
 - **Go anywhere.** Nothing blocks the fortress. The right **drive train** (unlocked on the Level Road, swapped automatically on AUTO) makes each ground fast, and makes lava and acid safe.
 - **Blueprint.** A technical drawing of your whole fortress with its firepower on each side, speed on each ground, and an assessment of its weak spots.
@@ -62,10 +64,13 @@ Everything works with the mouse. The camera always follows your fortress.
 | **C** / **V** / **K** / **L** | Cards · Arsenal · Crew · Level Road |
 | **I** / **M** / **H** / **Esc** | Cargo, Refinery & Workshop · World map · Help · Menu |
 | **N** | Blueprint: the whole fortress drawn out, with an analysis |
-| **Y** | Bridge status: hull, armour zones, crawlers, systems, supplies, fires and flooding, population |
+| **Y** | Ship vitals: hull, armour zones, crawlers, systems, supplies, fires and flooding, population; send repair teams |
+| **F** / **G** | The captain's cabin (first person, levers and switches) · Inside the Titan (every deck, the crew, work orders) |
+| **O** / **Space** / **.** | Overdrive (until the engine overheats) · All stop · Cruise warp |
+| **HANGAR** button | The Mega Hangar airlift: supplies, crew and endless refits by airship |
 | **T** / **U** | Set up or pack up camp · Mothership shipyard (while docked) |
 | **5** | Repair kit |
-| **Wheel** | Zoom (120-700 m around a Titan) |
+| **Wheel** | Zoom (over the corner radar: zoom the radar, 150 m to 1.8 km) |
 | **J** | Send the Outrider to the node or loot area under the cursor |
 
 Menu buttons only appear once their feature unlocks, so there's never much to learn at once.
@@ -110,7 +115,9 @@ The first touch switches the game to touch controls (phones and tablets start in
 
 ### The Titan Crawler
 
-- **Driving.** It accelerates at about 0.55 m/s² to about 25 km/h, brakes over several seconds, and turns in wide differential arcs, where the inside crawlers run slower than the outside. It can only pivot slowly, and only when stopped on firm ground. The HUD gauge shows km/h, the throttle, each crawler bank's speed and what it's doing, and a dashed lane on the ground shows where the hull will sweep over the next 25 seconds.
+- **Driving.** The throttle lever stays where you set it. The engine has to spool up before she pulls (three seconds in she has barely begun to roll), then she pulls harder the faster she goes, reaching about 75 km/h stock on firm ground; she brakes over several seconds and turns in wide differential arcs, where the inside crawlers run slower than the outside. Overdrive adds a big burst of speed for a lot of fuel until the engine overheats and trips it. The HUD gauge (and the cabin dash) shows km/h, the throttle, RPM, engine heat and each crawler bank's speed.
+- **Engine Workshop** (the shop's ENGINE tab). Five parts, each up to Mk 8 (the Command Center caps them): Engine Block, Turbochargers, Gearbox, Nitro Injectors, Radiators. The bench drawing grows with each part, and hovering one previews its effect on top speed, time to cruise, overdrive speed and time, fuel burn and reactor draw.
+- **Inside** (`G`). Every deck in cutaway: your rooms, the deck's own furnished spaces between them (operations and comms, the lounge and bar, washrooms and laundry, the armory, the motor pool, the stores, the boiler and turbine rooms), sealed decks mothballed, and the crew at work, asleep and walking the Spine. Send work crews on chains of jobs from here.
 - **Terrain.** Each crawler rides its own suspension over rubble, cliffs and dunes, and the hull pitches and rolls with them. It leaves persistent track marks and ploughs through buildings, which collapse around it.
 - **Decks.** The roof carries the guns, the soldier nests, the Spine's skylight and the command tower. Below it are seven decks, each with its own purpose (Command, Recreation, Residential, the public Main Deck, Hangar, Logistics, Engineering). The elevator panel in the base view switches between them. The Spine and Lifts A-C are fixed structure. Mk I opens the roof and five decks; the Hangar opens at Mk II and Recreation at Mk III.
 - **Damage and upkeep.** Hits land on the armour zone they come from; a worn zone lets up to 40% more through. Flank hits damage crawlers, and hits pass on to the systems behind that armour. Big hits start fires that grow and spread (the magazine can cook off); damage control and the sprinklers fight them. A breached hull in mud or acid floods the lowest decks until the pumps catch up. Fuel burns as you drive (Refineries turn scrap into fuel); the crew drink water (recycled by life support and condensed from snow, ice and mud); life support keeps the air and temperature right. Everything wears, and the Works crew repair the worst damage first for scrap, three times as fast in camp.
@@ -191,13 +198,13 @@ Drive into the gate north-east of camp. Loot crates and supply drops, fight othe
 
 ## Tech
 
-- **TypeScript + Vite**, **three.js** for rendering, **ws** for the server, **Vitest** for tests. No image or audio files: every texture, sprite, portrait, card illustration, icon and sound is generated at startup.
-- **8-bit look:** the scene renders at 1/2–1/4 resolution into a render target (on phones, about 300 lines on the short side, each game pixel a whole number of device pixels). A post pass draws 1-pixel depth outlines and posterizes with ordered dithering, and the result is upscaled with nearest-neighbour filtering.
+- **TypeScript + Vite**, a **Canvas 2D** pixel-art renderer, **ws** for the server, **Vitest** for tests. The Titan is drawn from its design sheet (`src/assets/ship/`: the top view with the main turret cut out so it can turn, plus side, front, rear and 3/4 views for the cabin, title and screens; inlined into the single-file build). Everything else (creatures, props, terrain, interiors, portraits, card art, icons, sound) is generated at startup.
+- **Pixel art:** sprites are painted at the size they're shown in six-tone hue-shifted ramps with ordered dithering and dark outlines, and scaled by whole steps; the view renders at native resolution.
 - **Simulation:** fixed 60 Hz steps.
   - One world unit is one metre; a Titan's deck cell is 5 m (enemy rigs use smaller cells), and its guns reach four times as far as the same gun on a buggy. Nothing blocks it: A* weighs terrain by the drive train's traction and makes cliffs cost more, and it flattens obstacles and props under its hull. The terrain chunks it touches are rebuilt in the same frame.
   - Hordes of 300+ run on a uniform enemy grid (neighbours, hits and blasts look up nearby cells instead of every enemy) and render as two batched point-sprite draws from a sprite atlas.
   - Squads and summons are `Ally` entities with anchors: follow the fortress, guard a point, or scavenge a target.
-- **Save:** localStorage (`ironcrawl3d-save-v1`, format v8), autosaved every 30 s. Older saves move onto the Titan's decks automatically and get their pads and main battery.
+- **Save:** localStorage (`ironcrawl3d-save-v1`, format v11: engine parts, refits and the airlift included), autosaved every 30 s. Older saves load and move onto the Titan's decks automatically.
 
 ```
 src/shared/   map (with crush nav), world + arena generation, collision & A*, items, weapons, rarity, loot, protocol, Dead Zone server sim
