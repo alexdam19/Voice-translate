@@ -5,6 +5,7 @@ import type { Game } from '../game/game';
 import { hexToRgb } from './pixel';
 import type { View2D as View } from './view2d';
 import { shipArtFor, topScale, TOP_PX } from './px/shipArt';
+import { nearestAAP } from './px/palette';
 
 /** The corner radar's default reach (metres each way from the fortress): a Titan sees a long way. */
 export const RADAR_R = 360;
@@ -94,31 +95,114 @@ export class Minimap {
 
   /* ---------------- world overview ---------------- */
 
-  /** A low-res picture of the whole world's biomes (computed once per world). */
+  /**
+   * The whole world as a pixel-art relief map (computed once per world): each zone's ground with its own texture
+   * (dune ripples, snowfields, forest, dark water, scorched cracks, ash craters, factory blocks, rock spires,
+   * mountains, the Divot's bowl), shaded from the north-west by a height field, snapped to the AAP-64 palette.
+   */
   private composeWorld(g: Game, px: number): void {
     const gen = g.gen as OpenWorld;
     const size = g.map.size;
-    if (this.worldFor !== gen || this.world.width !== px) {
-      this.worldFor = gen;
-      this.world.width = px;
-      this.world.height = px;
-      const img = this.wctx.createImageData(px, px);
-      const cols: number[][] = [];
-      for (const z of Object.values(ZONE)) cols[z] = z === ZONE.EDGE ? [28, 24, 22] : hexToRgb(ZONES[z].color).map((v) => v * 0.55);
-      for (let y = 0; y < px; y++) {
-        for (let x = 0; x < px; x++) {
-          const z = gen.zoneOf(((x + 0.5) / px) * size, ((y + 0.5) / px) * size);
-          const c = cols[z];
-          const k = (y * px + x) * 4;
-          img.data[k] = c[0];
-          img.data[k + 1] = c[1];
-          img.data[k + 2] = c[2];
-          img.data[k + 3] = 255;
-        }
+    if (this.worldFor === gen && this.world.width === px) return;
+    this.worldFor = gen;
+    this.world.width = px;
+    this.world.height = px;
+    const img = this.wctx.createImageData(px, px);
+    const zoneAt = new Uint8Array(px * px);
+    for (let y = 0; y < px; y++) for (let x = 0; x < px; x++) zoneAt[y * px + x] = gen.zoneOf(((x + 0.5) / px) * size, ((y + 0.5) / px) * size);
+    const hash = (x: number, y: number, s: number): number => {
+      let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0;
+      h = Math.imul(h ^ (h >>> 13), 1274126177);
+      return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+    };
+    const vnoise = (x: number, y: number, cell: number, s: number): number => {
+      const fx = x / cell, fy = y / cell, gx = Math.floor(fx), gy = Math.floor(fy), tx = fx - gx, ty = fy - gy;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const a = hash(gx, gy, s), b = hash(gx + 1, gy, s), c = hash(gx, gy + 1, s), d = hash(gx + 1, gy + 1, s);
+      return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
+    };
+    const rough: Partial<Record<number, number>> = { [ZONE.WRAITH]: 1.6, [ZONE.FROST]: 1.2, [ZONE.SPIRES]: 1.4, [ZONE.PASS]: 1.1, [ZONE.EDGE]: 1.8, [ZONE.LAKE]: 0.4, [ZONE.DUNES]: 0.7 };
+    const height = (x: number, y: number): number => {
+      const z = zoneAt[Math.max(0, Math.min(px - 1, y)) * px + Math.max(0, Math.min(px - 1, x))];
+      const k = rough[z] ?? 0.8;
+      let hgt = (vnoise(x, y, 24, 1) * 0.6 + vnoise(x, y, 9, 2) * 0.3 + vnoise(x, y, 4, 3) * 0.1) * k;
+      if (z === ZONE.DIVOT) {
+        const dx = x / px - 0.47, dy = y / px - 0.44;
+        hgt -= Math.max(0, 0.22 - Math.hypot(dx, dy)) * 5;
       }
-      this.wctx.putImageData(img, 0, 0);
-      this.worldFog = -1;
+      return hgt;
+    };
+    const H = new Float32Array(px * px);
+    for (let y = 0; y < px; y++) for (let x = 0; x < px; x++) H[y * px + x] = height(x, y);
+    const at = (x: number, y: number): number => H[Math.max(0, Math.min(px - 1, y)) * px + Math.max(0, Math.min(px - 1, x))];
+    const base: number[][] = [];
+    for (const z of Object.values(ZONE)) base[z] = z === ZONE.EDGE ? [52, 44, 40] : hexToRgb(ZONES[z].ground);
+    for (let y = 0; y < px; y++) {
+      for (let x = 0; x < px; x++) {
+        const z = zoneAt[y * px + x];
+        const c = base[z] ?? [60, 50, 40];
+        // Light from the north-west.
+        const shade = (at(x - 1, y - 1) - at(x + 1, y + 1)) * 2.4;
+        let k = 1 + shade;
+        let [r, gg, b] = c;
+        const hh = hash(x, y, 7);
+        switch (z) {
+          case ZONE.DUNES:
+            if (Math.sin(x * 0.55 + y * 0.22 + vnoise(x, y, 12, 4) * 9) > 0.72) k += 0.16;
+            break;
+          case ZONE.FROST:
+          case ZONE.WRAITH:
+            if (at(x, y) > 0.7 || hh > 0.93) [r, gg, b] = [226, 232, 240];
+            break;
+          case ZONE.VERDANT:
+            if (vnoise(x, y, 7, 5) > 0.58 && hh > 0.35) {
+              [r, gg, b] = [30, 70, 34];
+              if (hash(x - 1, y - 1, 7) < 0.35) k += 0.35;
+            }
+            break;
+          case ZONE.LAKE:
+            if (at(x, y) < 0.42) {
+              [r, gg, b] = [20, 40, 58];
+              if ((x + y * 3) % 7 === 0 && hh > 0.6) k += 0.4;
+            }
+            break;
+          case ZONE.SCORCHED:
+            if (Math.abs(Math.sin(vnoise(x, y, 10, 6) * 22)) < 0.09) [r, gg, b] = [250, 106, 10];
+            break;
+          case ZONE.ASH:
+            if (hash(x >> 3, y >> 3, 8) > 0.8 && Math.hypot((x & 7) - 3.5, (y & 7) - 3.5) < 2.2) k -= 0.28;
+            break;
+          case ZONE.RUSTBOLT:
+            if (hash(x >> 2, y >> 2, 9) > 0.62 && (x & 3) && (y & 3)) {
+              [r, gg, b] = [113, 65, 59];
+              if ((y & 3) === 1) k += 0.25;
+            }
+            break;
+          case ZONE.SPIRES:
+            if (hh > 0.9) {
+              [r, gg, b] = [188, 74, 155];
+              k += 0.3;
+            }
+            break;
+          case ZONE.DIVOT:
+            k -= 0.1;
+            break;
+          case ZONE.EDGE:
+            k *= 0.8;
+            break;
+        }
+        // A touch of ordered dither so flat ground isn't flat.
+        k += ((((x & 1) ^ (y & 1)) ? 1 : -1) * 0.025) + (hh - 0.5) * 0.06;
+        const q = nearestAAP(r * k, gg * k, b * k);
+        const i = (y * px + x) * 4;
+        img.data[i] = q[0];
+        img.data[i + 1] = q[1];
+        img.data[i + 2] = q[2];
+        img.data[i + 3] = 255;
+      }
     }
+    this.wctx.putImageData(img, 0, 0);
+    this.worldFog = -1;
   }
 
   /** World point under a click on the corner radar (fractions of its width and height). */
@@ -287,7 +371,8 @@ export class Minimap {
     this.composeWorld(g, px);
     const s = w / size;
     const P = (x: number, y: number): Pt => [x * s, y * s];
-    ctx.imageSmoothingEnabled = true;
+    // Crisp pixels.
+    ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, w, h);
     ctx.drawImage(this.world, 0, 0, w, h);
     // Where you've been, brighter.
@@ -320,6 +405,15 @@ export class Minimap {
       if (reg.kind === 'hangar') diamond(ctx, x, y, 7, info.color);
       ctx.fillStyle = info.color;
       ctx.fillText(reg.name.toUpperCase(), x, y - Math.max(6, reg.r * s) - 3);
+    }
+    // Colossi on the prowl.
+    for (const c of g.colossi) {
+      if (c.dying > 0) continue;
+      const [x, y] = P(c.x, c.y);
+      diamond(ctx, x, y, 8, '#ff1744');
+      ring(ctx, x, y, 12, '#ff1744');
+      ctx.fillStyle = '#ff5a6a';
+      ctx.fillText('COLOSSUS', x, y - 15);
     }
     for (const t of g.tanks) {
       if (t.dead || t.kind !== 'rival') continue;
