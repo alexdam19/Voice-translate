@@ -2,6 +2,7 @@ import { getItem } from '../shared/items';
 import { RARITIES, type Rarity } from '../shared/rarity';
 import { WEAPONS } from '../shared/weapons';
 import { championDef, ROLES, type CrewMember } from '../game/crew';
+import { portraitHD } from './px/portraits';
 import { MODULES } from '../game/defs';
 import { MODULE_COLOR, getAtlas } from './textures';
 import { Pix, shade, seeded } from './pixel';
@@ -211,7 +212,14 @@ export function moduleIcon(key: string): string {
 const SKIN = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#a0785a'];
 const HAIR = ['#212121', '#4e342e', '#795548', '#ffb74d', '#e0e0e0', '#b71c1c', '#6a1b9a', '#1565c0'];
 
+/** An officer's portrait: a painted pixel bust (see px/portraits.ts). */
 export function portrait(c: CrewMember): string {
+  const ch = championDef(c);
+  return portraitHD({ seed: c.face, role: c.role, roleColor: ROLES[c.role].color, rarityColor: RARITIES[c.rarity].color, hair: ch?.hair, accent: ch?.accent ?? (c.exclusive ? '#e040fb' : undefined) });
+}
+
+/** The old 24 px face (kept for reference and small icons). */
+export function portraitSmall(c: CrewMember): string {
   const ch = championDef(c);
   const key = `pt:${c.face}:${c.role}:${c.rarity}:${ch?.id ?? ''}:${c.exclusive ?? ''}`;
   return make(key, 24, 24, (p) => {
