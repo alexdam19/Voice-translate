@@ -294,6 +294,19 @@ export function crewNeed(size: WeaponSize): number {
 }
 
 /**
+ * Where a Titan's main batteries turn, in hull metres (forward, starboard): the forward battery sits on the
+ * citadel just ahead of amidships (where the design sheet has it), the rear one aft. Their barrels run
+ * `batteryReach` past the pivot, so shots leave from the muzzles.
+ */
+export function batteryLocal(L: number, W: number, rear: boolean): [number, number] {
+  return rear ? [-0.3 * L, 0] : [0.0094 * L, 0.0151 * W];
+}
+
+export function batteryReach(L: number, rear: boolean): number {
+  return 0.279 * L * (rear ? 0.72 : 1);
+}
+
+/**
  * Where the hull's built-in weapons sit for a Command Center level: a pad on every corner, the main battery at
  * the front, then more pads along the sides and a second battery on the rear deck as the fortress grows.
  */

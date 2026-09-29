@@ -5,6 +5,7 @@ import { hangarRoster, HANGAR_PICKS, ROLES, signatureCard, type CrewMember } fro
 import { bestStation, STATION, stationLine } from '../game/stations';
 import { buildStarterTank } from '../game/templates';
 import { paintTitan } from '../render/px/titan2d';
+import { paintTitanFlat } from '../render/px/titanSprite';
 import { portrait } from '../render/icons';
 import { RARITIES } from '../shared/rarity';
 import { button, esc, h } from './dom';
@@ -119,22 +120,34 @@ export class HangarScreen {
     r.appendChild(card);
   }
 
-  /** The class's Titan from above, nose up, in its berth. */
+  /** The class's Titan from above, nose up, in its berth (from the design sheet once it has loaded). */
   private shipPreview(k: HullClass): HTMLCanvasElement {
     const t = buildStarterTank(0, 0, k);
     t.rot = 0;
-    for (const m of t.modules) m.aim = -0.25 + ((m.id * 7) % 5) * 0.12;
+    for (const m of t.modules) m.aim = m.key === 'main_gun' ? 0 : -0.25 + ((m.id * 7) % 5) * 0.12;
     const ppm = 0.62;
-    const p = paintTitan(t, ppm, null, 1.2);
     const c = document.createElement('canvas');
-    c.width = p.canvas.height;
-    c.height = p.canvas.width;
-    const x = c.getContext('2d')!;
-    x.imageSmoothingEnabled = false;
-    x.translate(c.width / 2, c.height / 2);
-    x.rotate(-Math.PI / 2);
-    x.drawImage(p.canvas, -p.cx, -p.cy);
     c.className = 'hb-ship';
+    const paint = (): boolean => {
+      const flat = paintTitanFlat(t, ppm * 1.3, null, 1.2);
+      const p = flat ?? paintTitan(t, ppm, null, 1.2);
+      c.width = p.canvas.height;
+      c.height = p.canvas.width;
+      const x = c.getContext('2d')!;
+      x.imageSmoothingEnabled = !flat;
+      x.imageSmoothingQuality = 'high';
+      x.translate(c.width / 2, c.height / 2);
+      x.rotate(-Math.PI / 2);
+      x.drawImage(p.canvas, -p.cx, -p.cy);
+      return !!flat;
+    };
+    if (!paint()) {
+      let tries = 0;
+      const again = (): void => {
+        if (!paint() && ++tries < 120) requestAnimationFrame(again);
+      };
+      requestAnimationFrame(again);
+    }
     return c;
   }
 }

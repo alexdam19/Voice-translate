@@ -8,6 +8,8 @@ import { archFor, creatureSprite } from '../render/px/creatures2d';
 import { glowSprite } from '../render/px/fx2d';
 import { hash2, rgb } from '../render/px/pixels';
 import { paintTitan } from '../render/px/titan2d';
+import { paintTitanFlat } from '../render/px/titanSprite';
+import { shipView } from '../render/px/shipArt';
 import { OBS, OBS_COLOR, TER, TERRAIN } from '../shared/map';
 import type { OpenWorld } from '../shared/mapgen';
 import { ZONES } from '../shared/zones';
@@ -607,7 +609,7 @@ export class Cabin {
     const hl = this.hull;
     if (hl && this.time - hl.t < 0.4) return hl;
     const ppm = 1.5;
-    const pt = paintTitan(g.player, ppm, g, this.time);
+    const pt = paintTitanFlat(g.player, ppm, g, this.time) ?? paintTitan(g.player, ppm, g, this.time);
     const c = pt.canvas;
     const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
     this.hull = { d, w: c.width, h: c.height, cx: pt.cx, cy: pt.cy, ppm, t: this.time };
@@ -654,10 +656,20 @@ export class Cabin {
       if (z < 6 || z > ZFAR) continue;
       const side = -dx * fy + dy * fx;
       const sx = W / 2 + (side * f) / z;
-      const size = t.fortress ? t.stats.width : Math.max(4, t.stats.width * 1.4);
+      // A Titan shows the face it turns to you, from the design sheet: its bow, its stern or its flank.
+      let view: HTMLCanvasElement | null = null;
+      let flip = false;
+      let size = Math.max(4, t.stats.width * 1.4);
+      if (t.fortress) {
+        const rel = Math.atan2(Math.sin(t.rot - Math.atan2(dy, dx)), Math.cos(t.rot - Math.atan2(dy, dx)));
+        const which = Math.abs(rel) < Math.PI / 4 ? 'rear' : Math.abs(rel) > (3 * Math.PI) / 4 ? 'front' : 'side';
+        view = shipView(which, t.kind);
+        size = which === 'side' ? t.stats.length : t.stats.width;
+        flip = which === 'side' && -Math.cos(t.rot) * fy + Math.sin(t.rot) * fx > 0;
+      }
       const hpx = Math.max(3, (size * f) / z);
       if (sx < -hpx || sx > W + hpx) continue;
-      list.push({ z, sx, base: hz + (cam.h * f) / z, hpx, img: tankSprite(t.kind === 'rival' ? '#5a2a2a' : '#4a4038', Math.min(128, Math.round(hpx))), flip: false });
+      list.push({ z, sx, base: hz + (cam.h * f) / z, hpx, img: view ?? tankSprite(t.kind === 'rival' ? '#5a2a2a' : '#4a4038', Math.min(128, Math.round(hpx))), flip });
     }
     list.sort((a, b) => b.z - a.z);
     const buf = this.buf, dep = this.depth;

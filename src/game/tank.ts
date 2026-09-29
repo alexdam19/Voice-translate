@@ -3,7 +3,7 @@ import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
 import { emptyBonus, type CrewBonus } from './crew';
 import { classMods, type HullClass } from './classes';
-import { chassisDef, CREW_SCALE, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
+import { batteryLocal, batteryReach, chassisDef, CREW_SCALE, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
 
 export type Team = 'player' | 'enemy';
@@ -704,7 +704,20 @@ export class Tank {
 
   moduleLocal(m: ModuleInst): { lx: number; lz: number } {
     const d = MODULES[m.key];
+    // A Titan's main batteries turn where the hull art has them, not on their deck-plan squares.
+    if (m.key === 'main_gun' && this.fortress) {
+      const [lx, lz] = batteryLocal(this.stats.length, this.stats.width, m.cy > this.rows / 2);
+      return { lx, lz };
+    }
     return { lx: (this.rows / 2 - (m.cy + d.h / 2)) * this.cell, lz: (m.cx + d.w / 2 - this.cols / 2) * this.cell };
+  }
+
+  /** How far past its mount a gun's shots leave (the drawn barrels' length, metres). */
+  muzzleReach(m: ModuleInst): number {
+    if (!this.fortress) return 0.7;
+    if (m.key === 'main_gun') return batteryReach(this.stats.length, m.cy > this.rows / 2);
+    const size = WEAPONS[m.weapon?.key ?? '']?.size ?? 'medium';
+    return size === 'heavy' ? 17 : size === 'medium' ? 11 : 7.5;
   }
 
   moduleWorld(m: ModuleInst): { x: number; y: number } {

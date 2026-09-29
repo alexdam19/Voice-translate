@@ -179,7 +179,9 @@ const LOBBED = new Set(['shell', 'missile', 'mortar', 'grenade', 'acid', 'ink'])
 
 export function fire(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponStats, x: number, y: number, dist: number, target: Target | null, mult = 1, quiet = false): void {
   const a = m.aim;
-  const mx = x + Math.cos(a) * 0.7, my = y + Math.sin(a) * 0.7;
+  // Shots leave from the muzzles (unless the target is closer than the barrels are long).
+  const reach = Math.max(0.7, Math.min(t.muzzleReach(m), dist * 0.8));
+  const mx = x + Math.cos(a) * reach, my = y + Math.sin(a) * reach;
   const extraPierce = t.hasBuff('deadeye') ? 1 : 0;
   const crimson = t === g.player && g.runeBuff?.rune === 'crimson';
   const burn = s.burn + (crimson ? s.dmg * 0.15 : 0);
@@ -435,6 +437,9 @@ function twinRay(g: Game, t: Tank, m: ModuleInst, x: number, y: number, target: 
   const d = WEAPONS[m.weapon!.key];
   const a = m.aim + 0.04;
   const dx = Math.cos(a), dy = Math.sin(a);
+  const reach = Math.min(t.muzzleReach(m), (target ? Math.hypot(target.x - x, target.y - y) : s.twinRange) * 0.8);
+  x += dx * reach;
+  y += dy * reach;
   const len = wallDist(g, x, y, dx, dy, s.twinRange);
   const hits = rayHits(g, t.team, x, y, dx, dy, len);
   let endT = target ? Math.min(len, Math.hypot(target.x - x, target.y - y)) : len;

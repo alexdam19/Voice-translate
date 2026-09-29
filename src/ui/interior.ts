@@ -8,6 +8,7 @@ import { armRoofOrder, cancelOrder, createOrder, MAX_ORDERS, mountKinds, planFet
 import type { ModuleInst } from '../game/tank';
 import { HAIRS_HD, hatKindFor, personHD, type Look, type PoseHD } from '../render/px/people';
 import { discAt, drawCorridor, drawRoom, glowAt, IA, type Slots } from '../render/px/interiorArt';
+import { SHIP_ART } from '../render/px/shipArt';
 import type { Act } from '../game/aboard';
 import { hash2 } from '../render/px/pixels';
 import { esc, h } from './dom';
@@ -117,7 +118,11 @@ export class Interior {
     this.secRoom = h('div', 'int-sec int-room');
     this.secOrders = h('div', 'int-sec int-orders');
     this.secDraft = h('div', 'int-sec int-draft');
-    this.panel.append(head, this.secDecks, this.secRoom, this.secOrders, this.secDraft);
+    // The ship from the design sheet, side on, over the deck list.
+    const banner = h('img', 'int-banner') as HTMLImageElement;
+    banner.src = SHIP_ART.side;
+    banner.alt = 'Your Titan, side on';
+    this.panel.append(head, banner, this.secDecks, this.secRoom, this.secOrders, this.secDraft);
     this.root.append(this.cv, this.panel);
     parent.appendChild(this.root);
     this.cv.addEventListener('pointerdown', (e) => this.down(e));

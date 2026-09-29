@@ -16,8 +16,9 @@ import { allySprite, archFor, creatureSprite } from './px/creatures2d';
 import { Fx2D, glowSprite, type ScreenMap } from './px/fx2d';
 import { makeCanvas, mix, shade } from './px/pixels';
 import { BLOCK, Terrain2D } from './px/terrain2d';
-import { paintSmallTank } from './px/titan2d';
-import { paintTitanHD, type PaintedHD, type StackLayer } from './px/titanhd';
+import { paintSmallTank, type HullLight } from './px/titan2d';
+import { paintTitanHD } from './px/titanhd';
+import { drawTitanSprite } from './px/titanSprite';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
 import { quantizeSize } from './px/creaturesHD';
@@ -617,121 +618,83 @@ export class View2D {
       if (!this.near(t.x, t.y, ext)) continue;
       if (t.team === 'enemy' && g.mode === 'world' && !g.isVisible(t.x, t.y)) continue;
       if (t !== g.player && t.dead && t.kind !== 'raider') continue;
-      // Titans are painted at quarter-octave zoom steps and scaled the rest of the way (so zooming doesn't repaint them).
+      const sx = Math.round(this.bx(t.x, t.y)), sy = Math.round(this.by(t.x, t.y));
+      // A Titan is drawn from the design sheet's top view (once the art has loaded).
+      if (t.fortress) {
+        const lights = drawTitanSprite(c, t, g, this.time, sx, sy, t.rot + this.th, ppm);
+        if (lights) {
+          this.hullExtras(t, lights);
+          continue;
+        }
+      }
+      // Until then, painted at quarter-octave zoom steps and scaled the rest of the way (so zooming doesn't repaint).
       const q = Math.pow(2, Math.round(Math.log2(ppm) * 4) / 4);
       const sc = ppm / q;
       const hd = t.fortress ? paintTitanHD(t, q, g, this.time) : null;
       const p = hd ?? paintSmallTank(t, ppm, this.time);
-      // A stacked hull turns in half-degree steps (its sides are cached per step).
-      const a = hd ? Math.round((t.rot + this.th) * 360 / Math.PI) * Math.PI / 360 : t.rot + this.th;
+      const a = t.rot + this.th;
       const ca = Math.cos(a), sa = Math.sin(a);
-      const sx = Math.round(this.bx(t.x, t.y)), sy = Math.round(this.by(t.x, t.y));
-      // In the base view the hull lies flat (the deck plans line up with it); out in the world it stands up.
-      // Flat, straight down: the hull is drawn as a top view, no stacked height.
-      const lift = 0;
-      // Drop shadow to the south-east (a Titan's is a big one, and falls further the taller it is).
+      // Drop shadow to the south-east.
       const sh = hd ? hd.shadow : this.shadowOf(p.canvas);
-      const off = Math.max(1, Math.round((t.fortress ? 7 + (lift ? 10 : 0) : 1.2) * ppm));
+      const off = Math.max(1, Math.round((t.fortress ? 7 : 1.2) * ppm));
       const k = hd ? sc : 1;
       c.globalAlpha = 0.42;
       c.setTransform(ca * k, sa * k, -sa * k, ca * k, sx + off, sy + off * 0.8);
       c.drawImage(sh, -p.cx, -p.cy);
       c.globalAlpha = 1;
       if (hd) {
-        // Stacked: each layer's sides (pre-built for this heading), then its top.
-        hd.layers.forEach((L, li) => {
-          const z1 = L.z1 * lift * sc;
-          if (lift > 0) {
-            const st = this.stackFor(t, li, L, hd, a, lift);
-            c.setTransform(1, 0, 0, 1, 0, 0);
-            c.drawImage(st.canvas, Math.round(sx - st.ox * sc), Math.round(sy - st.oy * sc), Math.round(st.canvas.width * sc), Math.round(st.canvas.height * sc));
-          }
-          c.setTransform(ca * sc, sa * sc, -sa * sc, ca * sc, sx, sy - Math.round(z1));
+        // Flat, straight down: each layer's top in turn.
+        for (const L of hd.layers) {
+          c.setTransform(ca * sc, sa * sc, -sa * sc, ca * sc, sx, sy);
           c.drawImage(L.top, -p.cx, -p.cy);
-        });
+        }
       } else {
         c.setTransform(ca, sa, -sa, ca, sx, sy);
         c.drawImage(p.canvas, -p.cx, -p.cy);
       }
       c.setTransform(1, 0, 0, 1, 0, 0);
-      // Its lights glow: strips, headlights (and their beams on the ground), tail lights, hot stacks, fires.
-      if (p.lights?.length) {
-        c.globalCompositeOperation = 'lighter';
-        const lz = 0;
-        for (const l of p.lights) {
-          const w = t.toWorld(l.x, l.y);
-          const gs = glowSprite(l.color, l.r * 2 * ppm);
-          c.globalAlpha = Math.min(1, l.k);
-          c.drawImage(gs, Math.round(this.bx(w.x, w.y) - gs.width / 2), Math.round(this.by(w.x, w.y) - (l.z ?? 0) * lz - gs.height / 2));
-        }
-        c.globalAlpha = 1;
-        c.globalCompositeOperation = 'source-over';
-      }
-      // Shield bubble.
-      if (t.shield > 0 && !t.dead) {
-        this.worldPath();
-        c.globalAlpha = 0.18 + (t.hitFlash > 0 ? 0.25 : 0) + 0.05 * Math.sin(this.time * 4);
-        c.strokeStyle = '#40c4ff';
-        c.lineWidth = Math.max(1 / ppm, 0.8);
-        c.beginPath();
-        c.ellipse(t.x, t.y, t.stats.length * 0.58, t.stats.width * 0.62, t.rot, 0, Math.PI * 2);
-        c.stroke();
-        c.globalAlpha = 1;
-        c.setTransform(1, 0, 0, 1, 0, 0);
-      }
-      if (t.hasBuff('invuln')) {
-        this.worldPath();
-        c.globalAlpha = 0.3;
-        c.strokeStyle = '#ffd740';
-        c.lineWidth = 1.5 / ppm;
-        c.beginPath();
-        c.ellipse(t.x, t.y, t.stats.length * 0.6, t.stats.width * 0.65, t.rot, 0, Math.PI * 2);
-        c.stroke();
-        c.globalAlpha = 1;
-        c.setTransform(1, 0, 0, 1, 0, 0);
-      }
+      this.hullExtras(t, p.lights ?? []);
     }
   }
 
-  private stacks = new WeakMap<Tank, { key: string; canvas: HTMLCanvasElement; ox: number; oy: number }[]>();
-
-  /**
-   * A layer's stacked sides, rotated to the hull's heading on a screen-aligned canvas: one slice of its side bands
-   * per screen pixel of height. Rebuilt only when the heading (half-degree steps), the zoom or the hull changes.
-   */
-  private stackFor(t: Tank, li: number, L: StackLayer, hd: PaintedHD, a: number, lift: number): { canvas: HTMLCanvasElement; ox: number; oy: number } {
-    let arr = this.stacks.get(t);
-    if (!arr) {
-      arr = [];
-      this.stacks.set(t, arr);
+  /** A hull's lights (strips, headlights and their beams on the ground, stacks, fires), shield bubble, invulnerability. */
+  private hullExtras(t: Tank, lights: HullLight[]): void {
+    const c = this.ctx;
+    const ppm = this.ppm;
+    if (lights.length) {
+      c.globalCompositeOperation = 'lighter';
+      for (const l of lights) {
+        const w = t.toWorld(l.x, l.y);
+        const gs = glowSprite(l.color, l.r * 2 * ppm);
+        c.globalAlpha = Math.min(1, l.k);
+        c.drawImage(gs, Math.round(this.bx(w.x, w.y) - gs.width / 2), Math.round(this.by(w.x, w.y) - gs.height / 2));
+      }
+      c.globalAlpha = 1;
+      c.globalCompositeOperation = 'source-over';
     }
-    const key = `${hd.key}|${a.toFixed(4)}|${lift.toFixed(3)}`;
-    let e = arr[li];
-    if (e && e.key === key) return e;
-    const cw = L.sides[0].canvas.width, ch = L.sides[0].canvas.height;
-    const D = Math.ceil(Math.hypot(cw, ch)) + 2;
-    const H = Math.ceil(L.z1 * lift) + 1;
-    const cv = e?.canvas ?? document.createElement('canvas');
-    if (cv.width !== D || cv.height !== D + H) {
-      cv.width = D;
-      cv.height = D + H;
+    // Shield bubble.
+    if (t.shield > 0 && !t.dead) {
+      this.worldPath();
+      c.globalAlpha = 0.18 + (t.hitFlash > 0 ? 0.25 : 0) + 0.05 * Math.sin(this.time * 4);
+      c.strokeStyle = '#40c4ff';
+      c.lineWidth = Math.max(1 / ppm, 0.8);
+      c.beginPath();
+      c.ellipse(t.x, t.y, t.stats.length * 0.58, t.stats.width * 0.62, t.rot, 0, Math.PI * 2);
+      c.stroke();
+      c.globalAlpha = 1;
+      c.setTransform(1, 0, 0, 1, 0, 0);
     }
-    const x = cv.getContext('2d')!;
-    x.imageSmoothingEnabled = false;
-    x.setTransform(1, 0, 0, 1, 0, 0);
-    x.clearRect(0, 0, cv.width, cv.height);
-    const ca = Math.cos(a), sa = Math.sin(a);
-    const ox = D / 2, oy = D / 2 + H;
-    let bi = 0;
-    for (let z = Math.round(L.z0 * lift); z < Math.round(L.z1 * lift); z++) {
-      const zm = z / lift;
-      while (bi + 1 < L.sides.length && L.sides[bi + 1].z <= zm) bi++;
-      x.setTransform(ca, sa, -sa, ca, ox, oy - z);
-      x.drawImage(L.sides[bi].canvas, -hd.cx, -hd.cy);
+    if (t.hasBuff('invuln')) {
+      this.worldPath();
+      c.globalAlpha = 0.3;
+      c.strokeStyle = '#ffd740';
+      c.lineWidth = 1.5 / ppm;
+      c.beginPath();
+      c.ellipse(t.x, t.y, t.stats.length * 0.6, t.stats.width * 0.65, t.rot, 0, Math.PI * 2);
+      c.stroke();
+      c.globalAlpha = 1;
+      c.setTransform(1, 0, 0, 1, 0, 0);
     }
-    e = { key, canvas: cv, ox, oy };
-    arr[li] = e;
-    return e;
   }
 
   /** A black copy of a sprite, for its shadow. */

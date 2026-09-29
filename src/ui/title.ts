@@ -2,6 +2,7 @@ import type { App } from '../app';
 import { loadSave } from '../game/save';
 import { button, h } from './dom';
 import { HangarScreen } from './hangar';
+import { SHIP_ART } from '../render/px/shipArt';
 
 export class Title {
   root: HTMLDivElement;
@@ -20,6 +21,7 @@ export class Title {
     this.root.innerHTML = `<div class="title-card">
       <div class="logo">IRONCRAWL</div>
       <div class="tag">Captain a 200 m Titan Crawler across The Crater</div>
+      <img class="title-hero" src="${SHIP_ART.hero}" alt="The Titan Crawler">
       <ul class="pitch">
         <li>Your ship is a <b>Titan Crawler two hundred metres long</b>: seven decks, eight crawlers, guns and soldier nests on the roof. Your officers run its stations; they tire, eat and sleep in shifts.</li>
         <li><b>The Crater</b> is 140 km across: dune wastes, frozen ridges, a toxic lake, volcanic spires, raider canyons and a lost city at the bottom of the Divot. Every zone has its own creatures, from 1 m rats to 150 m war machines.</li>

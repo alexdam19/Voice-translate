@@ -14,6 +14,8 @@ export default defineConfig({
     target: 'es2022',
     outDir: 'dist',
     chunkSizeWarningLimit: 1500,
+    // The ship art rides inside the bundle, so the single-file build carries it.
+    assetsInlineLimit: 8 * 1024 * 1024,
   },
   test: {
     include: ['tests/**/*.test.ts'],

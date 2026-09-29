@@ -758,6 +758,12 @@ function paintDynamic(x: CanvasRenderingContext2D, t: Tank, ppm: number, g: Game
   void px;
 }
 
+/** A roof gun on a pad or mount in the hull's colours, for painters that draw the hull some other way. */
+export function roofGun(x: CanvasRenderingContext2D, t: Tank, m: ModuleInst, x0: number, y0: number, mw: number, mh: number, ppm: number, time: number, lights: HullLight[]): void {
+  const pal = t.kind === 'rival' ? RIVAL : t.kind === 'remote' ? REMOTE : PLAYER;
+  turret(x, t, m, x0, y0, mw, mh, pal, ppm, time, lights);
+}
+
 /** A roof gun: an angular armoured turret on a ring, turned to its target, barrels recoiling, a rarity band. */
 function turret(x: CanvasRenderingContext2D, t: Tank, m: ModuleInst, x0: number, y0: number, mw: number, mh: number, pal: Pal, ppm: number, time: number, lights: HullLight[]): void {
   const main = m.key === 'main_gun';
