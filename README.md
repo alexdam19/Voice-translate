@@ -220,3 +220,11 @@ legacy/2d/    the original side-view 2D prototype, kept for reference
 ```
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the design notes.
+
+## Art credits
+
+Enemy infantry, beasts, aircraft and raider vehicles are sprites from [OpenHV](https://github.com/OpenHV/OpenHV):
+Daniel Cook's Hard Vacuum art ([CC BY 3.0 US](https://creativecommons.org/licenses/by/3.0/us/)) and the OpenHV
+team's art ([CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)); trivial pieces are CC0. Each file,
+its author and licence are listed in [src/assets/ohv/CREDITS.md](src/assets/ohv/CREDITS.md). To re-import them
+from a clone of OpenHV: `node tools/import-openhv.mjs ../OpenHV`.

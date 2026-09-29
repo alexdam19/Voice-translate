@@ -20,6 +20,8 @@ import { paintSmallTank, type HullLight } from './px/titan2d';
 import { paintTitanHD } from './px/titanhd';
 import { drawTitanSprite } from './px/titanSprite';
 import { airshipSprite, altarSprite, gateSprite, nodeSprite, siteSprite } from './px/decorArt';
+import { drawOhv, ohvCanvas, ohvFlash, ohvFrame, ohvSheet, ohvSteps, preloadOhv } from './px/ohv';
+import { ohvLookFor } from './px/ohvLooks';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
 import { quantizeSize } from './px/creaturesHD';
@@ -155,6 +157,7 @@ export class View2D {
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.resize();
+    preloadOhv();
   }
 
   /* ---------------- camera maths ---------------- */
@@ -853,6 +856,34 @@ export class View2D {
       const size = Math.max(min, real);
       const toP = Math.atan2(p.y - e.y, p.x - e.x);
       const a = this.headingOf(e.id, e.x, e.y, toP) + this.th;
+      // Hard Vacuum sprites (OpenHV) for everything short of the giants: the facing drawn for its heading.
+      const look = !e.titan && !e.boss ? ohvLookFor(e.kind, def, arch) : null;
+      const sheet = look ? (e.hitFlash > 0 ? ohvFlash(look.sheet) : ohvCanvas(look.sheet, look.team, look.tint, look.tintK)) : null;
+      if (look && sheet) {
+        const sh = ohvSheet(look.sheet)!;
+        const k = Math.max(3, Math.round(size / (sh.fw * 0.6)));
+        const gx = Math.round(this.bx(e.x, e.y));
+        const lift = e.flying ? Math.max(2, (1.6 + visZ(e.z)) * ppm * ZK * 1.3) : visZ(e.z) * ppm * ZK;
+        const gy = Math.round(this.by(e.x, e.y) - lift);
+        c.fillStyle = 'rgba(0,0,0,0.3)';
+        const so = e.flying ? Math.max(3, size * 0.4) : 1;
+        c.beginPath();
+        c.ellipse(gx + so, this.by(e.x, e.y) + so + sh.fh * k * 0.18, sh.fw * k * 0.26, sh.fh * k * 0.12, 0, 0, Math.PI * 2);
+        c.fill();
+        if (e.elite) {
+          c.strokeStyle = '#d500f9';
+          c.lineWidth = 1;
+          c.beginPath();
+          c.ellipse(gx, this.by(e.x, e.y) + sh.fh * k * 0.18, sh.fw * k * 0.34, sh.fh * k * 0.16, 0, 0, Math.PI * 2);
+          c.stroke();
+        }
+        // A pose drawn once per facing gets a stride instead: a pixel hop in step with the walk.
+        const hop = ohvSteps(look.sheet, look.move) === 1 && !e.flying && Math.hypot(e.vx, e.vy) > 0.3 ? (Math.floor(e.anim * 2) & 1) * Math.max(1, k >> 1) : 0;
+        drawOhv(c, sheet, look.sheet, ohvFrame(look.sheet, look.move, a, e.anim * 1.2), gx, gy - hop, k);
+        if (e.burn > 0 && Math.random() < 0.3) this.fx.emit(e.x, e.y, e.r, 0, 0, 2, 0.4, Math.max(0.5, e.r * 0.5), '#ff6d00', { add: true });
+        if (e.aim) this.drawAimLine(e);
+        continue;
+      }
       const frame = Math.floor(e.anim * (e.titan ? 1 : 2)) & 1;
       const variant = e.boss ? 'boss' : e.elite ? 'elite' : 'normal';
       // Painted at quantised sizes and scaled the rest of the way (zooming doesn't repaint every creature).

@@ -1,0 +1,1310 @@
+{
+ "beast": {
+  "w": 200,
+  "h": 80,
+  "fw": 20,
+  "fh": 20,
+  "frames": 40,
+  "cols": 10,
+  "seq": {
+   "beast.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "beast.move": {
+    "start": 8,
+    "length": 4,
+    "facings": 8,
+    "tick": 80
+   }
+  }
+ },
+ "beast_die": {
+  "w": 240,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 12,
+  "cols": 12,
+  "seq": {
+   "beast.die": {
+    "start": 0,
+    "length": 12,
+    "facings": 1,
+    "tick": 120
+   }
+  }
+ },
+ "bigbird": {
+  "w": 232,
+  "h": 112,
+  "fw": 29,
+  "fh": 28,
+  "frames": 32,
+  "cols": 8,
+  "seq": {
+   "bigbird.idle": {
+    "start": 0,
+    "length": 4,
+    "facings": 8,
+    "tick": 200
+   }
+  }
+ },
+ "crow": {
+  "w": 100,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 5,
+  "cols": 5,
+  "seq": {
+   "crow.idle": {
+    "start": 0,
+    "length": 5,
+    "facings": 1,
+    "tick": 100
+   }
+  }
+ },
+ "worm": {
+  "w": 351,
+  "h": 42,
+  "fw": 27,
+  "fh": 21,
+  "frames": 26,
+  "cols": 13,
+  "seq": {
+   "worm.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40,
+    "frames": [
+     0,
+     2,
+     4,
+     6,
+     8,
+     10,
+     12,
+     14
+    ]
+   },
+   "worm.move": {
+    "start": 0,
+    "length": 2,
+    "facings": 8,
+    "tick": 180
+   },
+   "worm.die": {
+    "start": 16,
+    "length": 10,
+    "facings": 1,
+    "tick": 80
+   }
+  }
+ },
+ "seed": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "seed.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "seed_move": {
+  "w": 60,
+  "h": 160,
+  "fw": 20,
+  "fh": 20,
+  "frames": 24,
+  "cols": 3,
+  "seq": {
+   "seed.move": {
+    "start": 0,
+    "length": 3,
+    "facings": 8,
+    "tick": 180
+   }
+  }
+ },
+ "seamonster": {
+  "w": 580,
+  "h": 160,
+  "fw": 20,
+  "fh": 20,
+  "frames": 232,
+  "cols": 29,
+  "seq": {
+   "seamonster.emerge": {
+    "start": 0,
+    "length": 29,
+    "facings": 8,
+    "tick": 75
+   }
+  }
+ },
+ "rifleman": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "rifleman.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "rocketeer": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "rocketeer.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "mortar": {
+  "w": 112,
+  "h": 12,
+  "fw": 14,
+  "fh": 12,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "mortar.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "flamer": {
+  "w": 128,
+  "h": 24,
+  "fw": 16,
+  "fh": 12,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "flamer.idle": {
+    "start": 0,
+    "length": 2,
+    "facings": 8,
+    "tick": 60
+   }
+  }
+ },
+ "sniper": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "sniper.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "blaster": {
+  "w": 88,
+  "h": 30,
+  "fw": 11,
+  "fh": 15,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "blaster.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "blaster.animation": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 30
+   }
+  }
+ },
+ "shocker": {
+  "w": 76,
+  "h": 128,
+  "fw": 19,
+  "fh": 16,
+  "frames": 32,
+  "cols": 4,
+  "seq": {
+   "shocker.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "shocker.shoot": {
+    "start": 8,
+    "length": 3,
+    "facings": 8,
+    "tick": 60
+   }
+  }
+ },
+ "technician": {
+  "w": 60,
+  "h": 26,
+  "fw": 15,
+  "fh": 13,
+  "frames": 8,
+  "cols": 4,
+  "seq": {
+   "technician.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "jetpacker": {
+  "w": 152,
+  "h": 32,
+  "fw": 19,
+  "fh": 16,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "jetpacker.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40,
+    "frames": [
+     0,
+     2,
+     4,
+     6,
+     8,
+     10,
+     12,
+     14
+    ]
+   },
+   "jetpacker.move": {
+    "start": 0,
+    "length": 2,
+    "facings": 8,
+    "tick": 60
+   }
+  }
+ },
+ "drone": {
+  "w": 40,
+  "h": 36,
+  "fw": 10,
+  "fh": 9,
+  "frames": 16,
+  "cols": 4,
+  "seq": {
+   "drone.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "drone.shoot": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 100
+   }
+  }
+ },
+ "drone2": {
+  "w": 48,
+  "h": 48,
+  "fw": 12,
+  "fh": 12,
+  "frames": 16,
+  "cols": 4,
+  "seq": {
+   "drone2.idle": {
+    "start": 0,
+    "length": 2,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "chopper": {
+  "w": 400,
+  "h": 160,
+  "fw": 40,
+  "fh": 40,
+  "frames": 40,
+  "cols": 10,
+  "seq": {
+   "chopper.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "chopper.fly": {
+    "start": 8,
+    "length": 4,
+    "facings": 8,
+    "tick": 50
+   }
+  }
+ },
+ "copter": {
+  "w": 192,
+  "h": 168,
+  "fw": 24,
+  "fh": 24,
+  "frames": 56,
+  "cols": 8,
+  "seq": {
+   "copter.idle": {
+    "start": 0,
+    "length": 4,
+    "facings": 8,
+    "tick": 50
+   },
+   "copter.muzzle": {
+    "start": 32,
+    "length": 3,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "gunship": {
+  "w": 112,
+  "h": 48,
+  "fw": 28,
+  "fh": 24,
+  "frames": 8,
+  "cols": 4,
+  "seq": {
+   "gunship.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "jet": {
+  "w": 104,
+  "h": 44,
+  "fw": 26,
+  "fh": 22,
+  "frames": 8,
+  "cols": 4,
+  "seq": {
+   "jet.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "bomber": {
+  "w": 100,
+  "h": 48,
+  "fw": 25,
+  "fh": 24,
+  "frames": 8,
+  "cols": 4,
+  "seq": {
+   "bomber.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "banshee": {
+  "w": 240,
+  "h": 120,
+  "fw": 30,
+  "fh": 30,
+  "frames": 32,
+  "cols": 8,
+  "seq": {
+   "banshee.idle": {
+    "start": 0,
+    "length": 4,
+    "facings": 8,
+    "tick": 50
+   }
+  }
+ },
+ "dropship": {
+  "w": 384,
+  "h": 78,
+  "fw": 48,
+  "fh": 39,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "dropship.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "dropship.fly": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "dropship.shoot": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "cargoship": {
+  "w": 320,
+  "h": 120,
+  "fw": 40,
+  "fh": 30,
+  "frames": 32,
+  "cols": 8,
+  "seq": {
+   "cargoship.liftoff": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "cargoship.unloaded": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "cargoship.landing": {
+    "start": 16,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "cargoship.idle": {
+    "start": 24,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "mothership": {
+  "w": 272,
+  "h": 342,
+  "fw": 68,
+  "fh": 57,
+  "frames": 24,
+  "cols": 4,
+  "seq": {
+   "mothership.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "mothership.open": {
+    "start": 8,
+    "length": 2,
+    "facings": 8,
+    "tick": 120
+   }
+  }
+ },
+ "saucer": {
+  "w": 24,
+  "h": 16,
+  "fw": 24,
+  "fh": 16,
+  "frames": 1,
+  "cols": 1,
+  "seq": {
+   "saucer.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "balloon": {
+  "w": 19,
+  "h": 28,
+  "fw": 19,
+  "fh": 28,
+  "frames": 1,
+  "cols": 1,
+  "seq": {
+   "balloon.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "turtle": {
+  "w": 480,
+  "h": 301,
+  "fw": 48,
+  "fh": 43,
+  "frames": 69,
+  "cols": 10,
+  "seq": {
+   "turtle.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   },
+   "turtle.move": {
+    "start": 1,
+    "length": 4,
+    "facings": 16,
+    "tick": 60
+   },
+   "turtle.shoot": {
+    "start": 65,
+    "length": 4,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "buggy": {
+  "w": 160,
+  "h": 40,
+  "fw": 20,
+  "fh": 20,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "buggy.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "buggy.turret": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "bike": {
+  "w": 184,
+  "h": 114,
+  "fw": 23,
+  "fh": 19,
+  "frames": 48,
+  "cols": 8,
+  "seq": {
+   "bike.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "bike.shoot": {
+    "start": 8,
+    "length": 5,
+    "facings": 8,
+    "tick": 50
+   }
+  }
+ },
+ "apc": {
+  "w": 320,
+  "h": 40,
+  "fw": 40,
+  "fh": 40,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "apc.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "mbt": {
+  "w": 264,
+  "h": 52,
+  "fw": 33,
+  "fh": 26,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "mbt.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "mbt.turret": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "mbt2": {
+  "w": 216,
+  "h": 52,
+  "fw": 27,
+  "fh": 26,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "mbt2.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "mbt2.turret": {
+    "start": 8,
+    "length": 8,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "merctank": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "merctank.idle": {
+    "start": 0,
+    "length": 8,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "dualmerctank": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "dualmerctank.idle": {
+    "start": 0,
+    "length": 8,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "missiletank": {
+  "w": 184,
+  "h": 38,
+  "fw": 23,
+  "fh": 19,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "missiletank.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "missiletank.turret": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "railguntank": {
+  "w": 216,
+  "h": 25,
+  "fw": 27,
+  "fh": 25,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "railguntank.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "lightningtank": {
+  "w": 232,
+  "h": 116,
+  "fw": 29,
+  "fh": 29,
+  "frames": 32,
+  "cols": 8,
+  "seq": {
+   "lightningtank.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "lightningtank.shoot": {
+    "start": 8,
+    "length": 3,
+    "facings": 8,
+    "tick": 60
+   }
+  }
+ },
+ "artillery": {
+  "w": 192,
+  "h": 24,
+  "fw": 24,
+  "fh": 24,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "artillery.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "aatank": {
+  "w": 168,
+  "h": 36,
+  "fw": 21,
+  "fh": 18,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "aatank.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "aatank.turret": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "tank4": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "tank4.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "tank9": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "tank9.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "tank14": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "tank14.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "firetruck": {
+  "w": 200,
+  "h": 46,
+  "fw": 25,
+  "fh": 23,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "firetruck.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "firetruck.turret": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "tanker": {
+  "w": 176,
+  "h": 44,
+  "fw": 22,
+  "fh": 22,
+  "frames": 16,
+  "cols": 8,
+  "seq": {
+   "tanker1.idle": {
+    "start": 8,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   },
+   "tanker2.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "miner": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "miner.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "repairtank": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "repairtank.idle": {
+    "start": 0,
+    "length": 1,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "explobig": {
+  "w": 520,
+  "h": 40,
+  "fw": 40,
+  "fh": 40,
+  "frames": 13,
+  "cols": 13,
+  "seq": {
+   "explosion.large": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   },
+   "explosion.large_f": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "explobig2": {
+  "w": 329,
+  "h": 47,
+  "fw": 47,
+  "fh": 47,
+  "frames": 7,
+  "cols": 7,
+  "seq": {
+   "explosion.large_2": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 80
+   }
+  }
+ },
+ "explobig3": {
+  "w": 329,
+  "h": 47,
+  "fw": 47,
+  "fh": 47,
+  "frames": 7,
+  "cols": 7,
+  "seq": {
+   "explosion.large_3": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 80
+   }
+  }
+ },
+ "explosn": {
+  "w": 180,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 9,
+  "cols": 9,
+  "seq": {
+   "explosion.medium": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "explosn2": {
+  "w": 184,
+  "h": 23,
+  "fw": 23,
+  "fh": 23,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "explosion.medium_2": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "explosn3": {
+  "w": 299,
+  "h": 24,
+  "fw": 23,
+  "fh": 24,
+  "frames": 13,
+  "cols": 13,
+  "seq": {
+   "explosion.medium_3": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "exploplasma": {
+  "w": 33,
+  "h": 33,
+  "fw": 11,
+  "fh": 11,
+  "frames": 9,
+  "cols": 3,
+  "seq": {
+   "explosion_plasma.hit1": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   },
+   "explosion_plasma.hit2": {
+    "start": 2,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   },
+   "explosion_plasma.hit3": {
+    "start": 5,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "smoke": {
+  "w": 120,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 6,
+  "cols": 6,
+  "seq": {
+   "smoke.idle": {
+    "start": 0,
+    "length": 6,
+    "facings": 1,
+    "tick": 60
+   }
+  }
+ },
+ "large_smoke": {
+  "w": 112,
+  "h": 14,
+  "fw": 14,
+  "fh": 14,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "landing.idle": {
+    "start": 0,
+    "length": "*",
+    "facings": 1,
+    "tick": 50
+   }
+  }
+ },
+ "small_smoke": {
+  "w": 120,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 6,
+  "cols": 6,
+  "seq": {
+   "small_smoke.idle": {
+    "start": 0,
+    "length": 6,
+    "facings": 1,
+    "tick": 60
+   }
+  }
+ },
+ "muzzle": {
+  "w": 160,
+  "h": 160,
+  "fw": 20,
+  "fh": 20,
+  "frames": 64,
+  "cols": 8,
+  "seq": {
+   "missiletank.muzzle": {
+    "start": 0,
+    "length": 8,
+    "facings": 8,
+    "tick": 40
+   }
+  }
+ },
+ "muzzle2": {
+  "w": 160,
+  "h": 60,
+  "fw": 20,
+  "fh": 20,
+  "frames": 24,
+  "cols": 8,
+  "seq": {
+   "ship2.muzzle": {
+    "start": 0,
+    "length": 3,
+    "facings": 8,
+    "tick": 50
+   },
+   "gunship.muzzle": {
+    "start": 0,
+    "length": 3,
+    "facings": 8,
+    "tick": 50
+   },
+   "rifleman.muzzle": {
+    "start": 0,
+    "length": 3,
+    "facings": 8,
+    "tick": 50
+   },
+   "rocketeer.muzzle": {
+    "start": 0,
+    "length": 3,
+    "facings": 8,
+    "tick": 50
+   },
+   "mercboat.muzzle": {
+    "start": 0,
+    "length": 3,
+    "facings": 8,
+    "tick": 50
+   }
+  }
+ },
+ "sparks1": {
+  "w": 140,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 7,
+  "cols": 7,
+  "seq": {
+   "hit.spark_a": {
+    "start": 0,
+    "length": 7,
+    "facings": 1,
+    "tick": 60
+   }
+  }
+ },
+ "pixelsparks": {
+  "w": 9,
+  "h": 2,
+  "fw": 1,
+  "fh": 1,
+  "frames": 18,
+  "cols": 9,
+  "seq": {
+   "pixelsparks.Defaults": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "debris1": {
+  "w": 96,
+  "h": 13,
+  "fw": 16,
+  "fh": 13,
+  "frames": 6,
+  "cols": 6,
+  "seq": {
+   "debris.large": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "debris2": {
+  "w": 48,
+  "h": 8,
+  "fw": 8,
+  "fh": 8,
+  "frames": 6,
+  "cols": 6,
+  "seq": {
+   "debris.small2": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ },
+ "blood1": {
+  "w": 160,
+  "h": 20,
+  "fw": 20,
+  "fh": 20,
+  "frames": 8,
+  "cols": 8,
+  "seq": {
+   "seed.die": {
+    "start": 0,
+    "length": 8,
+    "facings": 1,
+    "tick": 100
+   },
+   "seamonster.die": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   },
+   "bigbird.die": {
+    "start": 0,
+    "length": 8,
+    "facings": 1,
+    "tick": 100
+   },
+   "explosion.blood": {
+    "start": 0,
+    "length": 1,
+    "facings": 1,
+    "tick": 40
+   }
+  }
+ }
+}
