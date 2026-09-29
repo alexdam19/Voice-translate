@@ -8,7 +8,7 @@ import { armRoofOrder, cancelOrder, createOrder, MAX_ORDERS, mountKinds, planFet
 import type { ModuleInst } from '../game/tank';
 import { HAIRS_HD, hatKindFor, personHD, type Look, type PoseHD } from '../render/px/people';
 import { discAt, drawCorridor, drawRoom, glowAt, IA, type Slots } from '../render/px/interiorArt';
-import { SHIP_ART } from '../render/px/shipArt';
+import { SHIP_ART, shipView } from '../render/px/shipArt';
 import { drawService } from '../render/px/deckArt';
 import type { Act } from '../game/aboard';
 import { hash2 } from '../render/px/pixels';
@@ -40,6 +40,37 @@ interface Placed {
 }
 
 const { CELL, DH, ROOF_H, SKY, KEEL } = IA;
+
+/**
+ * The side-view sprite (bow on its left) and how it maps onto the cutaway: its superstructure band (rows 0-66)
+ * sits above the roof, its hull band (66-120) is the decks (stretched: the cutaway draws decks taller than life),
+ * and its running gear (120-162) is the keel. SIDE_BOW is the sprite column where the hull proper begins at the bow.
+ */
+const SIDE = { w: 538, h: 162, roof: 66, keel: 120, bow: 10 } as const;
+const edges = new WeakMap<HTMLCanvasElement, Int16Array>();
+
+/** The top edge of the side sprite in each column (its silhouette), cached. */
+function sideTops(img: HTMLCanvasElement): Int16Array {
+  let e = edges.get(img);
+  if (e) return e;
+  const t = document.createElement('canvas');
+  t.width = img.width;
+  t.height = img.height;
+  const x = t.getContext('2d')!;
+  x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, t.width, t.height).data;
+  e = new Int16Array(t.width).fill(SIDE.keel);
+  for (let i = 0; i < t.width; i++) {
+    for (let j = 0; j < t.height; j++) {
+      if (d[(j * t.width + i) * 4 + 3] > 60) {
+        e[i] = j;
+        break;
+      }
+    }
+  }
+  edges.set(img, e);
+  return e;
+}
 /** Hat colours by what people are doing. */
 const HAT_COL: Partial<Record<Act, string>> = { gun: '#5a646e', soldier: '#56663a', engine: '#f0b020', build: '#ff8a20', weld: '#ff8a20', drill: '#f0b020', mechanic: '#4a90d0', haul: '#f0b020', console: '#1c3048', hose: '#d02818', pump: '#d02818', fix: '#d02818' };
 
@@ -125,6 +156,7 @@ export class Interior {
     const banner = h('img', 'int-banner') as HTMLImageElement;
     banner.src = SHIP_ART.side;
     banner.alt = 'Your Titan, side on';
+    banner.style.transform = 'scaleX(-1)';
     this.panel.append(head, banner, this.secDecks, this.secRoom, this.secOrders, this.secDraft);
     this.root.append(this.cv, this.panel);
     parent.appendChild(this.root);
@@ -322,23 +354,67 @@ export class Interior {
   /* Frame                                                             */
   /* ---------------------------------------------------------------- */
 
+  private bg: HTMLCanvasElement | null = null;
+
+  /** The violet night behind the ship: a vertical gradient, a soft nebula and a pixel grid on the horizon. */
+  private backdrop(): HTMLCanvasElement {
+    if (this.bg && this.bg.width === this.W && this.bg.height === this.H) return this.bg;
+    const b = document.createElement('canvas');
+    b.width = this.W;
+    b.height = this.H;
+    const x = b.getContext('2d')!;
+    const gr = x.createLinearGradient(0, 0, 0, this.H);
+    gr.addColorStop(0, '#07051a');
+    gr.addColorStop(0.55, '#1a0d3a');
+    gr.addColorStop(1, '#2a0f4a');
+    x.fillStyle = gr;
+    x.fillRect(0, 0, this.W, this.H);
+    for (const [cx, cy, r, col] of [[0.25, 0.3, 0.45, 'rgba(120,60,220,0.18)'], [0.75, 0.2, 0.35, 'rgba(40,160,255,0.12)'], [0.6, 0.8, 0.5, 'rgba(255,60,180,0.10)']] as [number, number, number, string][]) {
+      const rg = x.createRadialGradient(cx * this.W, cy * this.H, 0, cx * this.W, cy * this.H, r * this.W);
+      rg.addColorStop(0, col);
+      rg.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = rg;
+      x.fillRect(0, 0, this.W, this.H);
+    }
+    // A perspective grid on the floor, fading up.
+    const hz = Math.round(this.H * 0.78);
+    x.strokeStyle = 'rgba(179,136,255,0.18)';
+    x.lineWidth = 1;
+    for (let k = 0; k < 10; k++) {
+      const y = hz + Math.pow(k / 9, 1.8) * (this.H - hz);
+      x.beginPath();
+      x.moveTo(0, Math.round(y) + 0.5);
+      x.lineTo(this.W, Math.round(y) + 0.5);
+      x.stroke();
+    }
+    for (let k = -20; k <= 20; k++) {
+      x.beginPath();
+      x.moveTo(this.W / 2 + k * 30, hz);
+      x.lineTo(this.W / 2 + k * 160, this.H);
+      x.stroke();
+    }
+    this.bg = b;
+    return b;
+  }
+
   render(g: Game, ab: Aboard, dt: number): void {
     if (!this.isOpen) return;
     this.game = g;
     this.time += dt;
+    const t0 = this.time;
     if (this.layoutFor !== g.player.version || !this.dio.width) this.layout(g);
     this.paint(g, ab);
     const c = this.x;
     c.imageSmoothingEnabled = false;
-    // Backdrop: blueprint blue with its grid, like the design sheets.
-    c.fillStyle = '#0c3a52';
-    c.fillRect(0, 0, this.W, this.H);
-    c.fillStyle = '#12485f';
-    for (let gx = 0; gx < this.W; gx += 24) c.fillRect(gx, 0, 1, this.H);
-    for (let gy = 0; gy < this.H; gy += 24) c.fillRect(0, gy, this.W, 1);
-    c.fillStyle = '#1a5a74';
-    for (let gx = 0; gx < this.W; gx += 120) c.fillRect(gx, 0, 1, this.H);
-    for (let gy = 0; gy < this.H; gy += 120) c.fillRect(0, gy, this.W, 1);
+    // Backdrop: deep violet night with a drifting starfield and a nebula glow (the neon station-cutaway look).
+    c.drawImage(this.backdrop(), 0, 0);
+    for (let i = 0; i < 90; i++) {
+      const sx = (hash2(i, 1, 5) * this.W + t0 * (2 + hash2(i, 2, 5) * 6)) % this.W;
+      const sy = hash2(i, 3, 5) * this.H;
+      const tw = Math.sin(t0 * (1 + hash2(i, 4, 5) * 3) + i) > 0.6;
+      c.fillStyle = tw ? '#ffffff' : i % 3 ? '#8a7fd0' : '#5ad8ff';
+      c.fillRect(Math.round(sx), Math.round(sy), i % 11 === 0 ? 2 : 1, i % 11 === 0 ? 2 : 1);
+    }
     const a = this.area();
     const ox = Math.round(a.x + a.w / 2 - (this.dio.width * this.zoom) / 2 + this.panX), oy = Math.round(a.y + a.h / 2 - (this.dio.height * this.zoom) / 2 + this.panY);
     c.drawImage(this.dio, ox, oy, this.dio.width * this.zoom, this.dio.height * this.zoom);
@@ -364,6 +440,25 @@ export class Interior {
     const bottom = roofY + 7 * DH;
     this.slots.clear();
     this.services = [];
+    // The ship's real side outline: the decks are clipped to it (the sloped bow cuts the forward rooms).
+    const side = shipView('side', 'main');
+    const shell = side ? this.shellMap(hullL, hullR, roofY, bottom) : null;
+    if (side && shell) {
+      this.drawShell(c, side, shell, roofY, bottom, 'back');
+      const tops = sideTops(side);
+      const path = new Path2D();
+      path.moveTo(hullL, bottom);
+      for (let x = hullL; x <= hullR; x += 2) {
+        const xs = Math.max(0, Math.min(SIDE.w - 1, Math.round((shell.xBow - x) / shell.kx)));
+        const ts = tops[xs];
+        const y = ts <= SIDE.roof ? roofY - 2 : roofY + ((ts - SIDE.roof) / (SIDE.keel - SIDE.roof)) * (bottom - roofY);
+        path.lineTo(x, Math.min(bottom, y));
+      }
+      path.lineTo(hullR, bottom);
+      path.closePath();
+      c.save();
+      c.clip(path);
+    }
 
     /* ---- Decks: the Spine, then the rooms ---- */
     for (let deck = 1; deck <= 7; deck++) {
@@ -461,7 +556,11 @@ export class Interior {
       pxMini(c, msg, (hullL + hullR) / 2, y0 + DH / 2 - 2, '#8a8e96', 'center');
     }
 
-    this.exterior(c, g, hullL, hullR, roofY, bottom);
+    if (side && shell) {
+      c.restore();
+      this.drawShell(c, side, shell, roofY, bottom, 'front');
+      for (const pl of this.roomsByDeck[ROOF] ?? []) this.roofGun(c, g, pl, roofY - 6);
+    } else this.exterior(c, g, hullL, hullR, roofY, bottom);
 
     /* ---- The crew ---- */
     this.drawCrew(c, g, ab);
@@ -495,6 +594,76 @@ export class Interior {
       c.lineWidth = 1;
       c.strokeRect(Math.round(X(pl.at + pl.len)) + 0.5, y0 + 0.5, Math.round(X(pl.at) - X(pl.at + pl.len)) - 1, bh - 1);
     }
+  }
+
+  /** Where the side sprite goes: flipped (bow right), its hull starting at the bow end of the decks. */
+  private shellMap(hullL: number, hullR: number, roofY: number, bottom: number): { xBow: number; kx: number; kTop: number; kKeel: number } {
+    const xStern = hullL - 16;
+    const xBow = hullR + ((hullR - xStern) / (SIDE.w - SIDE.bow)) * SIDE.bow;
+    const kx = (xBow - xStern) / SIDE.w;
+    return { xBow, kx, kTop: roofY / SIDE.roof, kKeel: KEEL / (SIDE.h - SIDE.keel) + bottom * 0 };
+  }
+
+  /**
+   * The hull from the side sprite. 'back' lays the whole ship down (the decks then cover its middle); 'front' puts
+   * back what must sit over the decks' edges: the armour rim along the cut, the running gear with its belts moving,
+   * the toroids on this side glowing, the stern exhausts.
+   */
+  private drawShell(c: CanvasRenderingContext2D, img: HTMLCanvasElement, s: { xBow: number; kx: number; kTop: number; kKeel: number }, roofY: number, bottom: number, layer: 'back' | 'front'): void {
+    const g = this.game!;
+    const p = g.player;
+    const t = this.time;
+    c.save();
+    c.imageSmoothingEnabled = false;
+    c.translate(Math.round(s.xBow), 0);
+    c.scale(-s.kx, 1);
+    if (layer === 'back') {
+      // Superstructure above the roof, hull through the decks, running gear below.
+      c.drawImage(img, 0, 0, SIDE.w, SIDE.roof, 0, 0, SIDE.w, roofY);
+      c.drawImage(img, 0, SIDE.roof, SIDE.w, SIDE.keel - SIDE.roof, 0, roofY, SIDE.w, bottom - roofY);
+      c.drawImage(img, 0, SIDE.keel, SIDE.w, SIDE.h - SIDE.keel, 0, bottom, SIDE.w, KEEL);
+      c.restore();
+      return;
+    }
+    // In front: the running gear again (over anything that spilled down), and the superstructure's lower lip.
+    c.drawImage(img, 0, SIDE.keel, SIDE.w, SIDE.h - SIDE.keel, 0, bottom, SIDE.w, KEEL);
+    c.restore();
+    // Tread belts running (links sliding along the bottom run), faster with speed.
+    const run = t * p.speed * 2.2;
+    const yb = bottom + Math.round(((146 - SIDE.keel) / (SIDE.h - SIDE.keel)) * KEEL);
+    const x0 = s.xBow - 520 * s.kx, x1 = s.xBow - 170 * s.kx;
+    for (let x = x0 + (((run % 6) + 6) % 6); x < x1; x += 6) {
+      c.fillStyle = '#4a5466';
+      c.fillRect(Math.round(x), yb, 3, 1);
+    }
+    // The near-side toroids (fore and aft), ringed in neon, spinning with their push.
+    const hm = g.helm;
+    for (const [i, xs] of [[0, 34], [2, 500]] as [number, number][]) {
+      const x = s.xBow - xs * s.kx, y = bottom - 10;
+      const on = hm.toroids[i] && g.titan.toroids[i] > 0.1;
+      const k = on ? 0.35 + 0.65 * p.spool : 0;
+      discAt(c, x, y, 13, '#0b0d14');
+      discAt(c, x, y, 11, '#2a3040');
+      discAt(c, x, y, 6, on ? '#18ffff' : '#301018');
+      discAt(c, x, y, 3, on ? '#e8ffff' : '#200a10');
+      for (let q = 0; q < 6; q++) {
+        const a = t * (1 + 8 * k) + (q * Math.PI) / 3;
+        c.fillStyle = '#6a7690';
+        c.fillRect(Math.round(x + Math.cos(a) * 9), Math.round(y + Math.sin(a) * 9), 2, 2);
+      }
+      if (on) glowAt(c, x, y, 18 + 16 * k, '#18ffff', 0.35 + 0.4 * k);
+    }
+    // Stern exhausts.
+    const hot = Math.abs(p.speed) > 1 || hm.overdrive;
+    if (hot) {
+      const sx = s.xBow - (SIDE.w - 4) * s.kx;
+      for (let q = 0; q < 3; q++) glowAt(c, sx, roofY + 20 + q * 34, hm.overdrive ? 22 : 12, hm.overdrive ? '#ffb040' : '#ff7a1a', hm.overdrive ? 0.9 : 0.5);
+    }
+    // The armour rim along the cut: a dark lip with a neon trim, the Starnet way.
+    c.fillStyle = '#07080d';
+    c.fillRect(Math.round(s.xBow - (SIDE.w - 14) * s.kx), roofY - 3, Math.round((SIDE.w - 24) * s.kx), 3);
+    c.fillStyle = '#b388ff';
+    for (let x = Math.round(s.xBow - (SIDE.w - 14) * s.kx); x < s.xBow - 24 * s.kx; x += 12) c.fillRect(x, roofY - 2, 6, 1);
   }
 
   /** The Titan's hull around the cutaway, from the side: superstructure and guns on top, the prow, the stern, the treads. */
