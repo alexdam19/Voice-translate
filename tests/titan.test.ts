@@ -90,9 +90,12 @@ describe('Titan systems', () => {
     g.titan.crawlers[5] = 0.3;
     g.titan.fire[compIndex(7, 2)] = 0.5;
     g.titan.fuel = 777;
+    g.player.engine.block = 3;
+    g.player.engine.nitro = 2;
     const d = deserialize(JSON.parse(JSON.stringify(serialize(g))));
     expect(d.titan.crawlers[5]).toBeCloseTo(0.3);
     expect(d.titan.fire[compIndex(7, 2)]).toBeCloseTo(0.5);
     expect(d.titan.fuel).toBeCloseTo(777);
+    expect(d.player.engine).toEqual({ block: 3, turbo: 0, gearbox: 0, nitro: 2, radiator: 0 });
   });
 });

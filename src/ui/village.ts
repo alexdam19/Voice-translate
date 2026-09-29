@@ -9,6 +9,7 @@ import { WEAPONS } from '../shared/weapons';
 import { moduleIcon, weaponIcon } from '../render/icons';
 import { selectArsenalHardpoint, selectArsenalWeapon, starsHTML } from './arsenalPanel';
 import { button, costHTML, esc, h, hideTip, tooltip } from './dom';
+import { renderEngineShop } from './engineShop';
 
 export function fmtTime(s: number): string {
   s = Math.ceil(s);
@@ -80,6 +81,8 @@ export class VillageUI {
   /** Touch placement is two taps: the first previews the spot here, the second (or PLACE) builds. */
   pending: [number, number] | null = null;
   private cat: ModuleCat = 'weapon';
+  /** The shop's Engine Workshop tab is showing instead of a building category. */
+  private engineTab = false;
   /** The deck on show: 0 is the roof, then the stories below it. */
   deck = 0;
   private deckBar = h('div', 'v-decks');
@@ -444,15 +447,26 @@ export class VillageUI {
     head.appendChild(button('✕', () => this.toggleShop(false), 'close'));
     this.shop.appendChild(head);
     const tabs = h('div', 'vs-tabs');
+    if (p.fortress) {
+      tabs.appendChild(button('⚙ Engine', () => {
+        this.engineTab = true;
+        this.renderShop();
+      }, `tab eng ${this.engineTab ? 'on' : ''}`));
+    }
     for (const c of CATEGORIES) {
       if (c.key === 'command') continue;
       const has = MODULE_LIST.some((d) => d.cat === c.key && (d.unlock ?? 1) <= g.commander.level);
       tabs.appendChild(button(c.name, () => {
         this.cat = c.key;
+        this.engineTab = false;
         this.renderShop();
-      }, `tab ${this.cat === c.key ? 'on' : ''} ${has ? '' : 'dim'}`));
+      }, `tab ${!this.engineTab && this.cat === c.key ? 'on' : ''} ${has ? '' : 'dim'}`));
     }
     this.shop.appendChild(tabs);
+    if (this.engineTab && p.fortress) {
+      renderEngineShop(this.shop, this.app, () => this.renderShop());
+      return;
+    }
     if (CAT_HINT[this.cat]) this.shop.appendChild(h('div', 'd', CAT_HINT[this.cat]));
     const grid = h('div', 'vs-grid');
     const list = MODULE_LIST.filter((d) => d.cat === this.cat && isShopBuilding(d)).sort((a, b) => (a.unlock ?? 1) - (b.unlock ?? 1));

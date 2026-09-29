@@ -41,9 +41,9 @@ describe('the fortress is a full facility', () => {
       const used = p.modules.filter((m) => m.deck === deck).reduce((s, m) => s + MODULES[m.key].w * MODULES[m.key].h, 0);
       expect(used).toBeLessThan(18 * 38 * 0.5);
     }
-    // About 50-60 km/h flat out.
-    expect(p.stats.topSpeed * 3.6).toBeGreaterThan(48);
-    expect(p.stats.topSpeed * 3.6).toBeLessThan(66);
+    // About 70-80 km/h flat out on a stock engine.
+    expect(p.stats.topSpeed * 3.6).toBeGreaterThan(62);
+    expect(p.stats.topSpeed * 3.6).toBeLessThan(85);
   });
 
   it('builders put up new buildings over time, one job each', () => {

@@ -7,6 +7,7 @@ import { turnToward, wrapAngle } from '../../shared/types';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
 import { damageEnemy } from './damage';
+import { engineSpec, pullCurve } from './engine';
 
 export function tankNav(t: Tank): NavMode {
   return navModeFor(t.drive, t.crush);
@@ -323,7 +324,7 @@ export function arcThrottle(diff: number): number {
  * turns in wide differential arcs (a slow pivot only when nearly stopped, on firm ground). Heavy, but readable:
  * the HUD shows the throttle, both crawler sides and the predicted path.
  */
-export const TITAN = { accel: 2.2, brake: 3.2, reverseBrake: 4, yaw: 0.34, pivot: 0.14, cap: 26 } as const;
+export const TITAN = { accel: 2.2, brake: 3.2, reverseBrake: 4, yaw: 0.34, pivot: 0.14, cap: 70 } as const;
 /** Overdrive: this much more speed, for this much more fuel and wear. */
 export const OVERDRIVE = { speed: 1.45, fuel: 3, wear: 5 } as const;
 
@@ -342,7 +343,7 @@ export function titanYaw(t: Tank, speed: number, firm: boolean): number {
   return (pivot + (TITAN.yaw - pivot) * k) * t.handling;
 }
 
-export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: ManualDrive): void {
+export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: ManualDrive, kick = 1): void {
   if (t.anchored || t.dead) {
     t.speed = 0;
     return;
@@ -386,8 +387,18 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   const target = top * throttle;
   const hd = handling(t);
   const rev = t.fortress && Math.sign(target) !== Math.sign(t.speed) && Math.abs(t.speed) > 0.05 && target !== 0;
-  if (t.speed < target) t.speed = Math.min(target, t.speed + (t.speed < 0 ? hd.brake : hd.accel) * dt * (rev ? TITAN.reverseBrake / TITAN.brake : 1));
-  else t.speed = Math.max(target, t.speed - (t.speed > 0 ? hd.brake : hd.accel) * dt * (rev ? TITAN.reverseBrake / TITAN.brake : 1));
+  const up = t.speed < target;
+  const gaining = up ? t.speed >= 0 : t.speed <= 0;
+  let rate = (gaining ? hd.accel : hd.brake) * (rev ? TITAN.reverseBrake / TITAN.brake : 1);
+  if (t.fortress) {
+    // The engine spools toward the lever (winding down faster than up); she pulls weakly until it has, then harder
+    // and harder as she gathers way.
+    const spec = engineSpec(t.engine);
+    const want = Math.abs(throttle);
+    t.spool = want > t.spool ? Math.min(want, t.spool + spec.spool * kick * dt) : Math.max(want, t.spool - 0.35 * dt);
+    if (gaining) rate *= pullCurve(spec, t.spool, Math.abs(t.speed) / Math.max(1, Math.abs(top))) * kick;
+  }
+  t.speed = up ? Math.min(target, t.speed + rate * dt) : Math.max(target, t.speed - rate * dt);
   const rot0 = t.rot;
   if (!stunned && t.fortress) {
     const yaw = titanYaw(t, t.speed, trac > 0.7) * (speedMult > 1 ? 1.3 : 1) * (0.35 + 0.65 * t.titanMods.steering);

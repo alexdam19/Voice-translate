@@ -20,7 +20,7 @@ import { loadTitanState, type TitanState } from './systems/titan';
 export const SAVE_KEY = 'ironcrawl3d-save-v1';
 
 export interface SaveData {
-  v: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+  v: 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
   seed: number;
   time: number;
   tank: TankSave;
@@ -76,7 +76,7 @@ export function serialize(g: Game): SaveData {
   for (const [k, s] of Object.entries(g.squads)) if (s) squads[k as SquadType] = { order: s.order, gx: s.gx, gy: s.gy };
   const tr = g.tracked;
   return {
-    v: 10, reserves: g.reserves, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
+    v: 11, reserves: g.reserves, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
     armory: g.armory, tech: [...g.tech], stats: g.stats, explored: '', fog: g.fog.serialize(),
     ...featureState(g),
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
@@ -264,7 +264,7 @@ export function loadSave(): SaveData | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw) as SaveData;
-    return d && d.v >= 3 && d.v <= 10 ? d : null;
+    return d && d.v >= 3 && d.v <= 11 ? d : null;
   } catch {
     return null;
   }

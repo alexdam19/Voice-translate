@@ -5,6 +5,7 @@ import { emptyBonus, type CrewBonus } from './crew';
 import { classMods, type HullClass } from './classes';
 import { batteryLocal, batteryReach, chassisDef, CREW_SCALE, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
+import { engineSpec, newEngine, type EngineParts } from './systems/engine';
 
 export type Team = 'player' | 'enemy';
 export type TankKind = 'main' | 'outrider' | 'raider' | 'outpost' | 'remote' | 'rival';
@@ -213,6 +214,9 @@ export class Tank {
   commandFrac = 1;
   /** A storm drove everyone off the roof. */
   indoors = false;
+  /** The engine workshop's parts (Titans), and how far the engine has spooled up (0-1). */
+  engine: EngineParts = newEngine();
+  spool = 0;
   /** People the builders need right now (two per job), and how many are on it. */
   buildCrew = 0;
   builderStaff = 0;
@@ -558,13 +562,17 @@ export class Tank {
       use += m.stats.power;
     }
     power *= (1 + crew.power) * this.titanMods.power;
+    // A bigger engine block draws on the reactors (the diesels themselves don't need it, but everything else feels it).
+    const es = engineSpec(this.engine);
+    const driveRatio = use <= 0 ? 1 : Math.min(1, power / use);
+    if (this.fortress) use += es.power;
     const powerRatio = use <= 0 ? 1 : Math.min(1, power / use);
     const width = this.cols * this.cell + (this.fortress ? 0 : this.cell * 2);
     // Fortress-class hulls carry a wedge nose and an afterburner tail past the deck.
     const dread = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
     const length = this.rows * this.cell + (dread ? 2 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
-    const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? 14 + 3 * Math.min(1, ratio * 3) : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * powerRatio) * hull.speed * (1 + crew.speed) * cm.speed;
+    const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? (20 + 3 * Math.min(1, ratio * 3)) * es.top : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * driveRatio) * hull.speed * (1 + crew.speed) * cm.speed;
     this.handling = cm.turn;
     this.ram = cm.ram;
     this.nitroMult = cm.nitro;
@@ -777,6 +785,7 @@ export class Tank {
       stories: this.stories, klass: this.klass, classMk: this.classMk, troops: this.troops,
       modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, d: m.deck, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined, b: m.built ? undefined : false })),
       cargo: this.cargo.snapshot(),
+      engine: Object.values(this.engine).some((v) => v > 0) ? { ...this.engine } : undefined,
     };
   }
 
@@ -788,6 +797,7 @@ export class Tank {
     const oldHull = (s.stories ?? 0) < TITAN_DECKS && t.fortress;
     t.troops = s.troops ?? 0;
     t.drive = s.drive;
+    if (s.engine) for (const k of Object.keys(t.engine) as (keyof EngineParts)[]) t.engine[k] = Math.max(0, Math.min(8, Math.round(s.engine[k] ?? 0)));
     t.x = s.x;
     t.y = s.y;
     t.rot = s.rot;
@@ -843,4 +853,6 @@ export interface TankSave {
   troops?: number;
   modules: { key: string; cx: number; cy: number; d?: number; weapon: WeaponItem | null; mode?: FireMode; lvl?: number; b?: boolean }[];
   cargo: Slot[];
+  /** The engine workshop's parts (v11+). */
+  engine?: Partial<EngineParts>;
 }

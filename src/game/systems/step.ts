@@ -7,7 +7,8 @@ import { updateCards } from './cards';
 import { healPlayer, injureRandomCrew } from './damage';
 import { updateBuffs, updateCrew, updateZones } from './crewsys';
 import { updateSquads } from './squads';
-import { driveTank, manualDrive, OVERDRIVE, separateTanks, updateCollapses, type ManualDrive } from './movement';
+import { driveTank, manualDrive, separateTanks, updateCollapses, type ManualDrive } from './movement';
+import { engineSpec } from './engine';
 import { updateFocus, updateInteract } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
 import { updateProjectiles } from './projectiles';
@@ -134,8 +135,22 @@ export function stepWorld(g: Game, dt: number): void {
     const nitro = p.buff('nitro');
     const chill = p.buff('chill');
     if (helm.overdrive && (g.titan.fuel <= 0 || !p.titan)) helm.overdrive = false;
-    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)) * stormSpeed(g) * (helm.overdrive ? OVERDRIVE.speed : 1);
-    driveTank(g, p, dt, mult, helmDrive(g, dt));
+    // Overdrive heats the engine; at the red line it trips out and won't relight until it has cooled.
+    const spec = engineSpec(p.engine);
+    if (helm.overdrive) {
+      helm.heat = Math.min(1, helm.heat + spec.heat * dt);
+      if (helm.heat >= 1) {
+        helm.overdrive = false;
+        helm.overheat = true;
+        g.hooks.toast('ENGINE OVERHEAT: overdrive tripped. Let it cool (Radiators in the Engine Workshop help).', '#ff5252');
+        g.hooks.sound('alarm');
+      }
+    } else {
+      helm.heat = Math.max(0, helm.heat - spec.cool * dt);
+      if (helm.overheat && helm.heat < 0.35) helm.overheat = false;
+    }
+    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)) * stormSpeed(g) * (helm.overdrive ? spec.odSpeed : 1);
+    driveTank(g, p, dt, mult, helmDrive(g, dt), helm.overdrive ? spec.odKick : 1);
     if (nitro && Math.random() < dt * 20) {
       const b = p.toWorld(-p.stats.length / 2, (Math.random() - 0.5) * p.stats.width);
       g.fx.push({ t: 'dust', x: b.x, y: b.y, color: '#18ffff' });

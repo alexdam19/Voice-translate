@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { driveTank, OVERDRIVE, TITAN } from '../src/game/systems/movement';
+import { driveTank, TITAN } from '../src/game/systems/movement';
+import { engineSpec } from '../src/game/systems/engine';
 import { helmDrive, stepWorld, warpBlocked } from '../src/game/systems/step';
 import { CH, OBS, TER } from '../src/shared/map';
 import { wrapAngle } from '../src/shared/types';
@@ -20,15 +21,23 @@ function hold(g: ReturnType<typeof game>, ix: number, iy: number, secs: number, 
 const top = (g: ReturnType<typeof game>): number => Math.min(TITAN.cap, g.player.stats.topSpeed);
 
 describe('Titan Crawler handling', () => {
-  it('reaches 50-65 km/h in about ten seconds and the lever holds its speed', () => {
+  it('is slow off the mark, then pulls harder and harder; the lever holds its speed', () => {
     const g = game();
     const p = g.player;
-    expect(top(g) * 3.6).toBeGreaterThan(48);
-    expect(top(g) * 3.6).toBeLessThan(66);
+    expect(top(g) * 3.6).toBeGreaterThan(62);
+    expect(top(g) * 3.6).toBeLessThan(85);
     // W pushes the lever up; it stays there when you let go (cruise control).
     const t = hold(g, 0, -1, 30, () => g.helm.lever >= 1);
     expect(t).toBeLessThan(2);
-    hold(g, 0, 0, 12);
+    // The engine has to spool up: three seconds in she has barely begun to roll...
+    hold(g, 0, 0, 3 - t);
+    const v3 = p.speed;
+    expect(v3).toBeLessThan(top(g) * 0.15);
+    // ...then she pulls much harder over the next three, and is at speed well inside fifteen.
+    hold(g, 0, 0, 3);
+    expect(p.speed - v3).toBeGreaterThan(v3 * 1.5);
+    expect(p.spool).toBeGreaterThan(0.9);
+    hold(g, 0, 0, 9);
     expect(p.speed).toBeGreaterThan(top(g) * 0.85 * p.trac);
     // Down through 0% stops on the detent.
     hold(g, 0, 1, 3);
@@ -41,7 +50,22 @@ describe('Titan Crawler handling', () => {
         break;
       }
     }
-    expect(stop).toBeLessThan(8);
+    expect(stop).toBeLessThan(10);
+  });
+
+  it('a better engine: turbos get her rolling sooner, a bigger block goes faster', () => {
+    const base = game();
+    const turbo = game();
+    turbo.player.engine.turbo = 6;
+    const block = game();
+    block.player.engine.block = 6;
+    for (const g of [base, turbo, block]) g.player.recalc();
+    expect(top(block)).toBeGreaterThan(top(base) * 1.5);
+    for (const g of [base, turbo]) {
+      hold(g, 0, -1, 30, () => g.helm.lever >= 1);
+      hold(g, 0, 0, 3);
+    }
+    expect(turbo.player.speed).toBeGreaterThan(base.player.speed * 1.6);
   });
 
   it('turns briskly, with the inside crawlers slower than the outside', () => {
@@ -63,7 +87,7 @@ describe('Titan Crawler handling', () => {
     expect(Math.abs(wrapAngle(p.rot - r0))).toBeGreaterThan(0.4);
   });
 
-  it('overdrive: faster, for triple the fuel', { timeout: 20000 }, () => {
+  it('overdrive: faster, for about triple the fuel, until the engine overheats', { timeout: 30000 }, () => {
     const g = game();
     const p = g.player;
     // A long straight slab out of the hangar door, so the ground stays the same the whole run.
@@ -75,11 +99,17 @@ describe('Titan Crawler handling', () => {
     for (let i = 0; i < 30 * 5; i++) stepWorld(g, DT);
     const burnt = fuel0 - g.titan.fuel;
     g.helm.overdrive = true;
-    for (let i = 0; i < 30 * 20; i++) stepWorld(g, DT);
-    expect(p.speed).toBeGreaterThan(normal * (OVERDRIVE.speed - 0.2));
+    for (let i = 0; i < 30 * 7; i++) stepWorld(g, DT);
+    expect(p.speed).toBeGreaterThan(normal * (engineSpec(p.engine).odSpeed - 0.2));
     const fuel1 = g.titan.fuel;
     for (let i = 0; i < 30 * 5; i++) stepWorld(g, DT);
     expect(fuel1 - g.titan.fuel).toBeGreaterThan(burnt * 2.5);
+    // Held too long, the engine overheats and trips it; it won't relight until it has cooled.
+    for (let i = 0; i < 30 * 6 && g.helm.overdrive; i++) stepWorld(g, DT);
+    expect(g.helm.overdrive).toBe(false);
+    expect(g.helm.overheat).toBe(true);
+    for (let i = 0; i < 30 * 30; i++) stepWorld(g, DT);
+    expect(g.helm.overheat).toBe(false);
   });
 
   it('cruise warp only runs with nothing hostile near', () => {

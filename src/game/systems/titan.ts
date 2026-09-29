@@ -1,4 +1,5 @@
 import { TER, ZONE } from '../../shared/map';
+import { engineSpec } from './engine';
 import { HANGAR } from '../../shared/mapgen';
 import { CREW_SCALE, TITAN_DECK_INFO } from '../defs';
 import type { Game } from '../game';
@@ -347,7 +348,7 @@ export function updateTitan(g: Game, dt: number): void {
   // Wear: crawlers and the drive wear with every metre; everything else slowly.
   const metres = Math.abs(p.speed) * dt;
   for (let i = 0; i < 8; i++) s.crawlers[i] = Math.max(0, s.crawlers[i] - metres * 0.000004 * (1 + Math.random()));
-  s.systems.propulsion = Math.max(0, s.systems.propulsion - metres * 0.000003 * (g.helm.overdrive ? 5 : 1));
+  s.systems.propulsion = Math.max(0, s.systems.propulsion - metres * 0.000003 * (g.helm.overdrive ? 5 : 1) * engineSpec(g.player.engine).wear);
   s.systems.power = Math.max(0, s.systems.power - dt * 0.00002);
   s.systems.steering = Math.max(0, s.systems.steering - Math.abs(p.yawRate) * dt * 0.0006);
 
@@ -398,7 +399,9 @@ export function updateTitan(g: Game, dt: number): void {
 export function fuelBurn(g: Game): number {
   const p = g.player;
   const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
-  return ((p.anchored ? 0.02 : 0.08 + 0.75 * load) * (g.helm.overdrive ? 3 : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
+  // A bigger engine block drinks more; nitro-fed overdrive drinks a lot more.
+  const spec = engineSpec(p.engine);
+  return ((p.anchored ? 0.02 : (0.08 + 0.75 * load) * spec.fuel) * (g.helm.overdrive ? spec.odFuel : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
 }
 
 /** Water per second: what the condensers and a camp well bring in, and what the crew drink (life support recycles). */

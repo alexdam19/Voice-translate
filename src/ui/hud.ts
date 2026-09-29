@@ -230,7 +230,7 @@ export class Hud {
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
     this.hpBox.append(this.alerts, this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
     this.gauge.append(this.gaugeRead, this.gaugeCtl);
-    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): +45% speed, triple fuel, hard wear'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near']] as const) {
+    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): a big burst of speed for a lot of fuel, until the engine overheats (Engine Workshop parts change all three)'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near']] as const) {
       const b = button(label, (e) => {
         e.stopPropagation();
         act.helm(cmd);
@@ -463,6 +463,8 @@ export class Hud {
     this.village = village;
     const p = g.player;
     this.root.classList.toggle('in-village', village);
+    // The shop and a building's card sit under the HUD: clear the left column while one is up.
+    this.root.classList.toggle('shop-up', village && !!document.querySelector('.v-shop[style*="flex"]'));
     this.root.classList.toggle('in-raid', g.mode === 'raid');
     // Commander
     const c = g.commander;
@@ -611,7 +613,10 @@ export class Hud {
       setHTML(this.gaugeRead, `<div class="dg-spd"><b>${Math.round(Math.abs(p.speed) * 3.6)}</b><small>km/h${p.speed < -0.05 ? ' R' : ''}</small></div>`
         + `<div class="dg-thr" title="Throttle"><i class="${thr < 0 ? 'rev' : ''}" style="height:${Math.round(Math.min(1, Math.abs(thr)) * 100)}%"></i></div>`
         + `<div class="dg-lr"><span>L</span>${bar(p.sideSpeed[0])}<span>R</span>${bar(p.sideSpeed[1])}</div>`
-        + `<div class="dg-note">${p.anchored ? 'ANCHORED' : Math.abs(p.yawRate) > 0.01 ? (p.yawRate > 0 ? 'TURNING RIGHT' : 'TURNING LEFT') : Math.abs(p.speed) < 0.1 ? (thr ? 'BUILDING SPEED' : 'STOPPED') : thr === 0 ? 'COASTING' : 'UNDER WAY'}</div>`);
+        // Engine revs (it has to spool up before she really pulls) and overdrive heat.
+        + `<div class="dg-eng"><span>RPM</span><div class="dg-side"><i class="rpm${p.spool > 0.92 ? ' full' : ''}" style="width:${Math.round(p.spool * 100)}%"></i></div>`
+        + `<span>HEAT</span><div class="dg-side"><i class="heat${g.helm.overheat ? ' trip' : ''}" style="width:${Math.round(g.helm.heat * 100)}%"></i></div></div>`
+        + `<div class="dg-note">${p.anchored ? 'ANCHORED' : g.helm.overheat ? 'OVERHEATED: COOLING' : Math.abs(p.yawRate) > 0.01 ? (p.yawRate > 0 ? 'TURNING RIGHT' : 'TURNING LEFT') : Math.abs(p.speed) < 0.1 ? (thr ? 'SPOOLING UP' : 'STOPPED') : thr && p.spool < 0.9 ? 'SPOOLING UP' : thr === 0 ? 'COASTING' : 'UNDER WAY'}</div>`);
     }
     setHTML(this.tankInfo, `<b>${esc(ch.name)}</b> <span>CC L${p.stats.cc} · ${Math.round(Math.min(p.fortress ? TITAN.cap : 99, p.stats.topSpeed) * 3.6)} km/h max · ${Math.round(p.stats.armor * 100)}% armor${p.stats.powerRatio < 1 ? ' · <i class="bad">LOW POWER</i>' : ''}</span>`);
     this.hpFill.style.width = `${(p.hp / p.stats.maxHp) * 100}%`;

@@ -1138,6 +1138,13 @@ export class Cabin {
       c.fillStyle = i >= 7 ? '#c02010' : '#202020';
       for (let d = r - 4; d < r - 1; d++) c.fillRect(Math.round(cx + Math.cos(a) * d), Math.round(cy + Math.sin(a) * d), 1, 1);
     }
+    // The tachometer ring inside it: the engine's revs (she barely pulls until it has spooled up).
+    for (let i = 0; i < 24; i++) {
+      const a = a0 + (span * (i + 0.5)) / 24;
+      const on = (i + 0.5) / 24 <= p.spool;
+      c.fillStyle = on ? (p.spool > 0.92 ? '#20a030' : '#2080d0') : '#c8c0a8';
+      c.fillRect(Math.round(cx + Math.cos(a) * (r - 7)), Math.round(cy + Math.sin(a) * (r - 7)), 1, 1);
+    }
     pxMini(c, 'KMH', cx, cy + 7, '#505050', 'center', null);
     const na = a0 + span * Math.min(1.02, kmh / max);
     c.fillStyle = '#d01808';
@@ -1145,15 +1152,14 @@ export class Cabin {
     disc(c, cx, cy, 2, '#202020');
     pxText(c, String(Math.round(kmh)).padStart(3, ' '), cx, y0 + 52, 1, 'amber', 'center');
     // Readouts.
-    const [l, rr] = crawlersUp(s);
     const hg = g.gen.hangar ?? g.gen.spawn;
     const dist = Math.hypot(hg.x - p.x, hg.y - p.y);
     const brg = ((((p.rot + Math.PI / 2) * 180) / Math.PI) % 360 + 360) % 360;
     const lines: [string, string, string][] = [
       ['HDG', String(Math.round(brg) % 360).padStart(3, '0'), '#ffb030'],
       ['THR', `${g.helm.lever >= 0 ? '+' : ''}${Math.round(g.helm.lever * 100)}%`, g.helm.lever < 0 ? '#ff6040' : '#ffb030'],
-      ['CRW', `${l + rr}/8`, l + rr < 8 ? '#ff6040' : '#6aff7a'],
-      ['WRP', `x${g.warp}`, g.warp > 1 ? '#18ffff' : '#8a8272'],
+      ['RPM', `${Math.round(p.spool * 100)}%`, p.spool > 0.92 ? '#6aff7a' : '#40a8ff'],
+      ['HOT', g.helm.overheat ? 'TRIP' : `${Math.round(g.helm.heat * 100)}%`, g.helm.overheat || g.helm.heat > 0.8 ? '#ff6040' : g.helm.heat > 0.5 ? '#ffb030' : '#6aff7a'],
       ['HNG', dist >= 1000 ? `${(dist / 1000).toFixed(1)}K` : `${Math.round(dist)}M`, '#40c4ff'],
     ];
     c.fillStyle = '#0a0c0a';

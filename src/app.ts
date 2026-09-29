@@ -36,6 +36,7 @@ import { Panels } from './ui/panels';
 import { Title } from './ui/title';
 import { VillageUI } from './ui/village';
 import { DeadZoneClient } from './net/deadzone';
+import { engineSpec } from './game/systems/engine';
 
 const STEP = 1 / 60;
 
@@ -653,8 +654,14 @@ export class App {
       this.hud.toast('No fuel for overdrive.', '#ff8a80');
       return;
     }
+    if (!g.helm.overdrive && g.helm.overheat) {
+      this.hud.toast(`The engine is still too hot for overdrive (${Math.round(g.helm.heat * 100)}%).`, '#ff8a80');
+      this.sound('error');
+      return;
+    }
     g.helm.overdrive = !g.helm.overdrive;
-    this.hud.toast(g.helm.overdrive ? 'OVERDRIVE: +45% speed, triple fuel burn, hard on the drive.' : 'Overdrive off.', g.helm.overdrive ? '#ff9100' : '#b0bec5');
+    const spec = engineSpec(g.player.engine);
+    this.hud.toast(g.helm.overdrive ? `OVERDRIVE: +${Math.round((spec.odSpeed - 1) * 100)}% speed, ${spec.odFuel.toFixed(1)}x fuel burn, about ${Math.round((1 - g.helm.heat) / spec.heat)}s before it overheats.` : 'Overdrive off.', g.helm.overdrive ? '#ff9100' : '#b0bec5');
     this.sound(g.helm.overdrive ? 'levelup' : 'ui');
   }
 
