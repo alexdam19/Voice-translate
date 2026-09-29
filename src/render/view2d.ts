@@ -18,6 +18,7 @@ import { makeCanvas, mix, shade } from './px/pixels';
 import { BLOCK, Terrain2D } from './px/terrain2d';
 import { paintSmallTank } from './px/titan2d';
 import { paintTitanHD, type PaintedHD, type StackLayer } from './px/titanhd';
+import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
 import { quantizeSize } from './px/creaturesHD';
 import type { Aboard } from '../game/aboard';
@@ -571,7 +572,7 @@ export class View2D {
     const c = this.ctx;
     for (const k of g.pickups) {
       if (!this.near(k.x, k.y, 5)) continue;
-      const bob = Math.round(Math.sin(this.time * 4 + k.id) * 1 - k.z * this.ppm * ZK);
+      const bob = Math.round(Math.sin(this.time * 4 + k.id) * 1 - visZ(k.z) * this.ppm * ZK);
       const x = Math.round(this.bx(k.x, k.y)), y = Math.round(this.by(k.x, k.y)) + bob;
       let col = '#bdbdbd', s = 3;
       if (k.kind === 'chest') {
@@ -626,7 +627,8 @@ export class View2D {
       const ca = Math.cos(a), sa = Math.sin(a);
       const sx = Math.round(this.bx(t.x, t.y)), sy = Math.round(this.by(t.x, t.y));
       // In the base view the hull lies flat (the deck plans line up with it); out in the world it stands up.
-      const lift = this.deckView > 0 && t === g.player ? 0 : ZK * (hd ? q : ppm);
+      // Flat, straight down: the hull is drawn as a top view, no stacked height.
+      const lift = 0;
       // Drop shadow to the south-east (a Titan's is a big one, and falls further the taller it is).
       const sh = hd ? hd.shadow : this.shadowOf(p.canvas);
       const off = Math.max(1, Math.round((t.fortress ? 7 + (lift ? 10 : 0) : 1.2) * ppm));
@@ -655,7 +657,7 @@ export class View2D {
       // Its lights glow: strips, headlights (and their beams on the ground), tail lights, hot stacks, fires.
       if (p.lights?.length) {
         c.globalCompositeOperation = 'lighter';
-        const lz = this.deckView > 0 && t === g.player ? 0 : ZK * ppm;
+        const lz = 0;
         for (const l of p.lights) {
           const w = t.toWorld(l.x, l.y);
           const gs = glowSprite(l.color, l.r * 2 * ppm);
@@ -916,7 +918,7 @@ export class View2D {
       const q = quantizeSize(size);
       const ks = size / q;
       const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', q, frame, variant);
-      const sx = Math.round(this.bx(e.x, e.y)), sy = Math.round(this.by(e.x, e.y) - (e.flying ? Math.max(2, (1.6 + e.z) * ppm * ZK * 1.3) : e.z * ppm * ZK));
+      const sx = Math.round(this.bx(e.x, e.y)), sy = Math.round(this.by(e.x, e.y) - (e.flying ? Math.max(2, (1.6 + visZ(e.z)) * ppm * ZK * 1.3) : visZ(e.z) * ppm * ZK));
       // Shadow on the ground (flyers' is further off).
       const so = e.flying ? Math.max(3, size * 0.4) : Math.max(1, size * 0.08);
       c.fillStyle = 'rgba(0,0,0,0.3)';
@@ -959,7 +961,7 @@ export class View2D {
       const vehicle = a.kind === 'buggy' || a.kind === 'minitank' || a.kind === 'jet' || a.kind === 'drone' || a.kind === 'dragon';
       const rot = vehicle ? a.rot : this.headingOf(a.id + 1e9, a.x, a.y, a.rot);
       const img = allySprite(a.kind, size, Math.floor(a.anim));
-      const sx = Math.round(this.bx(a.x, a.y)), sy = Math.round(this.by(a.x, a.y) - a.z * ppm * ZK);
+      const sx = Math.round(this.bx(a.x, a.y)), sy = Math.round(this.by(a.x, a.y) - visZ(a.z) * ppm * ZK);
       if (flyer) {
         c.fillStyle = 'rgba(0,0,0,0.25)';
         c.fillRect(Math.round(sx - size * 0.3 + size * 0.5), Math.round(this.by(a.x, a.y) + size * 0.4), Math.round(size * 0.6), Math.round(size * 0.4));
@@ -977,7 +979,7 @@ export class View2D {
     c.globalCompositeOperation = 'lighter';
     for (const p of g.projectiles) {
       if (!this.near(p.x, p.y, 10)) continue;
-      const x = this.bx(p.x, p.y), y = this.by(p.x, p.y) - p.z * ppm * ZK;
+      const x = this.bx(p.x, p.y), y = this.by(p.x, p.y) - visZ(p.z) * ppm * ZK;
       const sp = Math.hypot(p.vx, p.vy);
       const len = Math.max(2, Math.min(24, sp * 0.035 * ppm));
       const vx = sp > 0 ? p.vx / sp : 1, vy = sp > 0 ? p.vy / sp : 0;

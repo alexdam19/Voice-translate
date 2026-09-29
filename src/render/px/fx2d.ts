@@ -4,6 +4,11 @@
  * world-to-screen mapping when it draws.
  */
 
+/** How high something looks (m): true height near the ground, strongly compressed above it (the view is straight down). */
+export function visZ(z: number): number {
+  return z <= 3 ? z : 3 + (z - 3) * 0.12;
+}
+
 export interface ScreenMap {
   /** World -> buffer pixel. */
   sx(x: number, y: number): number;
@@ -124,7 +129,7 @@ export class Fx2D {
       for (const p of this.ps) {
         if (p.add !== pass) continue;
         const s = Math.max(1, Math.round(p.size * ppm));
-        const x = Math.round(m.sx(p.x, p.y) - s / 2), y = Math.round(m.sy(p.x, p.y) - p.z * ppm * 0.4 - s / 2);
+        const x = Math.round(m.sx(p.x, p.y) - s / 2), y = Math.round(m.sy(p.x, p.y) - visZ(p.z) * ppm * 0.4 - s / 2);
         if (x < -s || y < -s || x > w || y > h) continue;
         c.globalAlpha = Math.min(1, (p.life / p.max) * 1.4) * p.alpha;
         c.fillStyle = p.color;
@@ -138,7 +143,7 @@ export class Fx2D {
       switch (t.k) {
         case 'flash': {
           const r = Math.max(2, t.r * ppm * (1.3 - f * 0.4));
-          const x = m.sx(t.x, t.y), y = m.sy(t.x, t.y) - t.z * ppm * 0.4;
+          const x = m.sx(t.x, t.y), y = m.sy(t.x, t.y) - visZ(t.z) * ppm * 0.4;
           const col = t.color.length === 7 ? t.color : '#ffcc80';
           const big = glowSprite(col, r * 4);
           c.globalAlpha = Math.min(1, f * 1.2);
