@@ -1,6 +1,6 @@
 import { MODULES } from '../defs';
 import type { Game } from '../game';
-import { COMPARTMENTS, compName, SYSTEMS, ZONES, type ArmorZone, type SysKey } from './titan';
+import { COMPARTMENTS, compName, SYSTEMS, TOROIDS, ZONES, type ArmorZone, type SysKey } from './titan';
 
 /**
  * Crew operations: the reserve in the Barracks, and repair teams you send from the vitals screen.
@@ -12,7 +12,7 @@ import { COMPARTMENTS, compName, SYSTEMS, ZONES, type ArmorZone, type SysKey } f
  * cost nothing but time; crawlers, systems and armour take scrap.
  */
 
-export type TeamKind = 'fire' | 'flood' | 'crawler' | 'system' | 'zone';
+export type TeamKind = 'fire' | 'flood' | 'crawler' | 'toroid' | 'system' | 'zone';
 
 export interface RepairTeam {
   id: number;
@@ -39,9 +39,9 @@ export const TEAM_SIZE = 6;
 /** Where people bunk (Residential): every walk starts there. */
 const HOME_DECK = 3;
 /** Fire and water knocked back, and repair done, per second by a full team. */
-const RATE: Record<TeamKind, number> = { fire: 0.1, flood: 0.07, crawler: 0.025, system: 0.02, zone: 0.015 };
+const RATE: Record<TeamKind, number> = { fire: 0.1, flood: 0.07, crawler: 0.025, toroid: 0.022, system: 0.02, zone: 0.015 };
 /** Scrap per whole point repaired. */
-const SCRAP: Record<TeamKind, number> = { fire: 0, flood: 0, crawler: 20, system: 20, zone: 30 };
+const SCRAP: Record<TeamKind, number> = { fire: 0, flood: 0, crawler: 20, toroid: 25, system: 20, zone: 30 };
 let nextTeam = 1;
 
 /** Reserve places: every Barracks keeps 16 people per level in reserve. */
@@ -81,6 +81,8 @@ export function jobPlace(kind: TeamKind, key: string): { deck: number; sec: numb
       const i = Number(key);
       return { deck: 7, sec: Math.min(2, Math.floor(((i % 4) * 3) / 4)) };
     }
+    case 'toroid':
+      return { deck: 6, sec: TOROIDS[Number(key)]?.fore ? 0 : 2 };
     case 'system': {
       const s = SYSTEMS.find((k) => k.key === key);
       return { deck: s?.deck ?? 4, sec: s?.section ?? 1 };
@@ -100,6 +102,8 @@ export function jobName(kind: TeamKind, key: string): string {
       const i = Number(key);
       return `Crawler ${i < 4 ? 'L' : 'R'}${(i % 4) + 1}`;
     }
+    case 'toroid':
+      return TOROIDS[Number(key)]?.name ?? key;
     case 'system':
       return SYSTEMS.find((k) => k.key === key)?.name ?? key;
     case 'zone':
@@ -117,6 +121,8 @@ function level(g: Game, kind: TeamKind, key: string): number {
       return s.flood[Number(key)] ?? 0;
     case 'crawler':
       return s.crawlers[Number(key)] ?? 1;
+    case 'toroid':
+      return s.toroids[Number(key)] ?? 1;
     case 'system':
       return s.systems[key as SysKey] ?? 1;
     case 'zone':
@@ -135,6 +141,9 @@ function setLevel(g: Game, kind: TeamKind, key: string, v: number): void {
       break;
     case 'crawler':
       s.crawlers[Number(key)] = v;
+      break;
+    case 'toroid':
+      s.toroids[Number(key)] = v;
       break;
     case 'system':
       s.systems[key as SysKey] = v;
@@ -188,6 +197,7 @@ export function openJobs(g: Game): { kind: TeamKind; key: string; sev: number }[
     if (s.flood[i] > 0.02) out.push({ kind: 'flood', key: String(i), sev: 2 + s.flood[i] });
   }
   s.crawlers.forEach((v, i) => v < 0.97 && out.push({ kind: 'crawler', key: String(i), sev: v <= 0.1 ? 2.5 : 1 - v }));
+  s.toroids.forEach((v, i) => v < 0.97 && out.push({ kind: 'toroid', key: String(i), sev: v <= 0.1 ? 2.4 : (1 - v) * 1.4 }));
   for (const k of SYSTEMS) if (s.systems[k.key] < 0.97) out.push({ kind: 'system', key: k.key, sev: (1 - s.systems[k.key]) * 1.6 });
   for (const z of ZONES) if (s.zones[z.key] < 0.97) out.push({ kind: 'zone', key: z.key, sev: (1 - s.zones[z.key]) * 1.2 });
   return out.sort((a, b) => b.sev - a.sev);

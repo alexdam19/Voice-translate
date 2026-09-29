@@ -1,6 +1,7 @@
 import { batteryLocal, MODULES } from '../../game/defs';
 import type { Game } from '../../game/game';
-import { compIndex } from '../../game/systems/titan';
+import { compIndex, toroidOut } from '../../game/systems/titan';
+import { drawToroid, TOROID_FRAMES, TOROID_SHEET, toroidFrames } from './toroids';
 import type { ModuleInst, Tank } from '../../game/tank';
 import { hash2, makeCanvas } from './pixels';
 import { GUN_PX, scaledTo, shipArtFor, TOP_MARKS, TOP_PX, topScale, topToHull, type ShipArt } from './shipArt';
@@ -18,6 +19,16 @@ import { WEAPONS } from '../../shared/weapons';
  * Everything is drawn straight into the view in hull metres (forward +x, starboard +y); nothing is repainted per
  * frame but the few things that move.
  */
+
+/**
+ * The crawler treads on the sheet (pixels: x, y, w, h on the port side; the starboard ones mirror them). Their links
+ * repeat every TREAD_PITCH pixels, so sliding the picture by the tread's travel (modulo the pitch) runs them.
+ */
+const TREADS: [number, number, number, number][] = [[437, 11, 150, 14], [528, 25, 58, 19], [11, 26, 38, 15]];
+const TREAD_PITCH = 5;
+
+/** Per-hull animation state: last draw time, each side's tread offset, each toroid's spin. */
+const anim = new WeakMap<Tank, { t: number; tread: [number, number]; spin: number[] }>();
 
 const CLASS_GLOW: Record<string, string> = { juggernaut: '#3ab4ff', bastion: '#ffd740', ark: '#76ff03', nightrunner: '#b388ff', dredge: '#ffab40' };
 
@@ -92,6 +103,56 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
   c.setTransform(ca * ppm, sa * ppm, -sa * ppm, ca * ppm, sx, sy);
   c.drawImage(hullImg, x0, y0, dw, dh);
 
+  // Running gear: each side's treads slide at that side's speed (capped where it would strobe), and the toroids
+  // spin up with their push.
+  let st = anim.get(t);
+  if (!st) {
+    st = { t: time, tread: [0, 0], spin: [0, 0, 0, 0] };
+    anim.set(t, st);
+  }
+  const fdt = Math.max(0, Math.min(0.1, time - st.t));
+  st.t = time;
+  if (!t.dead) {
+    for (let s = 0; s < 2; s++) {
+      const v = Math.max(-110, Math.min(110, (t.sideSpeed[s] ?? t.speed) / kx));
+      st.tread[s] = (((st.tread[s] + v * fdt) % TREAD_PITCH) + TREAD_PITCH) % TREAD_PITCH;
+    }
+    if (spx >= 0.5) {
+      c.imageSmoothingEnabled = false;
+      for (const [rx, ry, rw, rh] of TREADS) {
+        for (let s = 0; s < 2; s++) {
+          const yy = s === 0 ? ry : TOP_PX.h - ry - rh;
+          const sh = Math.floor(st.tread[s]);
+          if (!sh) continue;
+          // Links travel toward the bow along the top run: the strip shifted aft by `sh`, wrapped.
+          c.drawImage(art.top, rx, yy, rw - sh, rh, x0 + (rx + sh) * kx, y0 + yy * ky, (rw - sh) * kx, rh * ky);
+          c.drawImage(art.top, rx + rw - sh, yy, sh, rh, x0 + rx * kx, y0 + yy * ky, sh * kx, rh * ky);
+        }
+      }
+      c.imageSmoothingEnabled = spx < 1.6;
+    }
+  }
+
+  // The four toroidal engines on their pylons, each spinning and glowing with its push.
+  const own = !!(g && t === g.player);
+  const core = light ?? (t.kind === 'rival' ? '#ff3b30' : '#18ffff');
+  const turn = Math.max(-1, Math.min(1, t.yawRate / 0.08));
+  const push = Math.max(Math.abs(t.throttle) * (own ? t.spool : 1), Math.min(1, Math.abs(t.speed) / 20));
+  const thrust: number[] = [];
+  const ringM = 28 * kx;
+  for (let i = 0; i < 4; i++) {
+    const out = own ? toroidOut(g!.titan, g!.helm.toroids, i) : t.dead ? 0 : 1;
+    const port = i % 2 === 0;
+    // A turn: the outside pair pushes harder, the inside pair eases off.
+    const k = out * (0.15 + 0.85 * push) * Math.max(0, 1 + (port ? 0.6 : -0.6) * turn);
+    thrust.push(k);
+    st.spin[i] = (st.spin[i] + fdt * (0.6 + 14 * k)) % TOROID_FRAMES;
+    const [px, py] = TOROID_SHEET[i];
+    const lx = (px - TOP_PX.cx) * kx, ly = (py - TOP_PX.cy) * ky;
+    const frames = toroidFrames(core, out <= 0 && !(own && !g!.helm.toroids[i]) ? true : false);
+    drawToroid(c, lx, ly, ringM, frames[Math.floor(st.spin[i]) % TOROID_FRAMES], port ? ringM * 0.6 : -ringM * 0.6);
+  }
+
   // Scorch marks where the armour's been hammered (your zones; anyone else's by their hull points).
   const burns: [string, number][] = g && t === g.player ? Object.entries(g.titan.zones) : [['roof', t.hp / Math.max(1, t.stats.maxHp)], ['port', t.hp / Math.max(1, t.stats.maxHp)], ['starboard', t.hp / Math.max(1, t.stats.maxHp)]];
   const sc = scorch();
@@ -160,6 +221,34 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
       c.globalAlpha = 1;
       lights.push({ x: lx - 2, y: ly, r: (big ? 9 : 5) * (od ? 1.6 : 0.6 + moving * 0.6), color: od ? '#ffb040' : '#ff7a1a', k: (od ? 0.95 : 0.35 + 0.35 * moving) * flick });
     }
+  }
+
+  // Toroid plumes: a neon wash streaming aft of each ring, as long as it pushes hard.
+  if (!t.dead) {
+    c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) {
+      const k = thrust[i];
+      if (k < 0.05) continue;
+      const [px, py] = TOROID_SHEET[i];
+      const lx = (px - TOP_PX.cx) * kx, ly = (py - TOP_PX.cy) * ky;
+      const len = ringM * (0.6 + 2.6 * k) * (od ? 1.5 : 1) * (i < 2 ? 0.6 : 1);
+      const flick = 0.85 + 0.15 * Math.sin(time * 37 + i * 2.1);
+      const gr = c.createLinearGradient(lx, 0, lx - len, 0);
+      gr.addColorStop(0, core);
+      gr.addColorStop(1, 'rgba(0,0,0,0)');
+      c.globalAlpha = Math.min(0.85, 0.25 + 0.6 * k) * flick;
+      c.fillStyle = gr;
+      c.beginPath();
+      c.moveTo(lx, ly - ringM * 0.32);
+      c.lineTo(lx - len, ly - ringM * 0.08);
+      c.lineTo(lx - len, ly + ringM * 0.08);
+      c.lineTo(lx, ly + ringM * 0.32);
+      c.closePath();
+      c.fill();
+      lights.push({ x: lx - ringM * 0.3, y: ly, r: ringM * (0.45 + 0.5 * k), color: core, k: 0.12 + 0.3 * k });
+    }
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = 'source-over';
   }
 
   // Fires in burning compartments show through the deck.

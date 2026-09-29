@@ -4,7 +4,7 @@ import type { Game } from '../game/game';
 import { crewSummary, dispatchTeam, jobName, maxTeams, needsTeam, openJobs, stabilize, teamOn, whyWaiting, type TeamKind } from '../game/systems/crewops';
 import { efficiency, shift } from '../game/systems/crewlife';
 import {
-  comfort, COMPARTMENTS, compName, crawlersUp, damageControl, damageState, FUEL_MAX, fuelBurn, outsideTemp, SECTIONS, sysMult, SYSTEMS, titanMods, WATER_MAX, waterRates, ZONES, zoneMult,
+  comfort, COMPARTMENTS, compName, crawlersUp, damageControl, damageState, FUEL_MAX, fuelBurn, outsideTemp, SECTIONS, sysMult, SYSTEMS, titanMods, TOROIDS, toroidOut, WATER_MAX, waterRates, ZONES, zoneMult,
 } from '../game/systems/titan';
 import { TERRAIN, TRACTION } from '../shared/map';
 import { esc, h } from './dom';
@@ -153,9 +153,27 @@ export function renderBridge(ctx: PanelCtx): void {
 
   // Crawlers.
   const [l, r] = crawlersUp(s);
-  const tm = titanMods(s);
+  const tm = titanMods(s, g.helm.toroids);
   const crawl = card('CRAWLERS', `${l + r}/8 DRIVING · DRIVE ×${Math.pow((l + r) / 8, 0.8).toFixed(2)} · PULL ${sign((tm.pull * 180) / Math.PI, 2)}°/s`);
   s.crawlers.forEach((v, i) => row(crawl, `${i < 4 ? 'L' : 'R'}${(i % 4) + 1} ${['fore', 'fwd-mid', 'aft-mid', 'aft'][i % 4]}`, v, damageState(v).color, `${pct(v, 1)} ${damageState(v).name.slice(0, 4).toUpperCase()}`, 'crawler', String(i)));
+
+  // Toroidal engines: health, output and a switch each.
+  const lit = g.helm.toroids.filter(Boolean).length;
+  const tor = card('TOROIDAL ENGINES', `${lit}/4 LIT · STEERING ×${tm.steering.toFixed(2)}`);
+  TOROIDS.forEach((k, i) => {
+    const v = s.toroids[i];
+    const out = toroidOut(s, g.helm.toroids, i);
+    row(tor, `${k.short} ${k.name.replace(' toroid', '')}`, v, damageState(v).color, `${pct(v, 1)} · OUT ${pct(out)}`, 'toroid', String(i));
+    const sw = h('button', `vt-auto ${g.helm.toroids[i] ? 'on' : ''}`, g.helm.toroids[i] ? 'ON' : 'OFF');
+    sw.style.cssText = 'padding:1px 6px;font-size:10px;margin-left:4px';
+    sw.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      g.helm.toroids[i] = !g.helm.toroids[i];
+      rerender();
+    });
+    tor.lastElementChild?.appendChild(sw);
+  });
 
   // Systems.
   const sys = card('SUBSYSTEMS', `DAMAGE CONTROL ${damageControl(g).toFixed(2)} crews`);

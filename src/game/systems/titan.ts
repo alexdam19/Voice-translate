@@ -49,6 +49,26 @@ export const COMPARTMENTS = 21;
 export const compIndex = (deck: number, section: number): number => (deck - 1) * 3 + section;
 export const compName = (i: number): string => `${TITAN_DECK_INFO[Math.floor(i / 3) + 1].level} ${TITAN_DECK_INFO[Math.floor(i / 3) + 1].name}, ${SECTIONS[i % 3]}`;
 
+/**
+ * The four toroidal engines: ring thrusters at the corners of the hull (fore-port, fore-starboard, aft-port,
+ * aft-starboard). They add their push to the crawlers' and do the steering: a turn throttles the inside pair back
+ * and the outside pair up. Each can be switched off from the cabin (saves fuel) and each takes damage from hits on
+ * its corner; a dead or switched-off one costs speed and turning, and a lopsided set pulls the hull round.
+ */
+export const TOROIDS: { name: string; short: string; fore: boolean; port: boolean }[] = [
+  { name: 'Fore-port toroid', short: 'FL', fore: true, port: true },
+  { name: 'Fore-starboard toroid', short: 'FR', fore: true, port: false },
+  { name: 'Aft-port toroid', short: 'RL', fore: false, port: true },
+  { name: 'Aft-starboard toroid', short: 'RR', fore: false, port: false },
+];
+
+/** What each toroid is putting out (0-1): off, or its damage state. */
+export function toroidOut(s: TitanState, on: readonly boolean[] | undefined, i: number): number {
+  if (on && on[i] === false) return 0;
+  const h = s.toroids[i] ?? 1;
+  return h <= 0.1 ? 0 : damageState(h).mult;
+}
+
 export const FUEL_MAX = 2000;
 export const WATER_MAX = 1000;
 
@@ -56,6 +76,8 @@ export interface TitanState {
   zones: Record<ArmorZone, number>;
   /** 0-3 left bank front to back, 4-7 right. */
   crawlers: number[];
+  /** Toroidal engines FL, FR, RL, RR (health 0-1). */
+  toroids: number[];
   systems: Record<SysKey, number>;
   fire: number[];
   flood: number[];
@@ -74,6 +96,7 @@ export interface TitanState {
 export const newTitanState = (): TitanState => ({
   zones: { bow: 1, stern: 1, port: 1, starboard: 1, roof: 1 },
   crawlers: [1, 1, 1, 1, 1, 1, 1, 1],
+  toroids: [1, 1, 1, 1],
   systems: { power: 1, propulsion: 1, steering: 1, weapons: 1, sensors: 1, life: 1 },
   fire: new Array(COMPARTMENTS).fill(0),
   flood: new Array(COMPARTMENTS).fill(0),
@@ -94,6 +117,7 @@ export function loadTitanState(s: Partial<TitanState> | undefined): TitanState {
     zones: { ...n.zones, ...(s.zones ?? {}) },
     systems: { ...n.systems, ...(s.systems ?? {}) },
     crawlers: s.crawlers?.length === 8 ? [...s.crawlers] : n.crawlers,
+    toroids: s.toroids?.length === 4 ? [...s.toroids] : n.toroids,
     fire: s.fire?.length === COMPARTMENTS ? [...s.fire] : n.fire,
     flood: s.flood?.length === COMPARTMENTS ? [...s.flood] : n.flood,
     warn: {},
@@ -150,6 +174,16 @@ export function titanHit(g: Game, t: Tank, dmg: number, at?: { x: number; y: num
       g.fx.push({ t: 'shake', amt: 0.6 });
     }
   }
+  // Hits on a corner reach the toroid there.
+  if (z !== 'roof' && Math.abs(l.lx) > t.stats.length * 0.22) {
+    const i = (l.lx > 0 ? 0 : 2) + (l.lz < 0 ? 0 : 1);
+    const before = s.toroids[i];
+    s.toroids[i] = Math.max(0, s.toroids[i] - k * 1.8 * (0.5 + Math.random()));
+    if (before > 0.1 && s.toroids[i] <= 0.1) {
+      g.hooks.toast(`${TOROIDS[i].name.toUpperCase()} DOWN: less speed, less steering, and she pulls to one side.`, '#ff1744');
+      g.hooks.sound('alarm');
+    }
+  }
   // The systems behind that armour.
   const behind: SysKey[] = z === 'bow' ? ['sensors', 'steering'] : z === 'stern' ? ['propulsion', 'power'] : z === 'roof' ? ['weapons', 'sensors'] : ['life', 'power', 'weapons'];
   const hit = behind[Math.floor(Math.random() * behind.length)];
@@ -199,19 +233,22 @@ export function crawlersUp(s: TitanState): [number, number] {
 }
 
 /** Everything the Titan's state does to how it drives, fights and sees (read by the tank each recalc). */
-export function titanMods(s: TitanState): { power: number; speed: number; steering: number; weapons: number; sensors: number; pull: number } {
+export function titanMods(s: TitanState, on?: readonly boolean[]): { power: number; speed: number; steering: number; weapons: number; sensors: number; pull: number } {
   const [l, r] = crawlersUp(s);
-  const drive = Math.pow((l + r) / 8, 0.8);
+  const tq = [0, 1, 2, 3].map((i) => toroidOut(s, on, i));
+  const thrust = (tq[0] + tq[1] + tq[2] + tq[3]) / 4;
+  // The crawlers carry her; the toroids push (a third of her speed) and steer (half her turning).
+  const drive = Math.pow((l + r) / 8, 0.8) * (0.67 + 0.33 * thrust);
   const flooded = s.flood.reduce((a, b) => a + b, 0) / COMPARTMENTS;
   const fuel = s.fuel > 0 ? 1 : 0.3;
   return {
     power: sysMult(s, 'power'),
     speed: sysMult(s, 'propulsion') * drive * (1 - 1.5 * flooded) * fuel,
-    steering: sysMult(s, 'steering'),
+    steering: sysMult(s, 'steering') * (0.5 + 0.5 * thrust),
     weapons: sysMult(s, 'weapons'),
     sensors: sysMult(s, 'sensors'),
     // Fewer crawlers pulling on one side drags the hull round that way (rad/s at speed).
-    pull: ((r - l) / 4) * 0.02,
+    pull: ((r - l) / 4) * 0.02 + ((tq[0] + tq[2] - tq[1] - tq[3]) / 2) * 0.012,
   };
 }
 
@@ -348,6 +385,7 @@ export function updateTitan(g: Game, dt: number): void {
   // Wear: crawlers and the drive wear with every metre; everything else slowly.
   const metres = Math.abs(p.speed) * dt;
   for (let i = 0; i < 8; i++) s.crawlers[i] = Math.max(0, s.crawlers[i] - metres * 0.000004 * (1 + Math.random()));
+  for (let i = 0; i < 4; i++) if (g.helm.toroids[i]) s.toroids[i] = Math.max(0, s.toroids[i] - metres * 0.0000025 * (g.helm.overdrive ? 4 : 1));
   s.systems.propulsion = Math.max(0, s.systems.propulsion - metres * 0.000003 * (g.helm.overdrive ? 5 : 1) * engineSpec(g.player.engine).wear);
   s.systems.power = Math.max(0, s.systems.power - dt * 0.00002);
   s.systems.steering = Math.max(0, s.systems.steering - Math.abs(p.yawRate) * dt * 0.0006);
@@ -357,6 +395,7 @@ export function updateTitan(g: Game, dt: number): void {
   let budget = 0.0012 * works * dt;
   const jobs: { get: () => number; set: (v: number) => void }[] = [
     ...s.crawlers.map((_, i) => ({ get: () => s.crawlers[i], set: (v: number) => (s.crawlers[i] = v) })),
+    ...s.toroids.map((_, i) => ({ get: () => s.toroids[i], set: (v: number) => (s.toroids[i] = v) })),
     ...SYSTEMS.map((k) => ({ get: () => s.systems[k.key], set: (v: number) => (s.systems[k.key] = v) })),
     ...ZONES.map((z) => ({ get: () => s.zones[z.key], set: (v: number) => (s.zones[z.key] = v) })),
   ].sort((a, b) => a.get() - b.get());
@@ -376,7 +415,7 @@ export function updateTitan(g: Game, dt: number): void {
   }
 
   // Push the effects onto the hull (with what the officers on the stations add).
-  const m = titanMods(s);
+  const m = titanMods(s, g.helm.toroids);
   const st = g.statMods;
   m.speed *= st.speed;
   m.steering *= st.turn;
@@ -401,7 +440,9 @@ export function fuelBurn(g: Game): number {
   const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
   // A bigger engine block drinks more; nitro-fed overdrive drinks a lot more.
   const spec = engineSpec(p.engine);
-  return ((p.anchored ? 0.02 : (0.08 + 0.75 * load) * spec.fuel) * (g.helm.overdrive ? spec.odFuel : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
+  // Each toroid switched off saves a slice of the drive's burn.
+  const lit = g.helm.toroids.filter(Boolean).length / 4;
+  return ((p.anchored ? 0.02 : (0.08 + 0.75 * load) * spec.fuel * (0.7 + 0.3 * lit)) * (g.helm.overdrive ? spec.odFuel : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
 }
 
 /** Water per second: what the condensers and a camp well bring in, and what the crew drink (life support recycles). */

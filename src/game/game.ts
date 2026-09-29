@@ -192,7 +192,7 @@ export class Game {
    * captain's cabin adds switches: floodlights, the bilge pump boost, the master arm (guns safe), power diverted from
    * the shield generator to the drive, and cooldowns on the horn and the halon fire suppression.
    */
-  helm = { lever: 0, brake: 0, brakeSet: false, overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false };
+  helm = { lever: 0, brake: 0, brakeSet: false, toroids: [true, true, true, true], overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false };
   /** Damage control sends repair teams on its own (the vitals screen's AUTO switch), and its next check. */
   autoRepair = true;
   autoT = 0;
