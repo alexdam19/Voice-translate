@@ -20,7 +20,7 @@ import { paintSmallTank, type HullLight } from './px/titan2d';
 import { paintTitanHD } from './px/titanhd';
 import { drawTitanSprite } from './px/titanSprite';
 import { airshipSprite, altarSprite, gateSprite, nodeSprite, siteSprite } from './px/decorArt';
-import { drawOhv, ohvCanvas, ohvFlash, ohvFrame, ohvSheet, ohvSteps, preloadOhv } from './px/ohv';
+import { drawOhv, ohvCanvas, ohvFlash, ohvFrame, ohvOneShot, ohvSheet, ohvSteps, preloadOhv } from './px/ohv';
 import { ohvLookFor } from './px/ohvLooks';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
@@ -312,6 +312,7 @@ export class View2D {
     this.shipEffects(g, dt);
     this.fx.update(dt);
     this.fx.draw(c, this.map, this.rw, this.rh);
+    this.drawSpriteFx(dt);
     this.drawWeather(g, dt);
     if (g.mode === 'world' && !g.revealAll) this.drawFog(g, dt);
     this.drawMarkers(g, dt);
@@ -1142,6 +1143,32 @@ export class View2D {
 
   /* ---------------- effects from the simulation ---------------- */
 
+  /** Hand-drawn explosion and smoke animations (OpenHV sheets) playing out in the world. */
+  private sprFx: { x: number; y: number; sheet: string; t: number; dur: number; m: number }[] = [];
+
+  /** Starts one: `m` is how wide it should look, in metres. */
+  private spriteFx(x: number, y: number, sheet: string, dur: number, m: number): void {
+    if (this.sprFx.length > 60) this.sprFx.shift();
+    this.sprFx.push({ x, y, sheet, t: 0, dur, m });
+  }
+
+  private drawSpriteFx(dt: number): void {
+    const c = this.ctx;
+    const ppm = this.ppm;
+    for (const f of this.sprFx) {
+      f.t += dt;
+      const sh = ohvSheet(f.sheet);
+      const img = sh ? ohvCanvas(f.sheet, '#ff9100') : null;
+      if (!sh || !img || !this.near(f.x, f.y, f.m)) continue;
+      const k = Math.max(1, Math.round((f.m * ppm) / sh.fw));
+      const add = !f.sheet.includes('smoke');
+      if (add) c.globalCompositeOperation = 'lighter';
+      drawOhv(c, img, f.sheet, ohvOneShot(f.sheet, f.t / f.dur), Math.round(this.bx(f.x, f.y)), Math.round(this.by(f.x, f.y)), k, add ? 1 : 0.8);
+      if (add) c.globalCompositeOperation = 'source-over';
+    }
+    this.sprFx = this.sprFx.filter((f) => f.t < f.dur);
+  }
+
   private handleFx(e: FxEvent): void {
     const f = this.fx;
     switch (e.t) {
@@ -1164,6 +1191,13 @@ export class View2D {
         }
         if (e.r >= 1.5) f.scorch(e.x, e.y, e.r * 0.7);
         if (e.big) f.ring(e.x, e.y, e.r * 1.6, '#ffcc80', 0.5);
+        // The drawn fireball on top: bigger blasts get the bigger sheets.
+        {
+          const big = e.big || e.r >= 3;
+          const sheet = big ? ['explobig', 'explobig2', 'explobig3'][Math.floor(Math.random() * 3)] : e.r >= 1.2 ? ['explosn2', 'explosn3'][Math.floor(Math.random() * 2)] : 'explosn';
+          this.spriteFx(e.x, e.y, sheet, big ? 0.9 : 0.55, Math.max(3, e.r * 2.6));
+          if (big) this.spriteFx(e.x + (Math.random() - 0.5) * e.r, e.y + (Math.random() - 0.5) * e.r, 'smoke', 1.2, Math.max(4, e.r * 2));
+        }
         break;
       }
       case 'muzzle':
