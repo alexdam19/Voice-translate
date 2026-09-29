@@ -3,7 +3,7 @@ import { CARD_AREA, CARDS, type CardDef } from '../cards';
 import { eid, type Projectile } from '../entities';
 import type { Game } from '../game';
 import { layMines, spawnDragon, spawnDrones, spawnJet, spawnMarines, spawnMech } from './allies';
-import { damageEnemy, damageTank, explode, healPlayer } from './damage';
+import { damageEnemy, damageTank, explode } from './damage';
 import { resolveTank, tankNav } from './movement';
 import { skyStrike } from './weapons';
 import { revealFeatures } from './world';
@@ -289,12 +289,12 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
 
     /* ---------------- Rust ---------------- */
     case 'weld':
-      heal(0.22 * P, 3);
+      heal(0.15 * P, 15);
       g.fx.push({ t: 'heal', x: p.x, y: p.y });
       break;
     case 'nanite':
-      heal(0.45 * P, 5);
-      p.addBuff('armorUp', 5, 0.3);
+      heal(0.25 * P, 20);
+      p.addBuff('armorUp', 8, 0.3);
       g.fx.push({ t: 'heal', x: p.x, y: p.y });
       break;
     case 'acid_rain':
@@ -384,7 +384,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       break;
     case 'miracle':
       p.addBuff('invuln', 3 * Math.min(1.5, P));
-      healPlayer(g, p.stats.maxHp * 0.25);
+      heal(0.2, 20);
       for (const k of g.crew) k.injured = 0;
       p.buffs.delete('stun');
       p.buffs.delete('burn');

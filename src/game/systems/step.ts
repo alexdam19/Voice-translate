@@ -4,7 +4,7 @@ import { updateAllies } from './allies';
 import { updateArsenal } from './arsenal';
 import { updateBuilds } from './builds';
 import { updateCards } from './cards';
-import { healPlayer, injureRandomCrew } from './damage';
+import { healPlayer, injureRandomCrew, refillHeal } from './damage';
 import { updateBuffs, updateCrew, updateZones } from './crewsys';
 import { updateSquads } from './squads';
 import { driveTank, manualDrive, separateTanks, updateCollapses, type ManualDrive } from './movement';
@@ -163,6 +163,7 @@ export function stepWorld(g: Game, dt: number): void {
       const b = p.toWorld(-p.stats.length / 2, (Math.random() - 0.5) * p.stats.width);
       g.fx.push({ t: 'dust', x: b.x, y: b.y, color: '#18ffff' });
     }
+    refillHeal(g, dt);
     healPlayer(g, p.stats.repair * dt, false);
     p.shieldDelay -= dt;
     // With the shield generator's power diverted to the drive, the shield bleeds away instead of recharging.

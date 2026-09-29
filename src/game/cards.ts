@@ -71,8 +71,8 @@ add(C({ id: 'cataclysm', name: 'Cataclysm', school: 'volt', type: 'spell', cost:
 add(C({ id: 'nitro', name: 'Nitro', school: 'volt', type: 'enchant', cost: 2, rarity: 0, target: 'self', text: '+{70%} speed for 4s. Creatures in the way are thrown clear and boarders shaken off.', flavor: 'Floor it.' }));
 
 /* ---------------- Rust ---------------- */
-add(C({ id: 'weld', name: 'Weld Crew', school: 'rust', type: 'spell', cost: 3, rarity: 0, target: 'self', text: 'Repair {22%} of max hull over 3s.', flavor: 'Duct tape is structural.' }));
-add(C({ id: 'nanite', name: 'Nanite Cloud', school: 'rust', type: 'spell', cost: 5, rarity: 2, target: 'self', text: 'Repair {45%} hull over 5s and gain +30% armor.', flavor: 'Doc Rivet\'s little helpers.' }));
+add(C({ id: 'weld', name: 'Weld Crew', school: 'rust', type: 'spell', cost: 3, rarity: 0, target: 'self', text: 'Repair {15%} of max hull over 15s.', flavor: 'Duct tape is structural.' }));
+add(C({ id: 'nanite', name: 'Nanite Cloud', school: 'rust', type: 'spell', cost: 5, rarity: 2, target: 'self', text: 'Repair {25%} hull over 20s and gain +30% armor for 8s.', flavor: 'Doc Rivet\'s little helpers.' }));
 add(C({ id: 'acid_rain', name: 'Acid Rain', school: 'rust', type: 'spell', cost: 4, rarity: 1, radius: 6, text: 'Acid pools cover the area and eat through armor ({120} per second).', flavor: 'Bring an umbrella. A thick one.' }));
 add(C({ id: 'magnet', name: 'Magnet Sweep', school: 'rust', type: 'spell', cost: 2, rarity: 0, target: 'self', text: 'Pull in all loot within 240 m and harvest {60%} faster for 8s.', flavor: 'Everything metal comes home.' }));
 add(C({ id: 'frenzy', name: 'Salvage Frenzy', school: 'rust', type: 'enchant', cost: 3, rarity: 1, target: 'self', text: '+{100%} loot and harvest yield for 45s.', flavor: 'Strip it all.' }));
@@ -93,7 +93,7 @@ add(C({ id: 'dome', name: 'Aegis Dome', school: 'aegis', type: 'spell', cost: 5,
 add(C({ id: 'squad', name: 'Drop Squad', school: 'aegis', type: 'summon', cost: 3, rarity: 0, radius: 3, text: 'Drop {9} marines at the target. They fight for 20s.', flavor: 'Boots on the ground.' }));
 add(C({ id: 'legion', name: 'Iron Legion', school: 'aegis', type: 'summon', cost: 6, rarity: 3, radius: 4, text: 'Drop {15} heavy marines for 25s.', flavor: 'Warden Sol\'s finest.' }));
 add(C({ id: 'mech', name: 'Mech Drop', school: 'aegis', type: 'summon', cost: 7, rarity: 4, radius: 4, text: 'A battle mech with {12000} hull drops from orbit and fights for 30s.', flavor: 'Some assembly required. Already done.' }));
-add(C({ id: 'miracle', name: 'Miracle Protocol', school: 'aegis', type: 'spell', cost: 7, rarity: 4, target: 'self', text: 'Invulnerable for {3s}, repair 25%, revive and cleanse your crew.', flavor: 'Mother Kess does not lose patients.' }));
+add(C({ id: 'miracle', name: 'Miracle Protocol', school: 'aegis', type: 'spell', cost: 7, rarity: 4, target: 'self', text: 'Invulnerable for {3s}, repair 20% over 20s, revive and cleanse your crew.', flavor: 'Mother Kess does not lose patients.' }));
 add(C({ id: 'treasure', name: 'Treasure Sense', school: 'aegis', type: 'spell', cost: 4, rarity: 3, target: 'self', text: 'Pull in loot within 480 m, reveal every loot area and rune, and the next chest is one rarity better.', flavor: 'Magpie can smell gold.' }));
 add(C({ id: 'charge', name: 'Juggernaut Charge', school: 'aegis', type: 'spell', cost: 4, rarity: 2, radius: 3, text: 'Dash your fortress to the target, crushing everything in the way for {600}.', flavor: 'Grit Taggart does not brake.' }));
 add(C({ id: 'smoke', name: 'Smoke Screen', school: 'aegis', type: 'enchant', cost: 2, rarity: 0, target: 'self', text: 'Halve incoming damage for {5s}. Enemies lose track of you.', flavor: 'Now you see us.' }));

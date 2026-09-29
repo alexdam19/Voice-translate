@@ -193,6 +193,8 @@ export class Game {
    * the shield generator to the drive, and cooldowns on the horn and the halon fire suppression.
    */
   helm = { lever: 0, brake: 0, brakeSet: false, overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false };
+  /** Hull the repair crews can still put back right now (see HEAL_CAP). */
+  healRoom = 0;
   /** Cruise time-warp (1, 4 or 8): the Crater is 140 km across. Drops to 1 when anything hostile comes near. */
   warp = 1;
   /** People held in reserve in the Barracks (they step in for casualties and make up repair teams and work crews). */

@@ -70,12 +70,26 @@ function onKill(g: Game, e: Enemy, fx: ShotFx | undefined, o: HitOpts): void {
   else if (fx.volatile) explode(g, e.x, e.y, 2, fx.base * 0.25, 'player', { srcTank: o.srcTank }, '#ffab40', true);
 }
 
-/** Heals the player's fortress (all repair goes through here so healing bonuses apply). */
+/**
+ * The most hull the repair crews can put back per second, as a share of max hull, from every source at once
+ * (passive repair, cards, kits, lifesteal): welding a 200 m hull back together takes minutes, not seconds. Two
+ * seconds' worth can be banked for a burst.
+ */
+export const HEAL_CAP = 0.012;
+
+/** Refills the repair allowance (called each step). */
+export function refillHeal(g: Game, dt: number): void {
+  const cap = g.player.stats.maxHp * HEAL_CAP;
+  g.healRoom = Math.min(cap * 2, g.healRoom + cap * dt);
+}
+
+/** Heals the player's fortress (all repair goes through here so healing bonuses and the cap apply). */
 export function healPlayer(g: Game, amount: number, show = true): void {
   const t = g.player;
   if (t.dead || amount <= 0) return;
-  const real = Math.min(t.stats.maxHp - t.hp, amount * t.crew.healMult);
+  const real = Math.min(t.stats.maxHp - t.hp, amount * t.crew.healMult, g.healRoom);
   if (real <= 0) return;
+  g.healRoom -= real;
   t.hp += real;
   g.onHeal?.(real, 0);
   if (show && real >= 5) g.float(t.x, t.y, `+${Math.round(real)}`, '#76ff03');

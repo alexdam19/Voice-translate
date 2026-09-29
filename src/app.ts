@@ -438,7 +438,7 @@ export class App {
     }
     if (p.hp >= p.stats.maxHp) return;
     p.cargo.take('repair_kit', 1);
-    p.addBuff('regen', 3, (p.stats.maxHp * 0.25) / 3);
+    p.addBuff('regen', 20, (p.stats.maxHp * 0.2) / 20);
     this.game.fx.push({ t: 'heal', x: p.x, y: p.y });
     this.sound('craft');
   }
