@@ -9,6 +9,7 @@ import type { ModuleInst } from '../game/tank';
 import { HAIRS_HD, hatKindFor, personHD, type Look, type PoseHD } from '../render/px/people';
 import { discAt, drawCorridor, drawRoom, glowAt, IA, type Slots } from '../render/px/interiorArt';
 import { SHIP_ART } from '../render/px/shipArt';
+import { drawService } from '../render/px/deckArt';
 import type { Act } from '../game/aboard';
 import { hash2 } from '../render/px/pixels';
 import { esc, h } from './dom';
@@ -90,6 +91,8 @@ export class Interior {
   private draft: OrderStep[] = [];
   private game: Game | null = null;
   private layoutFor = -1;
+  /** The deck's own spaces drawn this frame (for their name plates). */
+  private services: { deck: number; xa: number; xb: number; name: string }[] = [];
 
   constructor(parent: HTMLElement, private act: InteriorActions) {
     this.root = h('div', 'interior');
@@ -360,6 +363,7 @@ export class Interior {
     const roofY = SKY + ROOF_H;
     const bottom = roofY + 7 * DH;
     this.slots.clear();
+    this.services = [];
 
     /* ---- Decks: the Spine, then the rooms ---- */
     for (let deck = 1; deck <= 7; deck++) {
@@ -367,15 +371,13 @@ export class Interior {
       const info = TITAN_DECK_INFO[deck];
       const open = p.deckOpen(deck);
       drawCorridor(c, hullL, y0, hullR - hullL, DH, info.color, t, open);
-      // Empty stretches of an open deck are bays waiting for a room.
-      if (open) for (const [a, b] of this.emptyStretches(deck, rows)) {
-        const xa = Math.round(X(b)) + 3, xb = Math.round(X(a)) - 3;
-        if (xb - xa < 30) continue;
-        c.strokeStyle = 'rgba(120,170,210,0.35)';
-        c.setLineDash([3, 3]);
-        c.strokeRect(xa + 0.5, y0 + 8.5, xb - xa - 1, DH - 14);
-        c.setLineDash([]);
-        pxMini(c, 'EMPTY BAY', (xa + xb) / 2, y0 + DH / 2 - 2, 'rgba(150,190,220,0.6)', 'center', null);
+      // Stretches with none of your rooms in them are still the ship: the deck's own spaces (mothballed on a
+      // sealed deck).
+      for (const [a, b] of this.emptyStretches(deck, rows)) {
+        const xa = Math.round(X(b)) + 1, xb = Math.round(X(a)) - 1;
+        if (xb - xa < 24) continue;
+        const name = drawService(c, deck, xa, y0, xb - xa, DH, t, deck * 5 + Math.round(a), info.color, open);
+        if (open) this.services.push({ deck, xa, xb, name });
       }
       if (open) for (const pl of this.roomsByDeck[deck] ?? []) {
         const xa = Math.round(X(pl.at + pl.len)) + 1, xb = Math.round(X(pl.at)) - 1;
@@ -464,6 +466,13 @@ export class Interior {
     /* ---- The crew ---- */
     this.drawCrew(c, g, ab);
 
+    // The deck's own spaces are named too (dimmer than your rooms).
+    for (const sv of this.services) {
+      const y = this.deckTop(sv.deck) + 7;
+      c.fillStyle = 'rgba(8,10,14,0.6)';
+      c.fillRect(sv.xa + 2, y, sv.name.length * 4 + 3, 8);
+      pxMini(c, sv.name, sv.xa + 4, y + 1, '#9aa8b8', 'left', null);
+    }
     // Room name plates, and the selection.
     for (let deck = 1; deck <= 7; deck++) {
       if (!p.deckOpen(deck)) continue;
@@ -738,6 +747,30 @@ export class Interior {
       if (pr.deck !== ROOF && !p.deckOpen(pr.deck)) continue;
       const floor = pr.deck === ROOF ? SKY + ROOF_H - 6 : this.deckTop(pr.deck) + DH - 3;
       draw(pr, this.X(pr.y, rows), floor, moving(pr) ? 'walk' : poseHD(pr));
+    }
+    // Off-duty hands in the deck's own spaces: one or two each, pottering about and pausing at things.
+    const OFF = ['#5a7a9a', '#7a8a5a', '#8a6a5a', '#6a6a8a', '#9a8a6a', '#5a8a8a'];
+    for (const sv of this.services) {
+      const floor = this.deckTop(sv.deck) + DH - 3;
+      const n = sv.xb - sv.xa > 110 ? 2 : 1;
+      for (let k = 0; k < n; k++) {
+        const seed = sv.deck * 31 + Math.round(sv.xa) + k * 7;
+        const span = Math.max(4, sv.xb - sv.xa - 18);
+        const ph = this.time * (0.12 + 0.08 * hash2(seed, 1)) + hash2(seed, 2) * 6.28;
+        const x = sv.xa + 9 + ((Math.sin(ph) + 1) / 2) * span;
+        const still = Math.abs(Math.cos(ph)) < 0.3;
+        const pose: PoseHD = still ? (hash2(seed, 3) > 0.5 ? 'type' : 'stand') : 'walk';
+        const lk: Look = { uniform: OFF[seed % OFF.length], hat: 'none', hatCol: '#000', hair: HAIRS_HD[seed % HAIRS_HD.length], skin: seed % 4 };
+        const img = personHD(pose, Math.floor(this.time * 7 + seed), lk);
+        const dx = Math.round(x - img.width / 2), dy = Math.round(floor - img.height);
+        if (Math.cos(ph) < 0) {
+          c.save();
+          c.translate(dx + img.width, dy);
+          c.scale(-1, 1);
+          c.drawImage(img, 0, 0);
+          c.restore();
+        } else c.drawImage(img, dx, dy);
+      }
     }
   }
 

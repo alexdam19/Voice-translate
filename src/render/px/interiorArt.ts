@@ -37,7 +37,7 @@ export interface Slots {
 
 const WALL = '#262d38', WALL_LO = '#1b2029', PIPE = '#4a5566', PIPE_HI = '#6a7890', FLOOR = '#1a1f27', FLOOR_HI = '#3a4452';
 
-function sh(c: string, k: number): string {
+export function sh(c: string, k: number): string {
   const n = parseInt(c.slice(1), 16);
   const f = (v: number): number => Math.max(0, Math.min(255, Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k))));
   return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => f(v).toString(16).padStart(2, '0')).join('')}`;
@@ -64,7 +64,7 @@ export function discAt(c: CanvasRenderingContext2D, cx: number, cy: number, r: n
 }
 
 /** The back wall of a room: panels with rivets and a light rim, a pipe run, darker toward the floor. */
-function backWall(a: RoomArt, tint: string): void {
+export function backWall(a: Pick<RoomArt, 'c' | 'x0' | 'y0' | 'w' | 'h'>, tint: string): void {
   const { c, x0, y0, w, h } = a;
   const wall = mix(WALL, tint, 0.14);
   c.fillStyle = wall;
@@ -110,19 +110,19 @@ function backWall(a: RoomArt, tint: string): void {
   }
 }
 
-function mix(a: string, b: string, t: number): string {
+export function mix(a: string, b: string, t: number): string {
   const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
   const ch = (s: number): number => Math.round(((pa >> s) & 255) + (((pb >> s) & 255) - ((pa >> s) & 255)) * t);
   return `#${[ch(16), ch(8), ch(0)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
-function R(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, col: string): void {
+export function R(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, col: string): void {
   c.fillStyle = col;
   c.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
 }
 
 /** A box with a lit top and a shaded right side (lockers, crates, machines). */
-function box(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, col: string): void {
+export function box(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, col: string): void {
   R(c, x - 1, y - 1, w + 2, h + 1, '#0b0d11');
   R(c, x, y, w, h, col);
   R(c, x, y, w, 1, sh(col, 0.3));
@@ -131,7 +131,7 @@ function box(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: nu
 }
 
 /** A little screen: dark glass, a glowing line that moves. */
-function screen(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, col: string, t: number, seed: number): void {
+export function screen(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, col: string, t: number, seed: number): void {
   R(c, x - 1, y - 1, w + 2, h + 2, '#0b0d11');
   R(c, x, y, w, h, '#06131a');
   c.fillStyle = col;
