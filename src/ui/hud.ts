@@ -84,12 +84,13 @@ function setHTML(el: HTMLElement, s: string): void {
 const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls?: string }[] = [
   { key: 'base', label: 'BASE', sub: 'B', cls: 'big base' },
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
-  { key: 'cabin', label: 'CABIN', sub: 'F', cls: 'cabin' },
+  { key: 'cabin', label: 'CABIN', sub: 'F', cls: 'big cabin' },
   { key: 'inside', label: 'INSIDE', sub: 'G', cls: 'inside' },
   { key: 'bridge', label: 'VITALS', sub: 'Y', cls: 'bridge' },
   { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
   { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
   { key: 'shipyard', label: 'SHIPYARD', sub: 'U', cls: 'shipyard' },
+  { key: 'bounty', label: 'BOUNTY', sub: 'parts', cls: 'bounty' },
   { key: 'hangar', label: 'HANGAR', sub: 'airlift', cls: 'hangar' },
   { key: 'camp', label: 'CAMP', sub: 'T', cls: 'camp' },
   { key: 'blueprint', label: 'BLUEPRINT', sub: 'N' },
@@ -546,7 +547,7 @@ export class Hud {
       b.style.display = !f || c.level >= f.level || (m.key === 'arsenal' && g.armory.length > 0) ? '' : 'none';
       b.classList.toggle('on', (m.key === 'base' && village) || (m.key === 'camp' && g.deploy.state !== 'mobile'));
       if (m.key === 'shipyard') b.style.display = g.mode === 'world' && isDocked(g) ? '' : 'none';
-      if (m.key === 'bridge' || m.key === 'cabin' || m.key === 'inside' || m.key === 'hangar') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
+      if (m.key === 'bridge' || m.key === 'cabin' || m.key === 'inside' || m.key === 'hangar' || m.key === 'bounty') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
       if (m.key === 'camp') {
         b.style.display = g.mode === 'world' ? '' : 'none';
         setHTML(b.querySelector('b')!, g.deploy.state === 'up' ? 'PACK UP' : g.deploy.state === 'deploying' ? 'DEPLOYING' : g.deploy.state === 'packing' ? 'PACKING' : 'CAMP');

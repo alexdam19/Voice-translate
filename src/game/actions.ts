@@ -522,6 +522,12 @@ export function trackCard(g: Game, id: string): Result {
   return OK(`Tracking the ${CARDS[id].name} upgrade.`);
 }
 
+export function trackPart(g: Game, key: string): Result {
+  g.tracked = { kind: 'part', key };
+  bump(g, 'tracked');
+  return OK('Tracking that Mothership part. Follow the marker.');
+}
+
 export function untrack(g: Game): void {
   g.tracked = null;
 }

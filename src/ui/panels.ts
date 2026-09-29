@@ -18,6 +18,7 @@ import { renderBlueprint } from './blueprintPanel';
 import { renderShipyard } from './shipyardPanel';
 import { renderBridge } from './bridgePanel';
 import { renderHangar } from './hangarPanel';
+import { renderBounty } from './bountyPanel';
 
 const SWITCH: [string, string, string][] = [
   ['cards', 'CARDS (C)', ''], ['arsenal', 'ARSENAL (V)', 'arsenal'], ['crew', 'CREW (K)', 'crew'], ['progress', 'LEVEL ROAD (L)', ''],
@@ -92,6 +93,10 @@ export class Panels {
       hangar: {
         title: 'MEGA HANGAR AIRLIFT', sub: 'Order supplies and endless refits; heavy airships fly them out to you wherever you are. The game keeps running.',
         tabs: [['supplies', 'Supplies'], ['refits', 'Refits'], ['flights', 'Flights']], render: renderHangar, wide: true, cls: 'hangar', live: true,
+      },
+      bounty: {
+        title: 'BOUNTY BOARD', sub: 'The six Mothership parts: who holds each one, where, and what it does. Destroy the holder, grab the core, bring it home.',
+        render: renderBounty, wide: true, cls: 'bounty', live: true,
       },
       drive: { title: 'DRIVE TRAIN', sub: 'Different treads for different ground. Craft them at a Workshop (CARGO > Workshop).', render: (c) => this.renderDrive(c), wide: true },
       cargo: { title: 'CARGO', sub: 'Your hold, and the Refinery and Workshop where ore becomes parts.', tabs: [['hold', 'Hold'], ['workshop', 'Refine & Craft']], render: renderCargo, wide: true },

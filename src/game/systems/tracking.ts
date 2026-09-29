@@ -5,6 +5,7 @@ import { buildBlock, upgradeBlock, upgradeCostOf } from '../actions';
 import { CARDS, shardsNeeded, upgradeCost } from '../cards';
 import { levelCost, MODULES, recipeFor } from '../defs';
 import type { Game } from '../game';
+import { bounties } from '../campaign';
 
 /**
  * The objective tracker: pick something to build or upgrade (or a card to level up) and it shows what
@@ -22,7 +23,7 @@ export interface TrackTarget {
   x: number;
   y: number;
   label: string;
-  kind: 'node' | 'site' | 'outpost' | 'rune' | 'base';
+  kind: 'node' | 'site' | 'outpost' | 'rune' | 'base' | 'boss';
 }
 
 export interface TrackInfo {
@@ -116,6 +117,16 @@ export function trackInfo(g: Game): TrackInfo | null {
   let blocker: string | null = null;
   let modId = 0;
   let extraNeed: TrackNeed | null = null;
+  if (tr.kind === 'part') {
+    const b = bounties(g).find((k) => k.part.key === tr.key);
+    if (!b || b.status === 'installed') return null;
+    const hg = g.gen.hangar ?? g.gen.spawn;
+    const home = b.status === 'carrying';
+    return {
+      title: `Part: ${b.item}`, needs: [], blocker: null, ready: false, hint: b.todo, modId: 0,
+      target: home ? { x: hg.x, y: hg.y, label: 'Mega Hangar', kind: 'site' } : { x: b.x, y: b.y, label: b.status === 'dropped' ? `${b.item}` : `${b.bossName} (${b.place})`, kind: 'boss' },
+    };
+  }
   if (tr.kind === 'build') {
     const d = MODULES[tr.key];
     if (!d) return null;

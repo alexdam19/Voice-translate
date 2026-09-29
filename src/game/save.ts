@@ -54,7 +54,7 @@ export interface SaveData {
   /** Build jobs, with module indexes instead of ids. */
   builds?: (Omit<BuildJob, 'modId'> & { mod: number })[];
   squads?: Partial<Record<SquadType, { order: SquadOrder; gx: number; gy: number }>>;
-  tracked?: { kind: 'build'; key: string } | { kind: 'upgrade'; mod: number } | { kind: 'card'; id: string } | null;
+  tracked?: { kind: 'build'; key: string } | { kind: 'upgrade'; mod: number } | { kind: 'card'; id: string } | { kind: 'part'; key: string } | null;
   /* v6 */
   drives?: DriveKey[];
   autoDrive?: boolean;

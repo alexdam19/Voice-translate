@@ -110,6 +110,65 @@ export function mission(g: Game): Mission {
 }
 
 /* ---------------------------------------------------------------------- */
+/* The bounty board                                                        */
+/* ---------------------------------------------------------------------- */
+
+export type BountyStatus = 'hunt' | 'dropped' | 'carrying' | 'installed';
+
+export interface Bounty {
+  part: (typeof PARTS)[number];
+  /** The core's name, and what installing it does. */
+  item: string;
+  reward: string;
+  /** Who holds it: the enemy kind, its name and faction. */
+  bossKind: string;
+  bossName: string;
+  faction: string;
+  hp: number;
+  /** Where: the stronghold, its zone, and how far and which way from you. */
+  place: string;
+  zone: number;
+  x: number;
+  y: number;
+  dist: number;
+  bearing: string;
+  threat: number;
+  status: BountyStatus;
+  /** What to do next, in a line. */
+  todo: string;
+}
+
+const COMPASS = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
+
+/** Every Mothership part: who holds it, where, and what to do about it (the order the campaign wants them in). */
+export function bounties(g: Game): Bounty[] {
+  const c = g.campaign;
+  const p = g.player;
+  const out: Bounty[] = [];
+  for (const part of PARTS) {
+    const r = regionOf(g, part.loc);
+    const kind = partBoss(part);
+    const def = ENEMIES[kind];
+    const x = r?.x ?? 0, y = r?.y ?? 0;
+    const dist = Math.hypot(x - p.x, y - p.y);
+    const a = Math.atan2(y - p.y, x - p.x);
+    const bearing = COMPASS[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+    const status: BountyStatus = c.installed.includes(part.key) ? 'installed' : p.cargo.count(part.item) > 0 ? 'carrying' : r && c.bossesDown.includes(r.id) ? 'dropped' : 'hunt';
+    const bossName = def?.name ?? part.boss;
+    const place = r?.name ?? part.loc;
+    const todo = status === 'installed' ? 'Installed at the Mega Hangar.'
+      : status === 'carrying' ? 'In your hold: take it home and install it in the SHIPYARD.'
+      : status === 'dropped' ? `${bossName} is dead: the core is lying in ${place}. Drive over it to pick it up.`
+      : `Destroy ${bossName} in the heart of ${place}. It drops the core.`;
+    out.push({
+      part, item: getItem(part.item).name, reward: part.reward, bossKind: kind, bossName, faction: def?.faction ?? 'monster', hp: def?.hp ?? 0,
+      place, zone: part.zone, x, y, dist, bearing, threat: r?.threat ?? 1, status, todo,
+    });
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------------- */
 /* Strongholds and the finale                                              */
 /* ---------------------------------------------------------------------- */
 

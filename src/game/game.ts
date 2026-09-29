@@ -63,7 +63,8 @@ export interface BuildJob {
 export type Track =
   | { kind: 'build'; key: string }
   | { kind: 'upgrade'; modId: number }
-  | { kind: 'card'; id: string };
+  | { kind: 'card'; id: string }
+  | { kind: 'part'; key: string };
 
 export interface ForgeJob {
   uid: number;
