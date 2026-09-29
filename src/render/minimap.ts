@@ -4,11 +4,17 @@ import { ZONES } from '../shared/zones';
 import type { Game } from '../game/game';
 import { hexToRgb } from './pixel';
 import type { View2D as View } from './view2d';
+import { shipArtFor, topScale, TOP_PX } from './px/shipArt';
 
-/** How far the corner radar reaches (tiles from the fortress). */
-/** The corner radar covers this many metres each way (sampled every RADAR_STEP tiles): a Titan sees a long way. */
+/** The corner radar's default reach (metres each way from the fortress): a Titan sees a long way. */
 export const RADAR_R = 360;
-const RADAR_STEP = 2;
+/** Its zoom levels: reach each way, and how many tiles each radar pixel samples. */
+const RADAR_LEVELS = [
+  { R: 150, step: 1 },
+  { R: 360, step: 2 },
+  { R: 800, step: 4 },
+  { R: 1800, step: 8 },
+];
 
 type Pt = [number, number];
 
@@ -27,18 +33,32 @@ export class Minimap {
   private worldFor: unknown = null;
   private worldFog = -1;
   private ter = TERRAIN.map((t) => hexToRgb(t.color));
+  /** Which radar zoom level is showing. */
+  zoom = 1;
+  private get R(): number {
+    return RADAR_LEVELS[this.zoom].R;
+  }
+
+  /** Zooms the corner radar in (-1) or out (+1). */
+  setZoom(z: number): void {
+    const n = Math.max(0, Math.min(RADAR_LEVELS.length - 1, z));
+    if (n === this.zoom) return;
+    this.zoom = n;
+    this.lastFog = -1;
+  }
   private obs = OBS_COLOR.map((c) => (c ? hexToRgb(c) : [0, 0, 0]));
 
   /* ---------------- corner radar ---------------- */
 
   private composeLocal(g: Game): void {
-    const n = (RADAR_R * 2) / RADAR_STEP;
-    if (!this.data) {
+    const { R: RR, step: RADAR_STEP } = RADAR_LEVELS[this.zoom];
+    const n = (RR * 2) / RADAR_STEP;
+    if (!this.data || this.data.width !== n) {
       this.img.width = n;
       this.img.height = n;
       this.data = this.ictx.createImageData(n, n);
     }
-    const ox = Math.floor(g.player.x) - RADAR_R, oy = Math.floor(g.player.y) - RADAR_R;
+    const ox = Math.floor(g.player.x) - RR, oy = Math.floor(g.player.y) - RR;
     this.origin = [ox, oy];
     const d = this.data.data;
     const map = g.map;
@@ -103,7 +123,7 @@ export class Minimap {
 
   /** World point under a click on the corner radar (fractions of its width and height). */
   radarPoint(fx: number, fy: number): { x: number; y: number } {
-    return { x: this.origin[0] + fx * RADAR_R * 2, y: this.origin[1] + fy * RADAR_R * 2 };
+    return { x: this.origin[0] + fx * this.R * 2, y: this.origin[1] + fy * this.R * 2 };
   }
 
   /** Draws the map into `ctx` (w x h css px). The corner radar, or (`big`) the whole-world overview. */
@@ -112,12 +132,13 @@ export class Minimap {
       this.drawWorld(ctx, w, h, g);
       return;
     }
-    const moved = Math.abs(g.player.x - (this.origin[0] + RADAR_R)) > 24 || Math.abs(g.player.y - (this.origin[1] + RADAR_R)) > 24;
+    const RR = this.R;
+    const moved = Math.abs(g.player.x - (this.origin[0] + RR)) > RR / 15 || Math.abs(g.player.y - (this.origin[1] + RR)) > RR / 15;
     if (moved || g.fogVersion - this.lastFog >= 3 || this.lastFog < 0) {
       this.composeLocal(g);
       this.lastFog = g.fogVersion;
     }
-    const n = RADAR_R * 2;
+    const n = RR * 2;
     const s = w / n;
     const [ox, oy] = this.origin;
     ctx.imageSmoothingEnabled = false;
@@ -149,7 +170,8 @@ export class Minimap {
         if (nd.respawnAt || !onMap(nd.x, nd.y) || !explored(nd.x, nd.y)) continue;
         const [x, y] = P(nd.x, nd.y);
         ctx.fillStyle = NODE_INFO[nd.type].color;
-        ctx.fillRect(x - 1, y - 1, 2, 2);
+        const ns = Math.max(1, Math.min(4, 4 * s));
+        ctx.fillRect(x - ns, y - ns, ns * 2, ns * 2);
       }
       if (onMap(g.gen.gate.x, g.gen.gate.y)) {
         const [gx, gy] = P(g.gen.gate.x, g.gen.gate.y);
@@ -161,7 +183,7 @@ export class Minimap {
         const inside = onMap(reg.x, reg.y);
         const col = REGION_INFO[reg.kind].color;
         if (inside) ring(ctx, x, y, Math.max(6, reg.r * s), col);
-        else if (Math.hypot(reg.x - g.player.x, reg.y - g.player.y) < RADAR_R * 3) {
+        else if (Math.hypot(reg.x - g.player.x, reg.y - g.player.y) < RR * 3) {
           const a = Math.atan2(reg.y - g.player.y, reg.x - g.player.x);
           dot(ctx, w / 2 + Math.cos(a) * (w / 2 - 6), h / 2 + Math.sin(a) * (h / 2 - 6), 3.5, col);
         }
@@ -175,7 +197,7 @@ export class Minimap {
       if (!seen || e.burrowed) continue;
       const [x, y] = P(e.x, e.y);
       ctx.fillStyle = e.titan ? '#ff1744' : '#e53935';
-      const r = e.titan ? 4 : 1.2;
+      const r = Math.max(e.titan ? 4 : 1.2, Math.min(8, e.r * s * 1.5));
       ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
     for (const t of g.tanks) {
@@ -198,7 +220,27 @@ export class Minimap {
       ctx.fillStyle = '#26c6da';
       ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
     }
-    arrow(ctx, ...P(g.player.x, g.player.y), g.player.rot, 1);
+    // The Mega Hangar's airships.
+    for (const f of g.flights) {
+      if (!onMap(f.x, f.y)) continue;
+      const [x, y] = P(f.x, f.y);
+      dot(ctx, x, y, 3, '#40c4ff');
+      ring(ctx, x, y, 6, 'rgba(64,196,255,0.6)');
+    }
+    // Close in, your hull is drawn to scale from its sheet (farther out, an arrow).
+    const art = g.player.fortress ? shipArtFor('main', null, false) : null;
+    const hullPx = g.player.stats.length * s;
+    if (art && hullPx >= 16) {
+      const [px, py] = P(g.player.x, g.player.y);
+      const { kx, ky } = topScale(g.player.stats.length, g.player.stats.width);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(g.player.rot);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(art.top, -TOP_PX.cx * kx * s, -TOP_PX.cy * ky * s, TOP_PX.w * kx * s, TOP_PX.h * ky * s);
+      ctx.imageSmoothingEnabled = false;
+      ctx.restore();
+    } else arrow(ctx, ...P(g.player.x, g.player.y), g.player.rot, 1);
     // Camera frame
     const c0 = view.screenToWorld(0, 0), c1 = view.screenToWorld(view.width, 0), c2 = view.screenToWorld(view.width, view.height), c3 = view.screenToWorld(0, view.height);
     ctx.strokeStyle = 'rgba(255,255,255,0.7)';

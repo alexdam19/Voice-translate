@@ -47,6 +47,8 @@ export interface HudActions {
   useKit(): void;
   outrider(cmd: 'follow' | 'hold' | 'send' | 'launch'): void;
   minimapClick(x: number, y: number, right: boolean): void;
+  /** Zoom the corner radar in (-1) or out (+1). */
+  minimapZoom(d: number): void;
   /** Card drag: aim follows the pointer; drop plays it if released over the battlefield. */
   cardAim(slot: number, x: number, y: number, overUI: boolean): void;
   cardDrop(slot: number, x: number, y: number, overUI: boolean): void;
@@ -309,6 +311,21 @@ export class Hud {
       act.minimapClick((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, e.button === 2);
     });
     this.minimap.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.minimap.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      act.minimapZoom(e.deltaY < 0 ? -1 : 1);
+    }, { passive: false });
+    const zoomBox = h('div', 'mm-zoom');
+    for (const [lab, d] of [['+', -1], ['−', 1]] as const) {
+      const b = h('button', '', lab);
+      b.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        act.minimapZoom(d);
+      });
+      zoomBox.appendChild(b);
+    }
+    this.mmWrap.appendChild(zoomBox);
     this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost);
     for (const el of [tl, tr, this.bottom, this.doom.root, this.squads, this.perkBox, this.rider, this.mmWrap]) el.addEventListener('mousedown', (e) => e.stopPropagation());
   }

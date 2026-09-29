@@ -106,6 +106,7 @@ export class App {
       useKit: () => this.useKit(),
       outrider: (c) => this.outriderCmd(c),
       minimapClick: (x, y, right) => this.minimapClick(x, y, right),
+      minimapZoom: (d) => this.minimap.setZoom(this.minimap.zoom + d),
       cardAim: (slot, x, y, over) => this.cardAim(slot, x, y, over),
       cardDrop: (slot, x, y, over) => this.cardDrop(slot, x, y, over),
       cardTap: (slot) => this.cardTap(slot),
