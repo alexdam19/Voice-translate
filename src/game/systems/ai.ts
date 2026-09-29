@@ -608,6 +608,11 @@ export function updateEnemies(g: Game, dt: number): void {
   for (const e of list) if (e.latch && e.hp > 0) latched.set(e.latch.tank, (latched.get(e.latch.tank) ?? 0) + 1);
   for (const e of list) {
     if (e.hp <= 0) continue;
+    // A colossus's weak points ride on its body (systems/colossus.ts moves them).
+    if (e.colossus) {
+      e.hitFlash = Math.max(0, e.hitFlash - dt);
+      continue;
+    }
     e.anim += dt * (2 + e.speed);
     e.hitFlash = Math.max(0, e.hitFlash - dt);
     if (e.bumpT) e.bumpT = Math.max(0, e.bumpT - dt);

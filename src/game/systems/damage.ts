@@ -1,6 +1,7 @@
 import { troopCasualty } from './troops';
 import { titanHit, type ArmorZone } from './titan';
 import { onBossKilled } from '../campaign';
+import { colossusShielded, onColossusPart } from './colossus';
 import { ENEMIES } from '../enemyDefs';
 import { rollDropRarity, rollWeaponKey } from '../../shared/loot';
 import { NODE_INFO } from '../../shared/mapgen';
@@ -108,6 +109,12 @@ export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): vo
     if (!o.silent && Math.random() < 0.15) g.float(e.x, e.y + 0.5, 'IMMUNE: USE ABILITIES', '#b388ff');
     return;
   }
+  // A colossus's core is under armour until enough of its weak points are broken.
+  if (e.colossus && colossusShielded(g, e)) {
+    if (!o.silent && Math.random() < 0.08) g.float(e.x, e.y + 1, 'ARMOURED: BREAK THE WEAK POINTS', '#ffab40');
+    g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffd740', n: 1 });
+    return;
+  }
   dmg = preHit(e, dmg, o.fx);
   if (o.srcTank === g.player.id) {
     const c = g.player.crew;
@@ -139,6 +146,10 @@ export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): vo
 
 export function killEnemy(g: Game, e: Enemy): void {
   e.hp = 0;
+  if (e.colossus) {
+    onColossusPart(g, e);
+    return;
+  }
   g.stats.kills++;
   g.objectiveCounters.kills = (g.objectiveCounters.kills ?? 0) + 1;
   const threat = e.threat;

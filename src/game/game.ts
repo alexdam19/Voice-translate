@@ -24,6 +24,7 @@ import { newCrewLife, type CrewLife } from './systems/crewlife';
 import { newStorm, type Storm } from './systems/weather';
 import { newDeploy, type Deploy } from './systems/camp';
 import { newTitanState, type TitanState } from './systems/titan';
+import { COLOSSUS_TIMING, type Colossus } from './systems/colossus';
 import type { RepairTeam } from './systems/crewops';
 import type { WorkOrder } from './systems/workorders';
 import { Tank } from './tank';
@@ -96,6 +97,7 @@ export interface GameStats {
   deaths: number;
   time: number;
   hordes?: number;
+  colossi?: number;
   rivals?: number;
   /** Troops killed. */
   lost?: number;
@@ -112,6 +114,8 @@ export interface Target {
   y: number;
   r: number;
   flying: boolean;
+  /** A colossus's weak point: a target so big your guns engage it from further off (and their shots carry). */
+  big?: boolean;
 }
 
 /** How many crawler track marks stay on the ground (each a 4 m stretch of one crawler bank). */
@@ -130,6 +134,9 @@ export class Game {
   outriderRebuild = 0;
   tanks: Tank[] = [];
   enemies: Enemy[] = [];
+  /** Colossi out there (bigger than your Titan), and seconds until the next one comes. */
+  colossi: Colossus[] = [];
+  colossusT = COLOSSUS_TIMING.FIRST;
   projectiles: Projectile[] = [];
   pickups: Pickup[] = [];
   allies: Ally[] = [];
@@ -666,7 +673,7 @@ export class Game {
   /** Something a player-side weapon can shoot. */
   hostileTarget(id: number): Target | null {
     const e = this.enemyById(id);
-    if (e && e.hp > 0 && !e.burrowed) return { id: e.id, x: e.x, y: e.y, r: e.r, flying: e.flying };
+    if (e && e.hp > 0 && !e.burrowed) return e.colossus ? { id: e.id, x: e.x, y: e.y, r: e.r + 55, flying: false, big: true } : { id: e.id, x: e.x, y: e.y, r: e.r, flying: e.flying };
     const t = this.tanks.find((k) => k.id === id);
     if (t && !t.dead) return { id: t.id, x: t.x, y: t.y, r: Math.min(t.stats.width, t.stats.length) / 2, flying: false };
     return null;

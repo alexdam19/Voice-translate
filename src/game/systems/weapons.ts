@@ -16,12 +16,19 @@ export function targetsFor(g: Game, team: 'player' | 'enemy'): Target[] {
   const c = g.targetCache;
   if (c.at === g.time) return c.list;
   const out: Target[] = [];
-  for (const e of g.enemies) if (e.hp > 0 && !e.burrowed && (g.mode === 'raid' || g.isVisible(e.x, e.y) || e.aggro)) out.push({ id: e.id, x: e.x, y: e.y, r: e.r, flying: e.flying || !!e.latch });
+  for (const e of g.enemies) {
+    if (e.hp <= 0 || e.burrowed || !(g.mode === 'raid' || g.isVisible(e.x, e.y) || e.aggro)) continue;
+    // A colossus's weak points are as big as buildings: guns reach them from well past their usual range.
+    out.push(e.colossus ? { id: e.id, x: e.x, y: e.y, r: e.r + BIG_REACH, flying: false, big: true } : { id: e.id, x: e.x, y: e.y, r: e.r, flying: e.flying || !!e.latch });
+  }
   for (const t of g.tanks) if (!t.dead) out.push({ id: t.id, x: t.x, y: t.y, r: Math.min(t.stats.width, t.stats.length) / 2, flying: false });
   c.at = g.time;
   c.list = out;
   return out;
 }
+
+/** Extra reach against a colossus's weak points (metres). */
+export const BIG_REACH = 55;
 
 function lookup(g: Game, team: 'player' | 'enemy', id: number): Target | null {
   return team === 'player' ? g.hostileTarget(id) : g.friendlyTarget(id);
@@ -192,6 +199,8 @@ export function fire(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponSta
   if (d.kind !== 'sky' && d.kind !== 'meteor' && d.kind !== 'jet') g.fx.push({ t: 'muzzle', x: mx, y: my, a, color: d.color, size: d.size === 'heavy' ? 1.6 : d.size === 'medium' ? 1.1 : 0.7, z: t.fortress ? t.deckY(0) + 1 : 1 });
   if (d.size === 'heavy' && t.team === 'player' && t === g.player) g.fx.push({ t: 'shake', amt: 0.15 });
   const fx = shotFx(s, d, dmg);
+  // Against a colossus's weak point the shot carries all the way.
+  const range = target?.big ? Math.max(s.range, dist + 15) : s.range;
   const o: HitOpts = { srcTank: t.id, lifesteal: s.lifesteal + soul(t), burn: burn || undefined, wkey, wr, fx };
   // Mini fighter jets from a Hornet Launcher.
   if (d.jets) {
@@ -212,11 +221,11 @@ export function fire(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponSta
     const spread = (Math.random() - 0.5) * 2 * s.spread;
     const ang = a + spread;
     const crit = critRoll(t, s);
-    const p = launch(g, t, d.kind, mx, my, ang, s.speed, dmg * (crit ? 2 : 1), s.splash, s.pierce + extraPierce, s.homing, target, s.range, burn, fx, wkey, wr, d.color, PROJ_SIZE[d.kind] ?? (d.size === 'heavy' ? 0.35 : d.size === 'medium' ? 0.25 : 0.16));
+    const p = launch(g, t, d.kind, mx, my, ang, s.speed, dmg * (crit ? 2 : 1), s.splash, s.pierce + extraPierce, s.homing, target, range, burn, fx, wkey, wr, d.color, PROJ_SIZE[d.kind] ?? (d.size === 'heavy' ? 0.35 : d.size === 'medium' ? 0.25 : 0.16));
     p.crit = crit;
     p.lifesteal = s.lifesteal + soul(t);
     if (d.arc) {
-      const land = Math.min(dist, s.range);
+      const land = Math.min(dist, range);
       const jitter = s.spread * land + (s.pellets > 1 ? 1.2 : 0);
       p.tx = mx + Math.cos(a) * land + (Math.random() - 0.5) * jitter;
       p.ty = my + Math.sin(a) * land + (Math.random() - 0.5) * jitter;

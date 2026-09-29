@@ -1592,3 +1592,10 @@ html.touch .joy { display: block; }
 .menu-btn small { color: #8a7fb0; }
 .btn.primary { background: linear-gradient(180deg, #2a1a5a, #16103a); border-color: var(--neon-c); color: #d8ffff; box-shadow: 0 0 8px rgba(24, 255, 255, 0.35); }
 .btn.primary:hover { background: linear-gradient(180deg, #3a2a7a, #1e1650); }
+.bossbar.colossus { width: 560px; border: 2px solid #ff1744; box-shadow: 0 0 14px rgba(255, 23, 68, 0.45); background: linear-gradient(180deg, rgba(40, 6, 12, 0.94), rgba(14, 4, 8, 0.94)); }
+.bossbar.colossus .bn { color: #ff5a6a; font-size: 15px; letter-spacing: 1px; text-shadow: 0 0 6px #ff1744; }
+.bossbar.colossus .bn small { color: #c99; font-size: 11px; }
+.bossbar.colossus .bb { height: 14px; }
+.bossbar.colossus .bb div { background: repeating-linear-gradient(90deg, #ff3a3a 0 10px, #d01a2a 10px 12px); }
+.bossbar .bw { font-family: var(--px); font-size: 11px; color: #ffcc80; text-align: center; margin-top: 2px; }
+.bossbar .bw b { color: #ffea00; animation: vtpulse 0.6s infinite alternate; }

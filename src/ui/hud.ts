@@ -1,3 +1,4 @@
+import { COLOSSI, colossusHealth } from '../game/systems/colossus';
 import { ENEMIES } from '../game/enemyDefs';
 import { DoomBar } from './doombar';
 import { TITAN } from '../game/systems/movement';
@@ -582,11 +583,23 @@ export class Hud {
     const near = (e: { x: number; y: number }, r: number): boolean => p.edgeDist(e.x, e.y) < r;
     const titan = g.enemies.find((e) => e.boss && e.hp > 0 && near(e, 600)) ?? g.enemies.find((e) => e.titan && e.hp > 0 && near(e, 400));
     const rival = g.tanks.find((t) => t.kind === 'rival' && !t.dead && Math.hypot(t.x - p.x, t.y - p.y) < 700);
-    if (rival) {
+    const col = g.colossi.find((c) => c.dying <= 0 && Math.hypot(c.x - p.x, c.y - p.y) < 2500);
+    if (col) {
+      // A colossus: its health, how many weak points still stand, whether the core is open, and how far off it is.
+      const d = COLOSSI[col.kind];
+      const h = colossusHealth(g, col);
+      const standing = col.parts.filter((id, i) => !d.weak[i].core && (g.enemies.find((e) => e.id === id)?.hp ?? 0) > 0).length;
+      const total = d.weak.filter((w) => !w.core).length;
+      this.boss.style.display = 'block';
+      this.boss.classList.add('colossus');
+      setHTML(this.boss, `<div class="bn">☠ ${esc(d.name.toUpperCase())} <small>${esc(d.title)} · ${Math.round(Math.hypot(col.x - p.x, col.y - p.y))} m</small></div><div class="bb"><div style="width:${(h.hp / Math.max(1, h.max)) * 100}%"></div></div><div class="bw">WEAK POINTS ${standing}/${total} · CORE ${col.open ? '<b>OPEN: HIT IT</b>' : 'ARMOURED'}</div>`);
+    } else if (rival) {
+      this.boss.classList.remove('colossus');
       this.boss.style.display = 'block';
       const hp = (rival.hp + rival.shield) / (rival.stats.maxHp + rival.stats.shield);
       setHTML(this.boss, `<div class="bn">${esc(rival.name)} <small>RIVAL ${esc(chassisForCC(rival.stats.cc).name.toUpperCase())} · ${Math.round(Math.hypot(rival.x - p.x, rival.y - p.y))}m</small></div><div class="bb"><div style="width:${hp * 100}%"></div></div>`);
     } else if (titan) {
+      this.boss.classList.remove('colossus');
       this.boss.style.display = 'block';
       setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${titan.boss ? 'BOSS' : 'GIANT'} · ${Math.round(ENEMIES[titan.kind]?.size ?? titan.r * 2)} m</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
     } else this.boss.style.display = 'none';

@@ -22,6 +22,8 @@ import { drawTitanSprite } from './px/titanSprite';
 import { airshipSprite, altarSprite, gateSprite, nodeSprite, siteSprite } from './px/decorArt';
 import { drawOhv, ohvCanvas, ohvFlash, ohvFrame, ohvOneShot, ohvSheet, ohvSteps, preloadOhv } from './px/ohv';
 import { ohvLookFor } from './px/ohvLooks';
+import { drawColossus, type ColossusView } from './px/colossusDraw';
+import { prewarmColossi } from './px/colossusArt';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
 import { quantizeSize } from './px/creaturesHD';
@@ -158,6 +160,8 @@ export class View2D {
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.resize();
     preloadOhv();
+    // Paint the colossi now, not in the frame one first walks in.
+    setTimeout(() => prewarmColossi(), 1500);
   }
 
   /* ---------------- camera maths ---------------- */
@@ -302,6 +306,7 @@ export class View2D {
     this.drawFeatures(g);
     this.drawPickups(g);
     this.drawTanks(g);
+    this.drawColossi(g);
     if (this.deckView > 0 && g.player.titan) this.drawDeckCutaway(g.player, this.deckView);
     this.drawEnemies(g, false);
     this.drawAllies(g, false);
@@ -589,6 +594,21 @@ export class View2D {
 
   /* ---------------- hulls ---------------- */
 
+  /** Colossi (bigger than a Titan): drawn over the hulls, under the creatures and the air. */
+  private drawColossi(g: Game): void {
+    if (!g.colossi.length) return;
+    const v: ColossusView = { c: this.ctx, sx: (x, y) => this.bx(x, y), sy: (x, y) => this.by(x, y), th: this.th, ppm: this.ppm, time: this.time };
+    for (const col of g.colossi) {
+      if (!this.near(col.x, col.y, 500)) continue;
+      drawColossus(v, g, col);
+      // Dust off its feet, belts and belly while it moves.
+      if (col.speed > 2 && Math.random() < 0.5) {
+        const a = Math.random() * Math.PI * 2;
+        this.fx.emit(col.x + Math.cos(a) * 80, col.y + Math.sin(a) * 60, 0.5, 0, 0, 1, 1.4, 8, '#a08a6a', { grow: 6, alpha: 0.35 });
+      }
+    }
+  }
+
   private drawTanks(g: Game): void {
     const list: Tank[] = [...g.tanks];
     if (g.outrider) list.push(g.outrider);
@@ -839,7 +859,7 @@ export class View2D {
       for (const id of this.heading.keys()) if (!live.has(id) && id < 1e9) this.heading.delete(id);
     }
     for (const e of g.enemies) {
-      if (e.flying !== air) continue;
+      if (e.flying !== air || e.colossus) continue;
       if (Math.abs(e.x - this.cam.x) > R || Math.abs(e.y - this.cam.y) > R) continue;
       if (g.mode === 'world' && !g.isVisible(e.x, e.y) && !e.boss) continue;
       if (e.burrowed) {

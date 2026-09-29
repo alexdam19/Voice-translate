@@ -191,8 +191,35 @@ export class Minimap {
     }
     // Enemies in sight (or radar range).
     const radar = g.player.stats.radar;
+    // Colossi: always on the radar, a pulsing skull-red diamond (an arrow on the rim when off the map).
+    for (const c of g.colossi) {
+      if (c.dying > 0) continue;
+      const pulse = 5 + (Math.sin(performance.now() / 180) + 1) * 2;
+      if (onMap(c.x, c.y)) {
+        const [x, y] = P(c.x, c.y);
+        ctx.fillStyle = '#ff1744';
+        ctx.beginPath();
+        ctx.moveTo(x, y - 7);
+        ctx.lineTo(x + 7, y);
+        ctx.lineTo(x, y + 7);
+        ctx.lineTo(x - 7, y);
+        ctx.closePath();
+        ctx.fill();
+        ring(ctx, x, y, pulse + 4, '#ff1744');
+      } else {
+        const a = Math.atan2(c.y - g.player.y, c.x - g.player.x);
+        const x = w / 2 + Math.cos(a) * (w / 2 - 8), y = h / 2 + Math.sin(a) * (h / 2 - 8);
+        ctx.fillStyle = '#ff1744';
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(a) * 7, y + Math.sin(a) * 7);
+        ctx.lineTo(x + Math.cos(a + 2.4) * 6, y + Math.sin(a + 2.4) * 6);
+        ctx.lineTo(x + Math.cos(a - 2.4) * 6, y + Math.sin(a - 2.4) * 6);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
     for (const e of g.enemies) {
-      if (!onMap(e.x, e.y)) continue;
+      if (e.colossus || !onMap(e.x, e.y)) continue;
       const seen = g.mode !== 'world' || g.isVisible(e.x, e.y) || (radar > 0 && Math.hypot(e.x - g.player.x, e.y - g.player.y) < radar);
       if (!seen || e.burrowed) continue;
       const [x, y] = P(e.x, e.y);

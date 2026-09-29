@@ -28,6 +28,7 @@ import { updateCamp } from './camp';
 import { updateHelm } from './helm';
 import { updateTeams } from './crewops';
 import { updateOrders } from './workorders';
+import { updateColossi } from './colossus';
 import { stormSpeed, updateWeather } from './weather';
 import { respawnNodes, updateHarvest, updateHazards, updateOutposts, updatePickups, updateRunes, updateSites, updateVision } from './world';
 
@@ -229,6 +230,7 @@ export function stepWorld(g: Game, dt: number): void {
     updatePickups(g, dt);
     updateSpawns(g, dt);
     if (g.campaign.finale !== 'active') updateWaves(g, dt);
+    updateColossi(g, dt);
     updateCampaign(g, dt);
     g.timers.vision -= dt;
     if (g.timers.vision <= 0) {

@@ -62,6 +62,8 @@ const ALL = (w: number): Partial<Record<number, number>> => {
 };
 
 export const ENEMIES: Record<string, EnemyDef> = {
+  // A colossus's weak point or core: sized, named and moved by the colossus (see systems/colossus.ts).
+  colossus_part: { kind: 'colossus_part', name: 'Weak point', hp: 1, r: 12, speed: 0, dmg: 0, range: 0, rate: 0, still: true, loot: 'titan', xp: 60, minThreat: 99, zones: {}, color: '#ff6d00' },
   rat: { kind: 'rat', name: 'Scrap Rat', hp: 26, r: 0.38, speed: 5.2, dmg: 5, range: 0.5, rate: 1.2, loot: 'creature', xp: 4, minThreat: 1, zones: {}, color: '#8d6e63' },
   drone: { kind: 'drone', name: 'Rust Drone', hp: 22, r: 0.42, speed: 4.2, flying: true, dmg: 4, range: 9, rate: 0.8, proj: 'bullet', projSpeed: 20, loot: 'creature', xp: 5, minThreat: 1, zones: ALL(3), color: '#90a4ae' },
   raider: { kind: 'raider', name: 'Scav Raider', hp: 40, r: 0.42, speed: 3.4, dmg: 6, range: 10, rate: 0.9, proj: 'bullet', projSpeed: 22, loot: 'trooper', xp: 6, minThreat: 1.2, zones: {}, color: '#ff7043' },
