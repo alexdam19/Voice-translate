@@ -22,15 +22,46 @@ export interface ColossusView {
   time: number;
 }
 
+const shrunk = new Map<HTMLCanvasElement, Map<number, HTMLCanvasElement>>();
+
+/**
+ * A copy of a sprite shrunk (smoothly, once) to a quarter-octave step at or above `sc`, so each frame draws it at
+ * close to 1:1 with no smoothing: big sprites smooth-scaled every frame were most of the cost of a colossus fight.
+ */
+function shrink(src: HTMLCanvasElement, sc: number): { img: HTMLCanvasElement; q: number } {
+  if (sc >= 0.9) return { img: src, q: 1 };
+  const q = Math.min(1, Math.pow(2, Math.ceil(Math.log2(Math.max(0.02, sc)) * 4) / 4));
+  let m = shrunk.get(src);
+  if (!m) {
+    m = new Map();
+    shrunk.set(src, m);
+  }
+  let img = m.get(q);
+  if (!img) {
+    img = document.createElement('canvas');
+    img.width = Math.max(1, Math.round(src.width * q));
+    img.height = Math.max(1, Math.round(src.height * q));
+    const x = img.getContext('2d')!;
+    x.imageSmoothingEnabled = true;
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(src, 0, 0, img.width, img.height);
+    if (m.size > 6) m.clear();
+    m.set(q, img);
+  }
+  return { img, q };
+}
+
 /** A sprite centred at world (x, y), turned to world angle `a`, `k` times its painted size. */
 function at(v: ColossusView, s: Spr, x: number, y: number, a: number, k = 1, alpha = 1): void {
   const c = v.c;
-  const sc = v.ppm * s.mpp * k;
+  const sc0 = v.ppm * s.mpp * k;
+  const { img, q } = shrink(s.img, sc0);
+  const sc = (sc0 / q) * (img.width / (s.img.width * q));
   const ang = a + v.th;
   c.setTransform(Math.cos(ang) * sc, Math.sin(ang) * sc, -Math.sin(ang) * sc, Math.cos(ang) * sc, Math.round(v.sx(x, y)), Math.round(v.sy(x, y)));
-  c.imageSmoothingEnabled = sc < 0.9;
+  c.imageSmoothingEnabled = false;
   if (alpha < 1) c.globalAlpha = alpha;
-  c.drawImage(s.img, -s.img.width / 2, -s.img.height / 2);
+  c.drawImage(img, -img.width / 2, -img.height / 2);
   if (alpha < 1) c.globalAlpha = 1;
   c.setTransform(1, 0, 0, 1, 0, 0);
 }
@@ -49,12 +80,15 @@ function seg(v: ColossusView, s: Spr, ax: number, ay: number, bx: number, by: nu
   const off = (16 - mid) * unitM * k;
   const x = (ax + bx) / 2 + Math.cos(a) * off, y = (ay + by) / 2 + Math.sin(a) * off;
   const c = v.c;
-  const sx = v.ppm * s.mpp * k, sy = v.ppm * s.mpp * wk;
+  const sx0 = v.ppm * s.mpp * k, sy0 = v.ppm * s.mpp * wk;
+  const { img, q } = shrink(s.img, Math.max(sx0, sy0));
+  const f = img.width / (s.img.width * q);
+  const sx = (sx0 / q) * f, sy = (sy0 / q) * f;
   const ang = a + v.th;
   const ca = Math.cos(ang), sa = Math.sin(ang);
   c.setTransform(ca * sx, sa * sx, -sa * sy, ca * sy, Math.round(v.sx(x, y)), Math.round(v.sy(x, y)));
-  c.imageSmoothingEnabled = Math.min(sx, sy) < 0.9;
-  c.drawImage(s.img, -s.img.width / 2, -s.img.height / 2);
+  c.imageSmoothingEnabled = false;
+  c.drawImage(img, -img.width / 2, -img.height / 2);
   c.setTransform(1, 0, 0, 1, 0, 0);
 }
 
@@ -218,16 +252,6 @@ export function drawColossus(v: ColossusView, g: Game, col: Colossus): void {
       }
       break;
     }
-  }
-  if (col.hitFlash > 0) {
-    // A faint white flash over the whole thing when something lands.
-    const c = v.c;
-    c.globalAlpha = 0.08;
-    c.fillStyle = '#ffffff';
-    c.beginPath();
-    c.arc(v.sx(col.x, col.y), v.sy(col.x, col.y), Math.max(d.L, d.W) * 0.45 * v.ppm, 0, Math.PI * 2);
-    c.fill();
-    c.globalAlpha = 1;
   }
   if (col.dying > 0 || (col.kind === 'leviathan' && col.burrowed > 0)) return;
   // Weak points on top.
