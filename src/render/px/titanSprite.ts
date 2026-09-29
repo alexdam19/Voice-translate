@@ -6,6 +6,7 @@ import type { ModuleInst, Tank } from '../../game/tank';
 import { hash2, makeCanvas } from './pixels';
 import { GUN_PX, scaledTo, shipArtFor, TOP_MARKS, TOP_PX, topScale, topToHull, type ShipArt } from './shipArt';
 import type { HullLight } from './titan2d';
+import { TURRET_PIVOT, TURRET_R, TURRET_S, turretFamily, turretRing, turretSprite } from './turretArt';
 import { RARITIES } from '../../shared/rarity';
 import { WEAPONS } from '../../shared/weapons';
 
@@ -443,81 +444,36 @@ function roofThing(c: CanvasRenderingContext2D, t: Tank, m: ModuleInst, x0: numb
  * edge, barrels (twin on the bigger guns) with muzzle brakes, a red sight at the muzzle, the rarity on a stripe.
  */
 function padGun(c: CanvasRenderingContext2D, t: Tank, m: ModuleInst, cx: number, cy: number, ppm: number, lights: HullLight[]): void {
-  const size = WEAPONS[m.weapon!.key]?.size ?? 'medium';
+  const def = WEAPONS[m.weapon!.key];
+  const size = def?.size ?? 'medium';
   const r = size === 'heavy' ? 4 : size === 'medium' ? 3 : 2.2;
   const reach = t.muzzleReach(m);
-  const px = 1 / ppm;
-  // The ring.
-  c.fillStyle = '#07080b';
-  c.beginPath();
-  c.arc(cx, cy, r * 1.05, 0, Math.PI * 2);
-  c.fill();
-  c.fillStyle = '#343c4a';
-  c.beginPath();
-  c.arc(cx, cy, r * 0.95, 0, Math.PI * 2);
-  c.fill();
-  c.fillStyle = '#161a21';
-  c.beginPath();
-  c.arc(cx, cy, r * 0.85, 0, Math.PI * 2);
-  c.fill();
+  // Painted turret: `unit` metres per sprite unit (the housing is TURRET_R units across its radius).
+  const unit = r / TURRET_R;
+  const sp = TURRET_S / 32;
+  const mpp = unit / sp;
+  const smooth = c.imageSmoothingEnabled;
+  c.imageSmoothingEnabled = ppm * mpp < 0.9;
+  const ring = turretRing();
+  const rs = (ring.width * mpp) / 1;
+  c.drawImage(ring, cx - rs / 2, cy - rs / 2, rs, rs);
   const back = Math.min(0.35, m.recoil ?? 0) * r;
+  const fam = turretFamily(def?.kind ?? 'bullet');
+  const accent = t.kind === 'rival' ? '#ff3b30' : '#3ab4ff';
+  const img = turretSprite(fam, def?.color ?? '#ffd740', accent);
   c.save();
   c.translate(cx, cy);
   c.rotate(m.aim - t.rot);
-  // Shadow, then barrels, then the housing over their roots.
-  const twin = size === 'light' ? [0] : [-r * 0.28, r * 0.28];
-  const bw = size === 'heavy' ? 1.1 : size === 'medium' ? 0.85 : 0.65;
-  for (const o of twin) {
-    c.fillStyle = '#07080b';
-    c.fillRect(r * 0.2 - back, o - bw / 2 - 0.15, reach - r * 0.2 + 0.2, bw + 0.3);
-    c.fillStyle = '#2b323e';
-    c.fillRect(r * 0.2 - back, o - bw / 2, reach - r * 0.2, bw);
-    c.fillStyle = '#6c788e';
-    c.fillRect(r * 0.2 - back, o - bw / 2, reach - r * 0.2, Math.max(px, bw * 0.25));
-    c.fillStyle = '#0d0f13';
-    c.fillRect(reach - back - 1.4, o - bw * 0.8, 1.4, bw * 1.6);
-    c.fillRect(r * 0.2 - back + (reach - r * 0.2) * 0.45, o - bw * 0.65, 0.6, bw * 1.3);
-  }
-  const hl = r * 1.05, hw = r * 0.82;
-  c.fillStyle = '#07080b';
-  c.beginPath();
-  c.moveTo(hl + 0.3, -hw * 0.6);
-  c.lineTo(hl * 0.55, -hw - 0.3);
-  c.lineTo(-hl - 0.3, -hw - 0.3);
-  c.lineTo(-hl - 0.3, hw + 0.3);
-  c.lineTo(hl * 0.55, hw + 0.3);
-  c.lineTo(hl + 0.3, hw * 0.6);
-  c.closePath();
-  c.fill();
-  c.fillStyle = '#262d38';
-  c.beginPath();
-  c.moveTo(hl, -hw * 0.55);
-  c.lineTo(hl * 0.55, -hw);
-  c.lineTo(-hl, -hw);
-  c.lineTo(-hl, hw);
-  c.lineTo(hl * 0.55, hw);
-  c.lineTo(hl, hw * 0.55);
-  c.closePath();
-  c.fill();
-  // Lit top edge and sloped front plate, a hatch, a lamp and the rarity stripe.
-  c.fillStyle = '#5a6680';
-  c.fillRect(-hl, -hw, hl * 1.55, Math.max(px, 0.3));
-  c.fillStyle = '#323a47';
-  c.fillRect(hl * 0.3, -hw * 0.7, hl * 0.55, hw * 1.4);
-  c.fillStyle = '#12151b';
-  c.fillRect(-hl * 0.6, -hw * 0.45, hw * 0.7, hw * 0.7);
-  c.fillStyle = '#7f8ca3';
-  c.fillRect(-hl * 0.6, -hw * 0.45, Math.max(px, 0.25), Math.max(px, 0.25));
+  const pivx = (1 + TURRET_PIVOT[0] * sp) * mpp, pivy = (1 + TURRET_PIVOT[1] * sp) * mpp;
+  c.drawImage(img, -pivx - back, -pivy, img.width * mpp, img.height * mpp);
+  // The rarity stripe on the housing's back edge.
   c.fillStyle = RARITIES[m.weapon!.rarity]?.color ?? '#b8c0c8';
-  c.fillRect(-hl + 0.2, -hw * 0.8, Math.max(px, 0.45), hw * 1.6);
-  c.fillStyle = t.kind === 'rival' ? '#ff3b30' : '#3ab4ff';
-  c.fillRect(-hl * 0.15, hw * 0.45, 0.5, 0.5);
+  c.fillRect(-r * 0.95 - back, -r * 0.55, Math.max(1 / ppm, r * 0.14), r * 1.1);
   c.restore();
+  c.imageSmoothingEnabled = smooth;
   const ra = m.aim - t.rot;
   const tipx = cx + Math.cos(ra) * (reach - back), tipy = cy + Math.sin(ra) * (reach - back);
-  c.fillStyle = '#ff4a3a';
-  c.fillRect(tipx - 0.25, tipy - 0.25, 0.5, 0.5);
-  if ((m.recoil ?? 0) > 0.25) lights.push({ x: tipx, y: tipy, r: size === 'heavy' ? 7 : 4, color: '#fff3a0', k: 0.9 });
+  if ((m.recoil ?? 0) > 0.25) lights.push({ x: tipx, y: tipy, r: size === 'heavy' ? 7 : 4, color: fam === 'energy' || fam === 'rail' || fam === 'tesla' ? def?.color ?? '#fff3a0' : '#fff3a0', k: 0.9 });
 }
 
 const flats = new WeakMap<Tank, HTMLCanvasElement>();
