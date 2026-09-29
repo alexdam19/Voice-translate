@@ -1428,6 +1428,17 @@ html.touch .joy { display: block; }
 .vt-act { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
 .vt-stab { font-family: var(--px); font-size: 13px; padding: 7px 14px; background: #1b3a1e; color: #b2ff59; border: 2px solid #4caf50; cursor: pointer; }
 .vt-stab.hot { background: #4a1208; color: #ffd740; border-color: #ff6d00; animation: vtpulse 1s infinite alternate; }
+.vt-auto { font-family: var(--px); font-size: 12px; padding: 7px 10px; background: #1a1d24; color: #78909c; border: 2px solid #37474f; cursor: pointer; }
+.vt-auto.on { background: #0d2a33; color: #18ffff; border-color: #00bcd4; box-shadow: 0 0 8px #00bcd455; }
+.vt-queue { margin: 8px 0; padding: 6px 8px; background: #0b0d14; border: 2px solid #2a2f45; }
+.vt-qh { font-family: var(--px); font-size: 12px; color: #ea80fc; margin-bottom: 4px; }
+.vt-qh small { color: #8a8fa8; margin-left: 8px; }
+.vt-qrow { display: grid; grid-template-columns: 10px 1fr auto auto; gap: 8px; align-items: center; font-size: 12px; padding: 2px 0; color: #cfd8dc; }
+.vt-qrow b { font-weight: normal; color: #ffd740; }
+.vt-qrow.working b { color: #76ff03; }
+.vt-qrow.going b { color: #18ffff; }
+.vt-qrow.back b, .vt-qrow.back span { color: #78909c; }
+.vt-qsev { width: 8px; height: 8px; display: inline-block; }
 @keyframes vtpulse { from { box-shadow: 0 0 0 rgba(255, 109, 0, 0); } to { box-shadow: 0 0 12px rgba(255, 109, 0, 0.8); } }
 .vt-actinfo { font-family: var(--px); font-size: 11px; color: #8fa6ba; }
 .vt-actinfo b { color: #e6edf2; }

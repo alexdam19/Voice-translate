@@ -1,7 +1,7 @@
 import { mountDps, coverage } from '../game/analysis';
 import { CREW_SCALE, DEPTS, TITAN_DECK_INFO } from '../game/defs';
 import type { Game } from '../game/game';
-import { crewSummary, dispatchTeam, jobName, maxTeams, needsTeam, openJobs, stabilize, teamOn, type TeamKind } from '../game/systems/crewops';
+import { crewSummary, dispatchTeam, jobName, maxTeams, needsTeam, openJobs, stabilize, teamOn, whyWaiting, type TeamKind } from '../game/systems/crewops';
 import { efficiency, shift } from '../game/systems/crewlife';
 import {
   comfort, COMPARTMENTS, compName, crawlersUp, damageControl, damageState, FUEL_MAX, fuelBurn, outsideTemp, SECTIONS, sysMult, SYSTEMS, titanMods, WATER_MAX, waterRates, ZONES, zoneMult,
@@ -100,8 +100,33 @@ export function renderBridge(ctx: PanelCtx): void {
     rerender();
   });
   act.appendChild(stab);
+  const auto = h('button', `vt-auto ${g.autoRepair ? 'on' : ''}`, `AUTO ${g.autoRepair ? 'ON' : 'OFF'}`);
+  auto.title = 'Damage control sends the next free team to the worst open job by itself';
+  auto.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    g.autoRepair = !g.autoRepair;
+    g.autoT = 0;
+    rerender();
+  });
+  act.appendChild(auto);
   act.appendChild(h('div', 'vt-actinfo', `TEAMS <b>${out}/${maxTeams(g)}</b> · RESERVE <b>${cs.reserves}/${cs.reserveCap}</b>${cs.reserveCap ? '' : ' <small>(build a Barracks)</small>'} · OFF WATCH <b>${cs.offWatch}</b> · AWAY <b>${cs.away}</b>`));
   ctx.body.appendChild(act);
+
+  // The job queue: every open problem, worst first, and who's on it (or why nobody is yet).
+  if (jobs.length || g.teams.length) {
+    const q = h('div', 'vt-queue');
+    q.appendChild(h('div', 'vt-qh', `JOB QUEUE <small>${jobs.length} open · ${out} team${out === 1 ? '' : 's'} out</small>`));
+    for (const j of jobs.slice(0, 8)) {
+      const t = teamOn(g, j.kind, j.key);
+      const st = t ? (t.phase === 'going' ? `en route ${Math.ceil(t.t)}s` : t.phase === 'working' ? `working ${Math.round(t.done * 100)}%` : 'returning') : whyWaiting(g, j.kind);
+      const r = h('div', `vt-qrow ${t ? t.phase : 'wait'}`, `<span class="vt-qsev" style="background:${j.sev >= 3 ? '#ff1744' : j.sev >= 1.5 ? '#ff9100' : '#ffd740'}"></span><span>${esc(jobName(j.kind, j.key))}</span><b>${st}</b>`);
+      r.appendChild(t ? h('span') : teamBtn(j.kind, j.key));
+      q.appendChild(r);
+    }
+    for (const t of g.teams.filter((t) => t.phase === 'back')) q.appendChild(h('div', 'vt-qrow back', `<span class="vt-qsev" style="background:#546e7a"></span><span>${esc(jobName(t.kind, t.key))}</span><b>done · walking back ${Math.ceil(t.t)}s</b><span></span>`));
+    ctx.body.appendChild(q);
+  }
 
   const grid = h('div', 'vt-grid');
   const card = (title: string, sub = ''): HTMLDivElement => {

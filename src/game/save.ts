@@ -69,6 +69,7 @@ export interface SaveData {
   autoRotate?: boolean;
   /* v10: a Titan's worth of crew (4x), the Barracks reserve */
   reserves?: number;
+  autoRepair?: boolean;
   /* v11: the Mega Hangar airlift */
   airlift?: boolean;
   flights?: Flight[];
@@ -80,7 +81,7 @@ export function serialize(g: Game): SaveData {
   for (const [k, s] of Object.entries(g.squads)) if (s) squads[k as SquadType] = { order: s.order, gx: s.gx, gy: s.gy };
   const tr = g.tracked;
   return {
-    v: 11, reserves: g.reserves, airlift: g.airlift.contact, flights: g.flights, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
+    v: 11, reserves: g.reserves, autoRepair: g.autoRepair, airlift: g.airlift.contact, flights: g.flights, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
     armory: g.armory, tech: [...g.tech], stats: g.stats, explored: '', fog: g.fog.serialize(),
     ...featureState(g),
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
@@ -236,6 +237,7 @@ export function deserialize(d: SaveData): Game {
     g.player.recalc();
   }
   g.reserves = Math.max(0, d.reserves ?? 0);
+  g.autoRepair = d.autoRepair ?? true;
   g.airlift = { contact: !!d.airlift, calling: 0 };
   g.flights = Array.isArray(d.flights) ? d.flights.filter((f) => f && Array.isArray(f.cargo)) : [];
   g.statMods = stationMods(g);

@@ -111,7 +111,7 @@ export function createOrder(g: Game, name: string, steps: OrderStep[]): string |
   if (!steps.length) return 'Add at least one step.';
   if (g.orders.filter((o) => o.phase !== 'done').length >= MAX_ORDERS) return `${MAX_ORDERS} work orders at once is the most the Works can run.`;
   const pool = teamPool(g);
-  if (pool < 2) return 'Nobody free to take it: every hand is on a post. A Barracks keeps a reserve.';
+  if (pool < 2) return 'Nobody left to send: a third of the crew is already out on jobs. A Barracks keeps a reserve.';
   const n = Math.min(ORDER_CREW, pool);
   const fromRes = Math.min(n, g.reserves);
   g.reserves -= fromRes;

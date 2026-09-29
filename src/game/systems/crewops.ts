@@ -5,8 +5,9 @@ import { COMPARTMENTS, compName, SYSTEMS, ZONES, type ArmorZone, type SysKey } f
 /**
  * Crew operations: the reserve in the Barracks, and repair teams you send from the vitals screen.
  *
- * A team is six people. They come out of the reserve first; without one they're pulled off the watch (the posts
- * they leave run short until they're back). They walk to the trouble (lifts and the Spine: longer to the bottom
+ * A team is six people. They come out of the reserve first, then off-watch hands, and failing both they're pulled
+ * off their posts (up to a third of the crew; the posts they leave run short until they're back). With AUTO on,
+ * damage control sends the next team to the worst open job as soon as one is free, so nothing waits on a click. They walk to the trouble (lifts and the Spine: longer to the bottom
  * decks and the roof), fix it far faster than the damage-control rota does, and walk home. Fires and flooding
  * cost nothing but time; crawlers, systems and armour take scrap.
  */
@@ -53,14 +54,19 @@ export function reserveCap(g: Game): number {
 export function maxTeams(g: Game): number {
   let b = 0;
   for (const m of g.player.modules) if (m.built && m.key === 'barracks') b += m.lvl;
-  return Math.min(6, 2 + b);
+  return Math.min(8, 3 + b);
 }
 
-/** People who could make up a team right now: the reserve, and the off-watch crew. */
+/** Share of the crew damage control may pull off their posts for repair teams. */
+export const DRAFT_SHARE = 0.35;
+
+/** People who could make up a team right now: the reserve, the off-watch crew, or failing that hands off posts. */
 export function teamPool(g: Game): number {
   const p = g.player;
   const offWatch = Math.max(0, p.troops - p.detached - p.stats.crewManned);
-  return g.reserves + offWatch;
+  const onTeams = g.teams.reduce((a, t) => a + t.n - t.reserve, 0) + g.orders.reduce((a, o) => a + (o.phase === 'done' ? 0 : o.n - o.reserve), 0);
+  const draft = Math.max(0, Math.min(p.troops - p.detached, Math.floor(p.troops * DRAFT_SHARE) - onTeams));
+  return g.reserves + Math.max(offWatch, draft);
 }
 
 /** Where a job is aboard: deck (0 roof) and section. */
@@ -157,10 +163,10 @@ export function dispatchTeam(g: Game, kind: TeamKind, key: string): string | nul
   if (!p.titan || p.dead) return 'No Titan to repair.';
   if (teamOn(g, kind, key)) return 'A team is already on it.';
   if (!needsTeam(g, kind, key)) return 'Nothing to fix there.';
-  if (g.teams.filter((t) => t.phase !== 'back').length >= maxTeams(g)) return `All ${maxTeams(g)} teams are out (a Barracks level adds one).`;
+  if (g.teams.filter((t) => t.phase !== 'back').length >= maxTeams(g)) return `All ${maxTeams(g)} teams are out (a Barracks level adds one). The job is queued.`;
   if (SCRAP[kind] > 0 && p.cargo.count('scrap') <= 0) return 'No scrap for repairs.';
   const pool = teamPool(g);
-  if (pool < 2) return 'Nobody free: every hand is on a post. Build Barracks for a reserve, or Living Quarters.';
+  if (pool < 2) return 'Nobody left to send: a third of the crew is already out on teams. Build Barracks for a reserve.';
   const n = Math.min(TEAM_SIZE, pool);
   const fromRes = Math.min(n, g.reserves);
   g.reserves -= fromRes;
@@ -201,8 +207,45 @@ export function stabilize(g: Game): number {
   return n;
 }
 
+/** Scrap below which AUTO leaves repairs that cost scrap alone (fires and flooding still get teams). */
+const AUTO_SCRAP = 10;
+
+/**
+ * AUTO damage control: every couple of seconds the worst open job without a team gets the next free one. Returns
+ * the job sent to, if any.
+ */
+export function autoDispatch(g: Game, dt: number): string | null {
+  const p = g.player;
+  if (!g.autoRepair || !p.titan || p.dead) return null;
+  g.autoT -= dt;
+  if (g.autoT > 0) return null;
+  g.autoT = 2;
+  if (g.teams.filter((t) => t.phase !== 'back').length >= maxTeams(g) || teamPool(g) < 2) return null;
+  for (const j of openJobs(g)) {
+    if (teamOn(g, j.kind, j.key)) continue;
+    if (SCRAP[j.kind] > 0 && p.cargo.count('scrap') < AUTO_SCRAP) continue;
+    // Scuffed armour (above 85%) isn't worth a team while there's worse.
+    if (j.kind === 'zone' && (g.titan.zones[j.key as ArmorZone] ?? 1) > 0.85) continue;
+    if (!dispatchTeam(g, j.kind, j.key)) {
+      const name = jobName(j.kind, j.key);
+      g.hooks.toast(`Damage control: team sent to ${name}.`, '#b2ff59');
+      return name;
+    }
+  }
+  return null;
+}
+
+/** Why a job has no team yet (for the job queue). */
+export function whyWaiting(g: Game, kind: TeamKind): string {
+  if (g.teams.filter((t) => t.phase !== 'back').length >= maxTeams(g)) return 'all teams out';
+  if (teamPool(g) < 2) return 'no hands free';
+  if (SCRAP[kind] > 0 && g.player.cargo.count('scrap') < (g.autoRepair ? AUTO_SCRAP : 1)) return 'needs scrap';
+  return g.autoRepair ? 'next up' : 'waiting for orders';
+}
+
 export function updateTeams(g: Game, dt: number): void {
   const p = g.player;
+  autoDispatch(g, dt);
   if (!g.teams.length) return;
   if (p.dead || !p.titan) {
     for (const t of g.teams) home(g, t);
