@@ -70,6 +70,8 @@ export interface Enemy {
   siege?: boolean;
   /** Aiming at a spot before firing (long-range units). */
   aim?: { x: number; y: number; t: number } | null;
+  /** A weak point or the core of a colossus (its id): moved and animated by the colossus, not by its own AI. */
+  colossus?: number;
 }
 
 export type Team = 'player' | 'enemy';

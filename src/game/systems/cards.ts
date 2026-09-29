@@ -126,7 +126,8 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
   const heal = (frac: number, over: number): void => p.addBuff('regen', over, (p.stats.maxHp * frac) / over);
   const R = d.radius;
   const A = CARD_AREA;
-  const K = 4;
+  // Card damage scale. Cards are a lever, not the whole fight: guns and the hull do the heavy lifting.
+  const K = 1.5;
   const scatter = (r: number): [number, number] => {
     const a = Math.random() * Math.PI * 2, k = Math.sqrt(Math.random()) * r;
     return [x + Math.cos(a) * k, y + Math.sin(a) * k];
@@ -190,7 +191,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       break;
     }
     case 'nuke': {
-      const dmg = 12000 * P;
+      const dmg = 5000 * P;
       g.hooks.toast('☢ NUCLEAR LAUNCH DETECTED ☢', '#ffea00');
       g.hooks.sound('alarm');
       setTimeout(() => g.hooks.sound('alarm'), 900);
@@ -248,7 +249,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       g.hooks.sound('rail');
       break;
     case 'timestop': {
-      const dur = 6 * Math.min(1.6, P);
+      const dur = 3 * Math.min(1.4, P);
       const reach = 45 * A;
       g.timeStop = dur;
       for (const e of g.enemies) if (Math.hypot(e.x - p.x, e.y - p.y) < reach) e.stun = Math.max(e.stun, dur);
@@ -289,12 +290,12 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
 
     /* ---------------- Rust ---------------- */
     case 'weld':
-      heal(0.15 * P, 15);
+      heal(0.05 * P, 20);
       g.fx.push({ t: 'heal', x: p.x, y: p.y });
       break;
     case 'nanite':
-      heal(0.25 * P, 20);
-      p.addBuff('armorUp', 8, 0.3);
+      heal(0.08 * P, 20);
+      p.addBuff('armorUp', 6, 0.2);
       g.fx.push({ t: 'heal', x: p.x, y: p.y });
       break;
     case 'acid_rain':
@@ -335,7 +336,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
         onDone: () => explode(g, x, y, R, 250 * K * P, 'player', { srcTank: p.id }, '#d500f9') });
       break;
     case 'soul_harvest':
-      p.addBuff('soul', 10, 0.1 * P);
+      p.addBuff('soul', 10, 0.03 * P);
       break;
     case 'dragon':
       spawnDragon(g, x, y, P * K);
@@ -346,7 +347,7 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
         onDone: () => {
           explode(g, x, y, R, 700 * K * P, 'player', { srcTank: p.id }, '#b388ff');
           for (const e of enemiesIn(g, x, y, R)) {
-            if (e.hp > 0 && e.hp < e.maxHp * (e.titan ? 0.06 : 0.2)) {
+            if (e.hp > 0 && !e.colossus && e.hp < e.maxHp * (e.titan ? 0.03 : 0.1)) {
               g.float(e.x, e.y + 0.5, 'ERASED', '#b388ff', true);
               damageEnemy(g, e, e.hp + 1, { srcTank: p.id, silent: true });
             }
@@ -362,12 +363,12 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
 
     /* ---------------- Aegis ---------------- */
     case 'shield_surge':
-      p.buffs.set('barrier', { t: 6, v: p.stats.maxHp * 0.18 * P });
-      g.onHeal?.(0, p.stats.maxHp * 0.18 * P);
+      p.buffs.set('barrier', { t: 6, v: p.stats.maxHp * 0.07 * P });
+      g.onHeal?.(0, p.stats.maxHp * 0.07 * P);
       g.fx.push({ t: 'ring', x: p.x, y: p.y, r: p.stats.length * 0.7, color: '#40c4ff' });
       break;
     case 'dome':
-      p.addBuff('dome', 4 * Math.min(1.6, P));
+      p.addBuff('dome', 3 * Math.min(1.4, P));
       g.fx.push({ t: 'ring', x: p.x, y: p.y, r: p.stats.length * 0.8, color: '#69f0ae' });
       break;
     case 'squad':
@@ -383,8 +384,8 @@ function runCard(g: Game, d: CardDef, x: number, y: number, P: number): boolean 
       fallFromSky(g, 'boulder', x, y, 1.2, '#ffab40', 5, 30 * A);
       break;
     case 'miracle':
-      p.addBuff('invuln', 3 * Math.min(1.5, P));
-      heal(0.2, 20);
+      p.addBuff('invuln', 1.5 * Math.min(1.4, P));
+      heal(0.06, 20);
       for (const k of g.crew) k.injured = 0;
       p.buffs.delete('stun');
       p.buffs.delete('burn');
@@ -488,6 +489,6 @@ function updateStorm(g: Game, dt: number): void {
     const tanks = g.tanks.filter((t) => !t.dead && t.team === 'enemy' && Math.hypot(t.x - p.x, t.y - p.y) < reach + 2);
     const pool = [...near.map((e) => ({ x: e.x, y: e.y })), ...tanks.map((t) => ({ x: t.x, y: t.y }))];
     const tgt = pool.length ? pool[Math.floor(Math.random() * pool.length)] : { x: p.x + (Math.random() - 0.5) * reach * 2, y: p.y + (Math.random() - 0.5) * reach * 2 };
-    skyStrike(g, 'player', tgt.x, tgt.y, 800 * s.P, { srcTank: p.id, fx: { slow: 0, stun: 0.3, stunTime: 1, knock: 0, split: 0, pull: false, execute: false, volatile: false, specials: [], base: 800 * s.P } }, '#82b1ff', 1.8 * CARD_AREA * 0.6);
+    skyStrike(g, 'player', tgt.x, tgt.y, 300 * s.P, { srcTank: p.id, fx: { slow: 0, stun: 0.3, stunTime: 1, knock: 0, split: 0, pull: false, execute: false, volatile: false, specials: [], base: 300 * s.P } }, '#82b1ff', 1.8 * CARD_AREA * 0.6);
   }
 }

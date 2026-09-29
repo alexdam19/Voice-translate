@@ -72,10 +72,11 @@ function onKill(g: Game, e: Enemy, fx: ShotFx | undefined, o: HitOpts): void {
 
 /**
  * The most hull the repair crews can put back per second, as a share of max hull, from every source at once
- * (passive repair, cards, kits, lifesteal): welding a 200 m hull back together takes minutes, not seconds. Two
+ * (passive repair, cards, kits, lifesteal): welding a 200 m hull back together takes minutes (four at the least),
+ * not seconds. Two
  * seconds' worth can be banked for a burst.
  */
-export const HEAL_CAP = 0.012;
+export const HEAL_CAP = 0.004;
 
 /** Refills the repair allowance (called each step). */
 export function refillHeal(g: Game, dt: number): void {
@@ -192,8 +193,8 @@ export function damageTank(g: Game, t: Tank, dmg: number, o: HitOpts = {}): void
     return;
   }
   let d = dmg;
-  if (t.hasBuff('dome')) d *= 0.1;
-  if (t.hasBuff('smoke')) d *= 0.5;
+  if (t.hasBuff('dome')) d *= 0.4;
+  if (t.hasBuff('smoke')) d *= 0.65;
   // Slows and stuns from special weapons.
   if (o.fx) {
     if (o.fx.slow > 0) t.addBuff('chill', 2, o.fx.slow * (t.team === 'player' ? 0.5 : 0.7));

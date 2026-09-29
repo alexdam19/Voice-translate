@@ -311,7 +311,7 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
   e.z = deckY(t);
   e.face = l.lz >= 0 ? -1 : 1;
   // On a Titan they're chewing at armour plate and hatches, not a thin deck.
-  damageTank(g, t, e.dmg * (t.fortress ? 0.22 : 0.55) * dt * (e.elite ? 1.5 : 1), { silent: true, zone: 'roof' });
+  damageTank(g, t, e.dmg * (t.fortress ? 0.8 : 0.55) * dt * (e.elite ? 1.5 : 1), { silent: true, zone: 'roof' });
   // Boarders on the roof go for the soldiers standing there.
   if (t === g.player && Math.random() < dt * 0.012 * (e.elite ? 3 : 1)) troopCasualty(g, 'soldier', 'Boarders killed a soldier on the roof.');
   if (Math.random() < dt * 0.6) {
@@ -553,8 +553,9 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
       e.hp = 0;
       return;
     }
-    // Against a hull they mostly claw for a grip to climb; the damage is done once they're aboard. Flyers dive in.
-    damageFriendly(g, tgt.id, tank ? e.dmg * (e.flying ? 0.3 : 0.08) : e.dmg, { silent: true, ...(e.flying ? { zone: 'roof' as const } : { at: { x: e.x, y: e.y } }) });
+    // Against a hull they tear at the skirts and the crawlers, ram the plating and claw for a grip to climb; flyers
+    // dive in. A horde pressed against the hull strips it fast.
+    damageFriendly(g, tgt.id, tank ? e.dmg * (e.flying ? 0.5 : 0.11) : e.dmg, { silent: true, ...(e.flying ? { zone: 'roof' as const } : { at: { x: e.x, y: e.y } }) });
     if (Math.random() < 0.3) g.fx.push({ t: 'spark', x: e.x + dx * e.r, y: e.y + dy * e.r, color: '#ffab40', n: 2 });
   }
   // Run at it, shoulder to shoulder, climbing over whatever is in the way.

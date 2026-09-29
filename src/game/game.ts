@@ -333,9 +333,10 @@ export class Game {
     const reward = levelRoad()[level - 1];
     for (const id of techsForLevel(level)) this.tech.add(id);
     this.packs.push(reward.pack);
+    // Level ups don't repair the fortress: the hull keeps its damage (as a share of the new maximum).
+    const frac = this.player.hp / Math.max(1, this.player.stats.maxHp);
     this.applyCrew();
-    // Level ups fully repair the fortress: a small reward that feels good mid-fight.
-    this.player.hp = this.player.stats.maxHp;
+    this.player.hp = Math.max(1, this.player.stats.maxHp * frac);
     this.hooks.sound('levelup');
     this.hooks.levelUp(reward);
   }
