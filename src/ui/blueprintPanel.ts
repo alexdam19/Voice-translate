@@ -1,7 +1,12 @@
 import { TER, TERRAIN, TRACTION } from '../shared/map';
 import { WEAPONS } from '../shared/weapons';
 import { assess, coverage, mountDps, rating } from '../game/analysis';
-import { chassisForCC, DRIVE_INFO, MODULES } from '../game/defs';
+import { batteryLocal, chassisForCC, DRIVE_INFO, MODULES, TITAN_DECK_INFO } from '../game/defs';
+import { TOROIDS } from '../game/systems/titan';
+import { hullCells, traceBlueprint } from '../render/px/blueprintArt';
+import { shipArtFor, shipView, TOP_PX } from '../render/px/shipArt';
+import { TOROID_SHEET } from '../render/px/toroids';
+import type { Game } from '../game/game';
 import type { Tank } from '../game/tank';
 import { button, clickWord, esc, h } from './dom';
 import type { PanelCtx } from './panels';
@@ -16,6 +21,9 @@ const FAINT = 'rgba(160, 215, 255, 0.28)';
 const PAPER = '#0c2f52';
 
 let selected = 0;
+/** Which deck the top view shows (0 roof .. 7 engineering). */
+let bpDeck = 0;
+const cellCache = new Map<string, boolean[][]>();
 
 export function renderBlueprint(ctx: PanelCtx): void {
   const g = ctx.app.game;
@@ -23,6 +31,24 @@ export function renderBlueprint(ctx: PanelCtx): void {
   const s = p.stats;
   const wrap = h('div', 'bp-wrap');
   const sheet = h('div', 'bp-sheet');
+  // A Titan's drawing is traced from its own art; the tabs pick which deck's plan is laid over it.
+  const titan = p.fortress && !!shipArtFor(p.kind, null, false);
+  if (titan) {
+    const tabs = h('div', 'bp-decks');
+    TITAN_DECK_INFO.forEach((d, i) => {
+      if (i > 0 && !p.deckOpen(i)) return;
+      const b = h('button', `bp-dk ${i === bpDeck ? 'on' : ''}`, `${d.level === 'Roof' ? 'ROOF' : d.level} <small>${d.name}</small>`);
+      b.style.setProperty('--dc', d.color);
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bpDeck = i;
+        selected = 0;
+        ctx.rerender();
+      });
+      tabs.appendChild(b);
+    });
+    sheet.appendChild(tabs);
+  }
   const top = h('canvas', 'bp-top');
   const side = h('canvas', 'bp-side');
   sheet.append(top, side);
@@ -32,11 +58,13 @@ export function renderBlueprint(ctx: PanelCtx): void {
   // Size the drawing to the panel.
   const avail = Math.max(260, Math.min(sheet.clientWidth || 520, 640));
   const L = s.length, W = s.width;
-  const scale = Math.min((avail - 60) / (W + 6), ((window.innerHeight * 0.62) - 30) / (L + 6));
-  top.width = Math.round((W + 8) * scale + 40);
-  top.height = Math.round((L + 6) * scale + 40);
-  side.width = top.width;
-  side.height = Math.round(top.width * 0.3);
+  const scale = titan
+    ? Math.min((avail - 90) / (W * 1.25), ((window.innerHeight * 0.66) - 90) / (L * 1.1))
+    : Math.min((avail - 60) / (W + 6), ((window.innerHeight * 0.62) - 30) / (L + 6));
+  top.width = titan ? Math.round(W * 1.25 * scale + 90) : Math.round((W + 8) * scale + 40);
+  top.height = titan ? Math.round(L * 1.1 * scale + 80) : Math.round((L + 6) * scale + 40);
+  side.width = titan ? Math.max(top.width, 360) : top.width;
+  side.height = Math.round(side.width * (titan ? 0.36 : 0.3));
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   for (const c of [top, side]) {
     c.style.width = `${c.width}px`;
@@ -46,10 +74,11 @@ export function renderBlueprint(ctx: PanelCtx): void {
   }
   const tc = top.getContext('2d')!;
   tc.scale(dpr, dpr);
-  const hit = drawTop(tc, p, scale, top.width / dpr, top.height / dpr);
+  const hit = titan ? drawTopTitan(tc, p, g, scale, top.width / dpr, top.height / dpr) : drawTop(tc, p, scale, top.width / dpr, top.height / dpr);
   const scx = side.getContext('2d')!;
   scx.scale(dpr, dpr);
-  drawSide(scx, p, side.width / dpr, side.height / dpr);
+  if (titan) drawSideTitan(scx, p, side.width / dpr, side.height / dpr);
+  else drawSide(scx, p, side.width / dpr, side.height / dpr);
   top.addEventListener('click', (e) => {
     const r = top.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
@@ -140,6 +169,186 @@ function drawGrid(c: CanvasRenderingContext2D, w: number, hgt: number): void {
   }
   c.strokeStyle = 'rgba(160, 215, 255, 0.5)';
   c.strokeRect(4.5, 4.5, w - 9, hgt - 9);
+}
+
+type HitBox = { id: number; x0: number; y0: number; x1: number; y1: number };
+
+/**
+ * A Titan from above, bow up, traced from its own top-view art (so the outline, sponsons, turret barbette and
+ * engine pods are exactly the ship's), with the chosen deck's plan laid over it: the cells that lie inside the
+ * hull, every building on that deck, the main batteries, the four toroids and the eight crawlers, and dimensions.
+ */
+function drawTopTitan(c: CanvasRenderingContext2D, t: Tank, g: Game, k: number, w: number, hgt: number): HitBox[] {
+  drawGrid(c, w, hgt);
+  const art = shipArtFor(t.kind, null, false)!;
+  const L = t.stats.length, W = t.stats.width;
+  const kx = (L * TOP_PX.over) / TOP_PX.w, ky = (W * TOP_PX.wide) / TOP_PX.h;
+  const cx = w / 2, cy = hgt / 2 + 8;
+  // Hull metres (forward, starboard) to the drawing, bow up.
+  const X = (lz: number): number => cx + lz * k;
+  const Y = (lx: number): number => cy - lx * k;
+  // The tracing.
+  const tr = traceBlueprint(art.top);
+  c.save();
+  c.translate(cx, cy);
+  c.rotate(-Math.PI / 2);
+  c.imageSmoothingEnabled = true;
+  c.drawImage(tr, -TOP_PX.cx * kx * k, -TOP_PX.cy * ky * k, TOP_PX.w * kx * k, TOP_PX.h * ky * k);
+  c.restore();
+  // The deck plan: the cells inside the hull's real outline.
+  const key = `${t.kind}|${L}|${W}|${t.cols}|${t.rows}`;
+  let cells = cellCache.get(key);
+  if (!cells) {
+    cells = hullCells(art.top, L, W, t.cols, t.rows, t.cell);
+    cellCache.set(key, cells);
+  }
+  const dcol = TITAN_DECK_INFO[bpDeck]?.color ?? INK;
+  c.strokeStyle = 'rgba(160, 215, 255, 0.16)';
+  c.lineWidth = 1;
+  for (let r = 0; r < t.rows; r++) {
+    for (let q = 0; q < t.cols; q++) {
+      if (!cells[r]?.[q]) continue;
+      const lx0 = (t.rows / 2 - r) * t.cell, lz0 = (q - t.cols / 2) * t.cell;
+      c.strokeRect(Math.round(X(lz0)) + 0.5, Math.round(Y(lx0)) + 0.5, Math.round(t.cell * k), Math.round(t.cell * k));
+    }
+  }
+  const hits: HitBox[] = [];
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (const m of t.modules) {
+    if (m.deck !== bpDeck) continue;
+    const d = MODULES[m.key];
+    const on = m.id === selected;
+    if (m.key === 'main_gun') {
+      const [lx, lz] = batteryLocal(L, W, m.cy > t.rows / 2);
+      const r = W * 0.13 * k * (m.cy > t.rows / 2 ? 0.72 : 1);
+      c.strokeStyle = on ? '#ffd740' : '#ff9e80';
+      c.lineWidth = on ? 2 : 1.5;
+      c.beginPath();
+      c.arc(X(lz), Y(lx), r, 0, Math.PI * 2);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(X(lz) - 3, Y(lx));
+      c.lineTo(X(lz) - 3, Y(lx) - r * 2.6);
+      c.moveTo(X(lz) + 3, Y(lx));
+      c.lineTo(X(lz) + 3, Y(lx) - r * 2.6);
+      c.stroke();
+      c.font = '9px Silkscreen, monospace';
+      c.fillStyle = on ? '#ffe57f' : '#ffccbc';
+      c.fillText('MAIN BATTERY', X(lz), Y(lx) + r + 8);
+      hits.push({ id: m.id, x0: X(lz) - r, y0: Y(lx) - r, x1: X(lz) + r, y1: Y(lx) + r });
+      continue;
+    }
+    const lxTop = (t.rows / 2 - m.cy) * t.cell, lzL = (m.cx - t.cols / 2) * t.cell;
+    const mx = X(lzL) + 1, my = Y(lxTop) + 1, mw = d.w * t.cell * k - 2, mh = d.h * t.cell * k - 2;
+    c.fillStyle = on ? 'rgba(255, 215, 64, 0.28)' : d.hardpoint ? 'rgba(255, 110, 64, 0.2)' : `${dcol}2a`;
+    c.fillRect(mx, my, mw, mh);
+    c.strokeStyle = on ? '#ffd740' : d.hardpoint ? '#ff9e80' : dcol;
+    c.lineWidth = on ? 2 : 1;
+    c.setLineDash(m.built ? [] : [3, 3]);
+    c.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
+    c.setLineDash([]);
+    if (d.hardpoint) {
+      const r = Math.min(mw, mh) * 0.3;
+      c.beginPath();
+      c.arc(mx + mw / 2, my + mh / 2, r, 0, Math.PI * 2);
+      c.stroke();
+    }
+    const fs = Math.max(7, Math.min(9, t.cell * k * 0.5));
+    c.font = `${fs}px Silkscreen, monospace`;
+    c.fillStyle = on ? '#ffe57f' : INK;
+    const label = mw >= 40 ? d.name : d.name.split(' ').map((s) => s[0]).join('');
+    if (mw >= 12 && mh >= 9) c.fillText(label.slice(0, Math.max(2, Math.floor(mw / (fs * 0.62)))), mx + mw / 2, my + mh / 2);
+    hits.push({ id: m.id, x0: mx, y0: my, x1: mx + mw, y1: my + mh });
+  }
+  // The toroids, with their state.
+  c.font = '9px Silkscreen, monospace';
+  TOROIDS.forEach((tor, i) => {
+    const [px, py] = TOROID_SHEET[i];
+    const lx = (px - TOP_PX.cx) * kx, lz = (py - TOP_PX.cy) * ky;
+    const hp = t === g.player ? g.titan.toroids[i] : 1;
+    const col = hp > 0.8 ? '#18ffff' : hp > 0.35 ? '#ffd740' : '#ff5252';
+    c.strokeStyle = col;
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.arc(X(lz), Y(lx), 14 * kx * k, 0, Math.PI * 2);
+    c.stroke();
+    c.beginPath();
+    c.arc(X(lz), Y(lx), 7 * kx * k, 0, Math.PI * 2);
+    c.stroke();
+    c.fillStyle = col;
+    c.fillText(tor.short, X(lz) + (lz < 0 ? -1 : 1) * (14 * kx * k + 12), Y(lx));
+  });
+  // Crawlers along each side.
+  c.fillStyle = FAINT;
+  for (let i = 0; i < 4; i++) {
+    const lx = L * (0.36 - i * 0.24);
+    const hp = t === g.player ? [g.titan.crawlers[i], g.titan.crawlers[4 + i]] : [1, 1];
+    for (const s of [0, 1]) {
+      c.fillStyle = hp[s] > 0.6 ? 'rgba(160,215,255,0.6)' : hp[s] > 0.1 ? '#ffd740' : '#ff5252';
+      c.fillText(`${s ? 'R' : 'L'}${i + 1}`, X((s ? 1 : -1) * (W / 2 + 7)), Y(lx));
+    }
+  }
+  // Dimensions.
+  c.strokeStyle = FAINT;
+  c.fillStyle = INK;
+  c.font = '9px Silkscreen, monospace';
+  const yb = Y(-L * 0.54) + 14;
+  c.beginPath();
+  c.moveTo(X(-W / 2), yb);
+  c.lineTo(X(W / 2), yb);
+  c.moveTo(X(-W / 2), yb - 4);
+  c.lineTo(X(-W / 2), yb + 4);
+  c.moveTo(X(W / 2), yb - 4);
+  c.lineTo(X(W / 2), yb + 4);
+  c.stroke();
+  c.fillText(`${W.toFixed(0)} m`, cx, yb + 9);
+  const xr = X(W / 2) + 34;
+  c.beginPath();
+  c.moveTo(xr, Y(L / 2));
+  c.lineTo(xr, Y(-L / 2));
+  c.stroke();
+  c.save();
+  c.translate(xr + 9, cy);
+  c.rotate(Math.PI / 2);
+  c.fillText(`${L.toFixed(0)} m`, 0, 0);
+  c.restore();
+  c.fillStyle = dcol;
+  c.fillText(`▲ BOW · ${TITAN_DECK_INFO[bpDeck]?.name.toUpperCase() ?? ''} DECK`, cx, 16);
+  return hits;
+}
+
+/** A Titan side on, traced from its side-view art (bow to the left, as drawn), with the decks marked. */
+function drawSideTitan(c: CanvasRenderingContext2D, t: Tank, w: number, hgt: number): void {
+  drawGrid(c, w, hgt);
+  const img = shipView('side', t.kind);
+  if (!img) return;
+  const tr = traceBlueprint(img);
+  const k = Math.min((w - 40) / img.width, (hgt - 30) / img.height);
+  const dw = img.width * k, dh = img.height * k;
+  const x0 = (w - dw) / 2, y0 = (hgt - dh) / 2 + 6;
+  c.imageSmoothingEnabled = true;
+  c.drawImage(tr, x0, y0, dw, dh);
+  // The deck lines through the hull (roof to the bottom of Engineering).
+  c.font = '8px Silkscreen, monospace';
+  c.textAlign = 'right';
+  c.textBaseline = 'middle';
+  for (let i = 0; i < 8; i++) {
+    const y = y0 + dh * (0.14 + i * 0.1);
+    c.strokeStyle = i === bpDeck ? (TITAN_DECK_INFO[i]?.color ?? INK) : 'rgba(160,215,255,0.18)';
+    c.lineWidth = i === bpDeck ? 1.5 : 1;
+    c.setLineDash(i === bpDeck ? [] : [2, 3]);
+    c.beginPath();
+    c.moveTo(x0 + dw * 0.06, y);
+    c.lineTo(x0 + dw * 0.96, y);
+    c.stroke();
+    c.setLineDash([]);
+    c.fillStyle = i === bpDeck ? (TITAN_DECK_INFO[i]?.color ?? INK) : FAINT;
+    c.fillText(TITAN_DECK_INFO[i]?.level ?? '', x0 + dw * 0.05, y);
+  }
+  c.textAlign = 'left';
+  c.fillStyle = INK;
+  c.fillText('◀ BOW · SIDE', 10, 12);
 }
 
 /** Top view, front up. Returns the clickable rectangles of the buildings. */

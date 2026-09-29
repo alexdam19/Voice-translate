@@ -1570,3 +1570,7 @@ html.touch .joy { display: block; }
 .bn-todo { color: #b2ff59; margin-top: 2px; }
 .bn-act { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .bn-foot { font-size: 12px; color: #8a7fb0; margin-top: 10px; }
+.bp-decks { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 6px; }
+.bp-dk { font-family: var(--px); font-size: 11px; padding: 3px 6px; background: #0c2f52; color: #a8d8ff; border: 1px solid #2c5c8a; cursor: pointer; }
+.bp-dk small { opacity: 0.7; margin-left: 3px; }
+.bp-dk.on { background: #123e6a; color: var(--dc); border-color: var(--dc); box-shadow: 0 0 8px color-mix(in srgb, var(--dc) 40%, transparent); }
