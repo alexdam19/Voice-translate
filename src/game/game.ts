@@ -28,6 +28,7 @@ import type { RepairTeam } from './systems/crewops';
 import type { WorkOrder } from './systems/workorders';
 import { Tank } from './tank';
 import { armFixed, buildStarterTank, newWeapon, starterCrew } from './templates';
+import type { Flight } from './systems/airlift';
 
 export type FxEvent =
   | { t: 'boom'; x: number; y: number; r: number; color: string; big?: boolean }
@@ -200,6 +201,9 @@ export class Game {
   teams: RepairTeam[] = [];
   /** Work orders being carried out. */
   orders: WorkOrder[] = [];
+  /** The Mega Hangar's airlift: whether you've raised it on the radio (and the call in progress), and the airships out. */
+  airlift = { contact: false, calling: 0 };
+  flights: Flight[] = [];
   /** What the officers on the stations add up to, whether shifts change on their own, and the officers' meal tab. */
   statMods = noStationMods();
   autoRotate = true;

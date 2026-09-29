@@ -9,6 +9,7 @@ import { updateBuffs, updateCrew, updateZones } from './crewsys';
 import { updateSquads } from './squads';
 import { driveTank, manualDrive, separateTanks, updateCollapses, type ManualDrive } from './movement';
 import { engineSpec } from './engine';
+import { updateAirlift } from './airlift';
 import { updateFocus, updateInteract } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
 import { updateProjectiles } from './projectiles';
@@ -213,6 +214,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateTeams(g, dt);
       updateOrders(g, dt);
     }
+    updateAirlift(g, dt);
     updateCamp(g, dt);
     updateWeather(g, dt);
     updateOutposts(g);

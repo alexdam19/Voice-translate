@@ -19,7 +19,7 @@ import { BLOCK, Terrain2D } from './px/terrain2d';
 import { paintSmallTank, type HullLight } from './px/titan2d';
 import { paintTitanHD } from './px/titanhd';
 import { drawTitanSprite } from './px/titanSprite';
-import { altarSprite, gateSprite, nodeSprite, siteSprite } from './px/decorArt';
+import { airshipSprite, altarSprite, gateSprite, nodeSprite, siteSprite } from './px/decorArt';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
 import { quantizeSize } from './px/creaturesHD';
@@ -305,6 +305,7 @@ export class View2D {
     this.drawProjectiles(g);
     this.drawEnemies(g, true);
     this.drawAllies(g, true);
+    this.drawAirships(g);
     this.shipEffects(g, dt);
     this.fx.update(dt);
     this.fx.draw(c, this.map, this.rw, this.rh);
@@ -873,6 +874,53 @@ export class View2D {
       // Giants shake the dust up as they walk.
       if (e.titan && !e.flying && Math.random() < 0.15) this.fx.emit(e.x + (Math.random() - 0.5) * e.r, e.y + (Math.random() - 0.5) * e.r, 0.5, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 1, 1.4, Math.max(1, e.r * 0.3), '#8d7a62', { grow: 2, alpha: 0.5 });
       if (e.aim) this.drawAimLine(e);
+    }
+  }
+
+  /** The Mega Hangar's airships: high overhead (their shadows far below), lowering crates on cables over the deck. */
+  private drawAirships(g: Game): void {
+    if (!g.flights.length) return;
+    const c = this.ctx;
+    const ppm = this.ppm;
+    const L = 90;
+    const px = Math.max(40, Math.round(L * ppm));
+    const lift = Math.max(40, 60 * ppm);
+    for (const f of g.flights) {
+      if (!this.near(f.x, f.y, L)) continue;
+      const img = airshipSprite(px, Math.floor(this.time * 12), f.phase !== 'back');
+      const gx = Math.round(this.bx(f.x, f.y)), gy = Math.round(this.by(f.x, f.y));
+      const sx = gx, sy = gy - Math.round(lift);
+      const a = f.a + this.th;
+      // Its shadow on the ground.
+      c.globalAlpha = 0.28;
+      c.fillStyle = '#000';
+      c.beginPath();
+      c.ellipse(gx + lift * 0.35, gy + lift * 0.2, px * 0.45, px * 0.18, a, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha = 1;
+      if (f.phase === 'drop') {
+        // Cables down to the deck, and the crates on their way.
+        const k = 1 - Math.max(0, f.t) / 4;
+        c.strokeStyle = 'rgba(220,220,200,0.7)';
+        c.lineWidth = 1;
+        for (const o of [-6, 6]) {
+          c.beginPath();
+          c.moveTo(sx + o, sy);
+          c.lineTo(gx + o, gy);
+          c.stroke();
+        }
+        const cy = sy + (gy - sy) * k;
+        const cs = Math.max(6, Math.round(4 * ppm));
+        c.fillStyle = '#0b0d11';
+        c.fillRect(gx - cs - 1, cy - cs / 2 - 1, cs * 2 + 2, cs + 2);
+        c.fillStyle = '#c8962e';
+        c.fillRect(gx - cs, cy - cs / 2, cs * 2, cs);
+        c.fillStyle = '#7a5418';
+        c.fillRect(gx - cs, cy - 1, cs * 2, 2);
+      }
+      c.setTransform(Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), sx, sy);
+      c.drawImage(img, -img.width / 2, -img.height / 2);
+      c.setTransform(1, 0, 0, 1, 0, 0);
     }
   }
 

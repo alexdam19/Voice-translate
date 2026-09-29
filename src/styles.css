@@ -1508,3 +1508,22 @@ html.touch .joy { display: block; }
 .int-del { color: #ff8a80; border-color: #5a2020; }
 .menu-btn.inside b { color: #b2ff59; }
 @media (max-width: 800px) { .int-panel { top: auto; left: 0; width: auto; height: 40%; border-left: 0; border-top: 2px solid #2a3440; } }
+
+/* Mega Hangar airlift */
+.menu-btn.hangar b { color: #40c4ff; }
+.hl-call { display: flex; gap: 14px; align-items: center; background: #0b1622; border: 2px solid #1e4a66; padding: 16px; flex-wrap: wrap; }
+.hl-call p { color: #9fb8cc; margin: 4px 0 0; max-width: 620px; }
+.hl-radio { font-size: 42px; filter: grayscale(0.6); }
+.hl-radio.on { filter: none; animation: blink 0.6s steps(2) infinite; }
+.hl-status { display: flex; gap: 18px; flex-wrap: wrap; padding: 6px 10px; background: #0b1622; border: 1px solid #1e4a66; color: #9fb8cc; font-size: 12px; margin-bottom: 8px; }
+.hl-status b { color: #e8f4ff; }
+.hl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+.hl-item { background: #121a24; border: 2px solid #26384c; padding: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.hl-item.refit { border-color: #2e4a3a; }
+.hl-ic { font-size: 22px; }
+.hl-n { font-weight: bold; color: #e8f4ff; }
+.hl-n small { color: #ffd740; margin-left: 4px; }
+.hl-d { color: #9fb0c4; font-size: 11px; line-height: 1.3; flex: 1; }
+.hl-flight { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; margin: 4px 0; background: #0f1a26; border-left: 3px solid #40c4ff; }
+.hl-flight.drop { border-color: #76ff03; }
+.hl-flight.back { border-color: #607d8b; opacity: 0.75; }

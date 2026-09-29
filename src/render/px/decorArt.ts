@@ -196,3 +196,37 @@ export function gateSprite(px: number, t: number): HTMLCanvasElement {
     }
   }));
 }
+
+/** The Mega Hangar's heavy cargo airship from above: a ribbed envelope, fins, four engine pods, a slung load. */
+export function airshipSprite(px: number, frame: number, loaded: boolean): HTMLCanvasElement {
+  const S = Math.max(16, Math.round(px));
+  const f = frame & 3;
+  return cached(`air|${S}|${f}|${loaded}`, () => paintSprite(S, 31, (p) => {
+    // Tail fins.
+    spike(p, 6, 16, 1, 9, 3.2, [70, 84, 96]);
+    spike(p, 6, 16, 1, 23, 3.2, [70, 84, 96]);
+    // Engine pods on outriggers, props turning.
+    for (const [ex, ey] of [[11, 7.5], [11, 24.5], [21, 7.5], [21, 24.5]]) {
+      line(p, ex, 16, ex, ey, [40, 44, 50]);
+      cap(p, ex - 2, ey, ex + 2, ey, 1.2, 1.2, [60, 66, 74], 'metal');
+      const a = f * 0.8 + ex;
+      line(p, ex - 2.6, ey - Math.cos(a) * 1.8, ex - 2.6, ey + Math.cos(a) * 1.8, [200, 205, 210]);
+    }
+    // The envelope with its ribs and a stripe.
+    ell(p, 16, 16, 14, 6.2, [120, 130, 118], 'cloth', 0.9);
+    for (let k = 0; k < 7; k++) {
+      const x = 6 + k * 3.4;
+      const hh = 6 * Math.sqrt(Math.max(0, 1 - ((x - 16) / 14) ** 2));
+      line(p, x, 16 - hh + 0.6, x, 16 + hh - 0.6, [80, 88, 80]);
+    }
+    plate(p, 7, 15.2, 18, 1.6, [200, 150, 40], 'none');
+    eye(p, 29.6, 16, [120, 220, 255], 0.6);
+    eye(p, 16, 10.2, [255, 60, 40], 0.4);
+    eye(p, 16, 21.8, [80, 255, 120], 0.4);
+    if (loaded) {
+      // The slung cargo showing under the belly.
+      plate(p, 13, 13.5, 6, 5, [150, 110, 50], 'metal');
+      plate(p, 14, 14.6, 4, 1, [80, 60, 30], 'none');
+    }
+  }));
+}

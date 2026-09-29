@@ -6,6 +6,7 @@ import { classMods, type HullClass } from './classes';
 import { batteryLocal, batteryReach, chassisDef, CREW_SCALE, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
 import { engineSpec, newEngine, type EngineParts } from './systems/engine';
+import type { RefitKey } from './systems/airlift';
 
 export type Team = 'player' | 'enemy';
 export type TankKind = 'main' | 'outrider' | 'raider' | 'outpost' | 'remote' | 'rival';
@@ -217,6 +218,8 @@ export class Tank {
   /** The engine workshop's parts (Titans), and how far the engine has spooled up (0-1). */
   engine: EngineParts = newEngine();
   spool = 0;
+  /** Mega Hangar refits: a level in each track, with no ceiling. */
+  refit: Partial<Record<RefitKey, number>> = {};
   /** People the builders need right now (two per job), and how many are on it. */
   buildCrew = 0;
   builderStaff = 0;
@@ -490,6 +493,8 @@ export class Tank {
     const cmdK = this.kind === 'main' && cmdD ? cmdD[0] / Math.max(1, cmdD[1]) : 1;
     const eff = this.kind === 'main' ? this.efficiency : 1;
     const cm = classMods(fortress ? this.klass : 'juggernaut', fortress ? this.classMk : 0);
+    // Mega Hangar refits (yours only).
+    const rf = (k: RefitKey): number => (this.kind === 'main' ? this.refit[k] ?? 0 : 0);
     if (!fortress) Object.assign(cm, { hp: 1, armor: 0, speed: 1, turn: 1, range: 1, dmg: 1, mainDmg: 1, bunks: 1, soldierDmg: 1, cargo: 1, harvest: 1, repair: 0, ram: 1, nitro: 1 });
     // Every story past the second is more hull (and more weight).
     const extra = fortress ? Math.max(0, this.stories - 2) : 0;
@@ -551,7 +556,7 @@ export class Tank {
       const sanctumF = fam === 'arcane' && sanctum ? 0.1 * sanctum : 0;
       const mods: WeaponMods = {
         ...base,
-        dmg: base.dmg * (1 + crew.dmg) * (1 + sanctumF) * (1 + 0.15 * (m.lvl - 1)) * this.dmgScale * cm.dmg * (m.key === 'main_gun' ? cm.mainDmg : 1),
+        dmg: base.dmg * (1 + crew.dmg) * (1 + sanctumF) * (1 + 0.15 * (m.lvl - 1)) * this.dmgScale * cm.dmg * (m.key === 'main_gun' ? cm.mainDmg : 1) * (1 + 0.06 * rf('guns')),
         rate: base.rate * (1 + crew.rate) * (1 + depotF) * (0.55 + 0.45 * eff),
         range: base.range * (1 + crew.range) * cm.range * (0.88 + 0.12 * cmdK) * sc.range,
         speed: base.speed * sc.speed,
@@ -561,7 +566,7 @@ export class Tank {
       m.stats = weaponStats(m.weapon, mods);
       use += m.stats.power;
     }
-    power *= (1 + crew.power) * this.titanMods.power;
+    power *= (1 + crew.power) * this.titanMods.power * (1 + 0.08 * rf('reactor'));
     // A bigger engine block draws on the reactors (the diesels themselves don't need it, but everything else feels it).
     const es = engineSpec(this.engine);
     const driveRatio = use <= 0 ? 1 : Math.min(1, power / use);
@@ -572,20 +577,20 @@ export class Tank {
     const dread = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
     const length = this.rows * this.cell + (dread ? 2 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
-    const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? (20 + 3 * Math.min(1, ratio * 3)) * es.top : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * driveRatio) * hull.speed * (1 + crew.speed) * cm.speed;
-    this.handling = cm.turn;
+    const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? (20 + 3 * Math.min(1, ratio * 3)) * es.top : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * driveRatio) * hull.speed * (1 + crew.speed) * cm.speed * (1 + 0.05 * rf('engines'));
+    this.handling = cm.turn * (1 + 0.04 * rf('treads'));
     this.ram = cm.ram;
     this.nitroMult = cm.nitro;
     this.soldierDmg = cm.soldierDmg;
-    const bunkTotal = Math.round(bunks * cm.bunks);
+    const bunkTotal = Math.round(bunks * cm.bunks) + 16 * rf('quarters');
     const turnRate = 1.9 * Math.sqrt(8 / ((this.rows + this.cols * 0.5) * this.cell / 0.5)) * (this.kind === 'main' ? 1.6 : 1);
     this.stats = {
-      maxHp: Math.round(hp * hull.hp * (1 + crew.hp) * cm.hp),
+      maxHp: Math.round(hp * hull.hp * (1 + crew.hp) * cm.hp * (1 + 0.08 * rf('plating'))),
       armor: Math.min(0.6, armor + hull.armor + crew.armor + cm.armor),
-      shield: Math.round(shield * hull.shield * (1 + crew.shield)),
-      shieldRegen: shieldRegen * hull.shieldRegen,
+      shield: Math.round(shield * hull.shield * (1 + crew.shield) * (1 + 0.1 * rf('shields'))),
+      shieldRegen: shieldRegen * hull.shieldRegen * (1 + 0.1 * rf('shields')),
       power, use, powerRatio, thrust, mass, topSpeed, turnRate,
-      cargo: Math.round((cargo + hull.cargo + crew.cargo) * cm.cargo),
+      cargo: Math.round((cargo + hull.cargo + crew.cargo) * cm.cargo * (1 + 0.1 * rf('cargo'))),
       crewCap: Math.min(15, crewCap),
       vision: vision + crew.vision,
       drill, harvest: harvest * hull.harvest * (1 + crew.harvest) * cm.harvest,
@@ -786,6 +791,7 @@ export class Tank {
       modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, d: m.deck, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined, b: m.built ? undefined : false })),
       cargo: this.cargo.snapshot(),
       engine: Object.values(this.engine).some((v) => v > 0) ? { ...this.engine } : undefined,
+      refit: Object.keys(this.refit).length ? { ...this.refit } : undefined,
     };
   }
 
@@ -798,6 +804,7 @@ export class Tank {
     t.troops = s.troops ?? 0;
     t.drive = s.drive;
     if (s.engine) for (const k of Object.keys(t.engine) as (keyof EngineParts)[]) t.engine[k] = Math.max(0, Math.min(8, Math.round(s.engine[k] ?? 0)));
+    if (s.refit) for (const [k, v] of Object.entries(s.refit)) if (typeof v === 'number' && v > 0) t.refit[k as RefitKey] = Math.floor(v);
     t.x = s.x;
     t.y = s.y;
     t.rot = s.rot;
@@ -855,4 +862,6 @@ export interface TankSave {
   cargo: Slot[];
   /** The engine workshop's parts (v11+). */
   engine?: Partial<EngineParts>;
+  /** Mega Hangar refit levels (v11+). */
+  refit?: Partial<Record<RefitKey, number>>;
 }

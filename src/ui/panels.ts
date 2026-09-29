@@ -17,6 +17,7 @@ import { renderProgress } from './progressPanel';
 import { renderBlueprint } from './blueprintPanel';
 import { renderShipyard } from './shipyardPanel';
 import { renderBridge } from './bridgePanel';
+import { renderHangar } from './hangarPanel';
 
 const SWITCH: [string, string, string][] = [
   ['cards', 'CARDS (C)', ''], ['arsenal', 'ARSENAL (V)', 'arsenal'], ['crew', 'CREW (K)', 'crew'], ['progress', 'LEVEL ROAD (L)', ''],
@@ -87,6 +88,10 @@ export class Panels {
       bridge: {
         title: 'SHIP VITALS', sub: 'Every number the Titan has, live (the game keeps running). SEND TEAM puts six people on a problem; STABILIZE sends teams to the worst of it.',
         render: renderBridge, wide: true, cls: 'bridge vitals', live: true,
+      },
+      hangar: {
+        title: 'MEGA HANGAR AIRLIFT', sub: 'Order supplies and endless refits; heavy airships fly them out to you wherever you are. The game keeps running.',
+        tabs: [['supplies', 'Supplies'], ['refits', 'Refits'], ['flights', 'Flights']], render: renderHangar, wide: true, cls: 'hangar', live: true,
       },
       drive: { title: 'DRIVE TRAIN', sub: 'Different treads for different ground. Craft them at a Workshop (CARGO > Workshop).', render: (c) => this.renderDrive(c), wide: true },
       cargo: { title: 'CARGO', sub: 'Your hold, and the Refinery and Workshop where ore becomes parts.', tabs: [['hold', 'Hold'], ['workshop', 'Refine & Craft']], render: renderCargo, wide: true },
