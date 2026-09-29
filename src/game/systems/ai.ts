@@ -318,9 +318,10 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
     g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffab40', n: 2 });
     g.hooks.sound('bite', e.x, e.y, 0.15);
   }
-  // Driving hard shakes them off.
-  const fast = Math.abs(t.speed) > t.stats.topSpeed * 0.55 || t.hasBuff('nitro');
-  if (fast && Math.random() < dt * (t.hasBuff('nitro') ? 2 : 0.5)) {
+  // Driving flat out shakes a few of them off (they hang on well; it's the guns and the soldiers that clear them).
+  const od = t === g.player && g.helm.overdrive;
+  const fast = Math.abs(t.speed) > t.stats.topSpeed * 0.75 || t.hasBuff('nitro') || od;
+  if (fast && Math.random() < dt * (t.hasBuff('nitro') ? 1.2 : od ? 0.5 : 0.2) * Math.sqrt(Math.max(1, t.ram * t.stats.crush))) {
     e.latch = null;
     e.state = 'idle';
     e.z = 0;
@@ -331,7 +332,7 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
     e.vx = (dx / d) * 8;
     e.vy = (dy / d) * 8;
     e.stun = 0.8;
-    damageEnemy(g, e, e.maxHp * 0.3, { silent: true });
+    if (e.hp > 1) damageEnemy(g, e, Math.min(e.hp - 1, e.maxHp * 0.1), { silent: true });
   }
 }
 
@@ -592,7 +593,7 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
     const oh = g.map.inside(tx, ty) && g.map.getObs(tx, ty) ? g.map.getOh(tx, ty) * 0.3 : 0;
     e.z += (oh - e.z) * Math.min(1, dt * 8);
   }
-  crushAndPush(g, e, dt);
+  crushAndPush(g, e, dt, latched);
 }
 
 export function updateEnemies(g: Game, dt: number): void {
@@ -608,6 +609,7 @@ export function updateEnemies(g: Game, dt: number): void {
     if (e.hp <= 0) continue;
     e.anim += dt * (2 + e.speed);
     e.hitFlash = Math.max(0, e.hitFlash - dt);
+    if (e.bumpT) e.bumpT = Math.max(0, e.bumpT - dt);
     if (e.burn > 0) {
       e.burn -= dt;
       damageEnemy(g, e, e.burnDps * dt, { silent: true });
@@ -621,13 +623,15 @@ export function updateEnemies(g: Game, dt: number): void {
     }
     if (e.stun > 0) {
       e.stun -= dt;
-      if (e.horde) {
+      if (e.horde || e.bumpT) {
         // Still sliding from being flung.
         e.x += e.vx * dt;
         e.y += e.vy * dt;
         e.vx *= Math.pow(0.05, dt);
         e.vy *= Math.pow(0.05, dt);
       }
+      // Stunned or not, nothing lies under a hull.
+      if (!e.flying && !e.burrowed) crushAndPush(g, e, dt);
       continue;
     }
     e.slow = Math.max(0, e.slow - dt);
@@ -781,8 +785,8 @@ export function updateEnemies(g: Game, dt: number): void {
       e.vx = 0;
       e.vy = 0;
     }
-    // Pushed out of (and crushed by) tanks.
-    if (!e.flying && !e.burrowed) crushAndPush(g, e, dt);
+    // Pushed out of (and shoved clear by) tanks.
+    if (!e.flying && !e.burrowed) crushAndPush(g, e, dt, latched);
   }
   // Drop the dead in one pass (a horde can lose dozens a second).
   let k = 0;
@@ -790,7 +794,12 @@ export function updateEnemies(g: Game, dt: number): void {
   list.length = k;
 }
 
-function crushAndPush(g: Game, e: Enemy, dt: number): void {
+/**
+ * Hulls push creatures out of their footprint. A moving hull of yours doesn't grind them to death: it throws them
+ * clear (off the bow they're flung aside, not bulldozed along), stunned and bruised, and the quick small ones grab
+ * hold as it passes and start to climb. The ram (Juggernaut, Dozer Ram) throws harder and leaves fewer a grip.
+ */
+function crushAndPush(g: Game, e: Enemy, dt: number, latched?: Map<number, number>): void {
   for (let i = -2; i < g.tanks.length; i++) {
     const t = i === -2 ? g.player : i === -1 ? g.outrider : g.tanks[i];
     if (!t || t.dead) continue;
@@ -806,11 +815,36 @@ function crushAndPush(g: Game, e: Enemy, dt: number): void {
     const p = t.toWorld(nlx, nlz);
     e.x = p.x;
     e.y = p.y;
-    if (t.team === 'player' && Math.abs(t.speed) > 1.5 && !e.titan) {
-      const nitro = t.hasBuff('nitro') ? 3 : 1;
-      damageEnemy(g, e, Math.abs(t.speed) * 7 * t.stats.crush * t.ram * nitro * dt * 4, { silent: true, srcTank: t.id, weapon: true });
-      if (Math.random() < dt * 5) g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffab40', n: 2 });
+    if (t.team !== 'player' || e.titan) continue;
+    const v = Math.abs(t.speed);
+    if (v < 1.5 || (e.bumpT ?? 0) > 0 || e.latch) continue;
+    e.bumpT = 0.8;
+    const shove = Math.max(1, t.ram * t.stats.crush) * (t.hasBuff('nitro') ? 2 : 1);
+    // The quick ones get a grip and start to climb.
+    if (latched && e.r <= 0.6 && !e.flying && (latched.get(t.id) ?? 0) < latchCap(t) && Math.random() < 0.45 / Math.sqrt(shove)) {
+      const at = t.toLocal(e.x, e.y);
+      latchOn(e, t, at.lx, at.lz);
+      latched.set(t.id, (latched.get(t.id) ?? 0) + 1);
+      g.fx.push({ t: 'dust', x: e.x, y: e.y, color: '#a1887f' });
+      continue;
     }
+    // Thrown clear: sideways off the bow or stern, straight out off the flanks.
+    let sx = px < pz ? Math.sign(l.lx || 1) : 0;
+    let sz = px < pz ? 0 : Math.sign(l.lz || 1);
+    if (sx) {
+      sz = (l.lz >= 0 ? 1 : -1) * 0.9;
+      sx *= 0.45;
+    }
+    const n = Math.hypot(sx, sz) || 1;
+    const c = Math.cos(t.rot), s = Math.sin(t.rot);
+    const k = (4 + v * 0.5) * Math.min(2, Math.sqrt(shove));
+    e.vx = ((c * sx - s * sz) / n) * k;
+    e.vy = ((s * sx + c * sz) / n) * k;
+    e.stun = Math.max(e.stun, (0.25 + 0.15 * shove) * (e.r > 0.6 ? 0.5 : 1));
+    // A bruise, never a kill.
+    if (e.hp > 1) damageEnemy(g, e, Math.min(e.hp - 1, e.maxHp * 0.03 * Math.sqrt(shove)), { silent: true, srcTank: t.id });
+    if (Math.random() < 0.5) g.fx.push({ t: 'spark', x: e.x, y: e.y, color: '#ffab40', n: 2 });
+    void dt;
   }
 }
 

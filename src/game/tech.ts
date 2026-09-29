@@ -176,7 +176,7 @@ export const TECH: TechNode[] = [
   N({ id: 'reinforced', name: 'Reinforced Hull', branch: 'hull', tier: 1, requires: [], cost: { iron_plate: 30, tech_parts: 1 }, hull: { hp: 1.2 }, desc: 'Fortress hull +20%.' }),
   N({ id: 'reactive_armor', name: 'Reactive Armor', branch: 'hull', tier: 2, requires: ['reinforced'], cost: { titanium_alloy: 16, explosive: 8, tech_parts: 4 }, hull: { armor: 0.05 }, desc: '+5% armor.' }),
   N({ id: 'overdrive', name: 'Overdrive Transmission', branch: 'hull', tier: 4, requires: ['ion_drive'], cost: { titanium_alloy: 12, circuit: 10, tech_parts: 7 }, hull: { speed: 1.15 }, desc: 'The fortress drives 15% faster.' }),
-  N({ id: 'dozer_ram', name: 'Dozer Ram', branch: 'hull', tier: 5, requires: ['overdrive'], cost: { titanium_alloy: 20, iron_plate: 30, tech_parts: 10 }, hull: { crush: 3 }, desc: 'Running over enemies deals 3x damage.' }),
+  N({ id: 'dozer_ram', name: 'Dozer Ram', branch: 'hull', tier: 5, requires: ['overdrive'], cost: { titanium_alloy: 20, iron_plate: 30, tech_parts: 10 }, hull: { crush: 3 }, desc: 'A dozer blade on the bow: creatures you run into are thrown clear with 3x the force, and far fewer get a grip to climb aboard.' }),
   N({ id: 'adamantine', name: 'Adamantine Plating', branch: 'hull', tier: 6, requires: ['dozer_ram'], cost: { xeno_alloy: 12, titanium_alloy: 30, tech_parts: 18 }, hull: { hp: 1.4, armor: 0.06, speed: 1.1 }, desc: 'Hull +40%, armor +6%, speed +10%.' }),
 
   /* ---------------- INDUSTRY ---------------- */

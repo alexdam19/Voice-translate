@@ -25,7 +25,7 @@ export interface ClassMods {
   harvest: number;
   /** Flat hull repair per second. */
   repair: number;
-  /** Ramming damage multiplier (running creatures and tanks down). */
+  /** Ram: how hard the hull throws creatures clear when it runs into them (and how few get a grip to climb). */
   ram: number;
   /** Nitro strength and duration multiplier. */
   nitro: number;
@@ -58,8 +58,8 @@ export const CLASSES: Record<HullClass, ClassDef> = {
   juggernaut: {
     key: 'juggernaut', name: 'Juggernaut', role: 'Assault breaker', color: '#ff5252', nose: 'ram', glow: 'glow_red',
     desc: 'A battering ram the size of a warship. Built to plough straight through a horde and anything standing behind it.',
-    perk: 'Ram: anything you run over or into takes 3x crushing damage.',
-    good: ['+35% hull', '+6% armor', '3x ramming damage'], bad: ['-8% speed'],
+    perk: 'Ram: creatures you plough into are thrown clear three times as hard, stay down longer, and few get a grip to climb aboard.',
+    good: ['+35% hull', '+6% armor', '3x ram shove, fewer boarders'], bad: ['-8% speed'],
     mods: mods({ hp: 1.35, armor: 0.06, speed: 0.92, ram: 3 }),
     starter: [['armor', 0], ['armor', 0], ['armor', 0], ['armor', 0]],
   },

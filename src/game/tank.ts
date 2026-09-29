@@ -222,7 +222,7 @@ export class Tank {
   builderStaff = 0;
   /** Crew away from their posts (repair teams and work crews drawn from the watch). */
   detached = 0;
-  /** Ramming damage and Nitro multipliers, and roof soldiers' damage, from the hull class. */
+  /** Ram shove and Nitro multipliers, and roof soldiers' damage, from the hull class. */
   ram = 1;
   nitroMult = 1;
   soldierDmg = 1;

@@ -56,6 +56,8 @@ export interface Enemy {
   horde: boolean;
   /** Clinging to a hull (tank-local position and the tank's id) instead of walking. */
   latch: { tank: number; lx: number; lz: number } | null;
+  /** Seconds until a moving hull can shove it again. */
+  bumpT?: number;
   /** A boss (screen-wide health bar, 3D model, attack patterns). */
   boss?: boolean;
   /** Seconds until it summons again. */

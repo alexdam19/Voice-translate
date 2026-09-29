@@ -103,6 +103,32 @@ describe('horde waves', () => {
     expect(g.enemies.filter((e) => e.latch).length).toBeLessThan(on.length / 2);
   });
 
+  it('running into them never kills them: they are thrown clear, and some grab on and climb aboard', () => {
+    const g = game(6);
+    const p = g.player;
+    for (const m of p.modules) m.weapon = null;
+    p.troops = 0;
+    p.recalc();
+    // Flat ground ahead, and a crowd standing in the way.
+    for (let y = -60; y < 60; y++) for (let x = 0; x < 700; x++) g.map.set(Math.floor(p.x + x), Math.floor(p.y + y), { ter: TER.CONCRETE, obs: OBS.NONE });
+    p.rot = 0;
+    p.speed = 18;
+    p.spool = 1;
+    g.helm.lever = 1;
+    const crowd = [];
+    for (let i = 0; i < 60; i++) {
+      const e = g.spawnEnemy('swarmer', p.x + p.stats.length / 2 + 20 + Math.random() * 120, p.y + (Math.random() - 0.5) * 60, 1);
+      e.stun = 5;
+      crowd.push(e);
+    }
+    run(g, 6);
+    // Nobody died under the hull...
+    expect(crowd.every((e) => e.hp > 0)).toBe(true);
+    // ...some are climbing aboard, and none is left lying under it.
+    expect(crowd.filter((e) => e.latch).length).toBeGreaterThan(3);
+    for (const e of crowd) if (!e.latch) expect(p.hits(e.x, e.y, -0.2)).toBe(false);
+  });
+
   it('Tesla Coils zap climbers', () => {
     const g = game(7);
     levelTo(g, 3);

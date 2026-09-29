@@ -68,7 +68,7 @@ add(C({ id: 'timestop', name: 'Time Stop', school: 'volt', type: 'spell', cost: 
 add(C({ id: 'blink', name: 'Blink Drive', school: 'volt', type: 'spell', cost: 3, rarity: 1, radius: 6, text: 'Teleport your whole fortress there and stun enemies where you land.', flavor: 'A facility, displaced.' }));
 add(C({ id: 'drones', name: 'Drone Swarm', school: 'volt', type: 'summon', cost: 4, rarity: 1, radius: 3, text: '{8} laser drones hunt around the target for 18s.', flavor: 'They never blink.' }));
 add(C({ id: 'cataclysm', name: 'Cataclysm', school: 'volt', type: 'spell', cost: 9, rarity: 5, target: 'self', text: 'For 10s lightning strikes every enemy within 300 m for {800} per bolt.', flavor: 'The sky splits open.' }));
-add(C({ id: 'nitro', name: 'Nitro', school: 'volt', type: 'enchant', cost: 2, rarity: 0, target: 'self', text: '+{70%} speed for 4s. Ram enemies for damage.', flavor: 'Floor it.' }));
+add(C({ id: 'nitro', name: 'Nitro', school: 'volt', type: 'enchant', cost: 2, rarity: 0, target: 'self', text: '+{70%} speed for 4s. Creatures in the way are thrown clear and boarders shaken off.', flavor: 'Floor it.' }));
 
 /* ---------------- Rust ---------------- */
 add(C({ id: 'weld', name: 'Weld Crew', school: 'rust', type: 'spell', cost: 3, rarity: 0, target: 'self', text: 'Repair {22%} of max hull over 3s.', flavor: 'Duct tape is structural.' }));
