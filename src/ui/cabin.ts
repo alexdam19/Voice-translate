@@ -3,7 +3,7 @@ import { ENEMIES } from '../game/enemyDefs';
 import { isDocked } from '../game/campaign';
 import { CLASSES } from '../game/classes';
 import { dumpHalon, HALON_CD, HALON_WATER, HORN_CD, soundHorn } from '../game/systems/helm';
-import { COMPARTMENTS, crawlersUp, FUEL_MAX, WATER_MAX } from '../game/systems/titan';
+import { COMPARTMENTS, crawlersUp, damageState, FUEL_MAX, TOROIDS, toroidOut, WATER_MAX } from '../game/systems/titan';
 import { archFor, creatureSprite, lookFor } from '../render/px/creatures2d';
 import { glowSprite } from '../render/px/fx2d';
 import { hash2, rgb } from '../render/px/pixels';
@@ -26,7 +26,12 @@ import { pxMini, pxText } from './pixfont';
  *  - a radar scope, a speed dial, a readout block and six supply gauges;
  *  - a panel of warning lamps, toggle switches (floodlights, bilge pumps, master arm, shield power to the drive)
  *    and push buttons (air horn, halon dump, camp, cruise warp);
- *  - the guarded OVERDRIVE switch and the ALL STOP mushroom.
+ *  - the guarded OVERDRIVE switch and the ALL STOP mushroom;
+ *  - the four toroidal engine buttons, laid out like the ship (fore pair above, aft pair below; lamp green when lit,
+ *    amber hurt, red dead, dark when switched off) and the train brake handle under them (drag it on; it stays set
+ *    until you open the throttle).
+ *
+ * At speed the cab shakes and the ground rushes past in streaks; the faster she goes the harder it rattles.
  */
 
 export interface CabinActions {
@@ -63,7 +68,7 @@ const LIP = 16;
 const MOD_H = DASH_H - LIP;
 const HEAD = 12;
 /** Module widths, left to right. */
-const MODS: [string, number][] = [['radar', 92], ['gauges', 104], ['panel', 116], ['drive', 38], ['throttle', 50]];
+const MODS: [string, number][] = [['radar', 92], ['gauges', 104], ['panel', 116], ['engines', 52], ['drive', 38], ['throttle', 50]];
 const ROW_W = MODS.reduce((a, [, w]) => a + w, 0) + (MODS.length - 1) * 2;
 /** How far the windscreen sees (m). */
 const ZFAR = 1500;
@@ -218,7 +223,7 @@ export class Cabin {
     const k = this.hitAt(px, py);
     if (!k) return;
     this.press[k.id] = 0.18;
-    if (k.id === 'throttle' || k.id === 'steer' || k.id === 'glass') {
+    if (k.id === 'throttle' || k.id === 'steer' || k.id === 'glass' || k.id === 'brake') {
       this.cv.setPointerCapture(e.pointerId);
       this.drag = { id: k.id, pid: e.pointerId, x0: px, v0: k.id === 'glass' ? this.look : 0 };
       this.dragTo(px, py);
@@ -265,6 +270,16 @@ export class Cabin {
       g.helm.lever = v;
       g.player.path = [];
       g.player.goal = null;
+    } else if (d.id === 'brake') {
+      const r = this.rects.brakeSlot;
+      if (!r) return;
+      let v = Math.max(0, Math.min(1, (px - r.x) / r.w));
+      if (v < 0.08) v = 0;
+      if (Math.round(v * 4) !== Math.round(g.helm.brake * 4)) this.act.sound('ui');
+      g.helm.brake = v;
+      g.helm.brakeSet = v > 0;
+      // Brakes on cut the power (the lever drops to stop).
+      if (v > 0 && g.helm.lever > 0) g.helm.lever = 0;
     } else if (d.id === 'steer') {
       const r = this.rects.steerSlot;
       if (!r) return;
@@ -341,6 +356,15 @@ export class Cabin {
       case 'odrive':
         this.act.overdrive();
         return;
+      case 'tor0':
+      case 'tor1':
+      case 'tor2':
+      case 'tor3': {
+        const i = Number(id.slice(3));
+        hm.toroids[i] = !hm.toroids[i];
+        this.message(`${TOROIDS[i].name.toUpperCase()} ${hm.toroids[i] ? 'LIT' : 'SHUT DOWN'}`, hm.toroids[i] ? '#80ffc0' : '#ff9060');
+        break;
+      }
       case 'stop':
         this.act.stop();
         this.act.sound('alarm');
@@ -353,7 +377,7 @@ export class Cabin {
   /* Frame                                                             */
   /* ---------------------------------------------------------------- */
 
-  private rects: { throttleSlot?: Hit; steerSlot?: Hit } = {};
+  private rects: { throttleSlot?: Hit; steerSlot?: Hit; brakeSlot?: Hit } = {};
 
   render(g: Game, dt: number): void {
     if (!this.isOpen) return;
@@ -374,7 +398,16 @@ export class Cabin {
     const c = this.x;
     c.imageSmoothingEnabled = false;
     this.drawWorld(g);
-    c.drawImage(this.win, 0, HEAD);
+    // At speed the cab rattles (more over rough ground) and the ground streams past.
+    const v = Math.abs(p.speed);
+    const rough = v > 3 ? Math.min(2, (v / 40) * (1.4 - Math.min(1, p.trac))) : 0;
+    const shake = Math.round(Math.sin(this.time * 31) * rough + Math.sin(this.time * 13.3) * rough * 0.5);
+    c.drawImage(this.win, 0, HEAD + shake);
+    if (shake > 0) {
+      c.fillStyle = '#000';
+      c.fillRect(0, HEAD, this.W, shake);
+    }
+    if (v > 18 && Math.abs(this.look) < 0.6) this.streaks(v);
     this.drawNose(g);
     this.drawFlashes(g);
     this.drawGlassHud(g);
@@ -383,6 +416,32 @@ export class Cabin {
     if (this.hitT > 0) {
       c.fillStyle = `rgba(255,20,0,${(this.hitT / 0.35) * 0.22})`;
       c.fillRect(0, 0, this.W, this.H);
+    }
+  }
+
+  /** Speed streaks: dashes flying out from the vanishing point along the ground, faster and thicker with speed. */
+  private streaks(v: number): void {
+    const c = this.x;
+    const W = this.W;
+    const hz = this.horizon() + HEAD;
+    const k = Math.min(1, (v - 18) / 50);
+    const n = Math.round(10 + 26 * k);
+    const vx = W / 2 - (this.look * W) / 2.2;
+    for (let i = 0; i < n; i++) {
+      const a = (hash2(i, 7, 3) - 0.5) * Math.PI * 0.9;
+      const ph = (this.time * (0.6 + v / 40) + hash2(i, 3, 9)) % 1;
+      const d0 = 8 + ph * ph * W * 0.7;
+      const len = 3 + ph * 20 * k;
+      const ca = Math.sin(a), sa = Math.cos(a);
+      const x1 = vx + ca * d0, y1 = hz + sa * d0 * 0.45;
+      if (y1 < hz + 2 || y1 > this.winB) continue;
+      const x2 = vx + ca * (d0 + len), y2 = hz + sa * (d0 + len) * 0.45;
+      c.strokeStyle = `rgba(255,244,220,${(0.18 + 0.5 * k) * ph})`;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(Math.round(x1) + 0.5, Math.round(y1) + 0.5);
+      c.lineTo(Math.round(x2) + 0.5, Math.round(Math.min(this.winB, y2)) + 0.5);
+      c.stroke();
     }
   }
 
@@ -970,7 +1029,7 @@ export class Cabin {
       pxMini(c, `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`, W - 6, y0 + 6, '#ffb030', 'right');
     }
     // Modules.
-    const rows: [string, number][][] = this.two ? [[MODS[0], MODS[1], MODS[3]], [MODS[2], MODS[4]]] : [MODS];
+    const rows: [string, number][][] = this.two ? [[MODS[0], MODS[1], MODS[4]], [MODS[2], MODS[3], MODS[5]]] : [MODS];
     let y = y0 + LIP;
     for (const row of rows) {
       const rw = row.reduce((a, [, w]) => a + w, 0) + (row.length - 1) * 2;
@@ -986,6 +1045,7 @@ export class Cabin {
         else if (id === 'gauges') this.gauges(g, x, y + 1, w);
         else if (id === 'panel') this.panel(g, x, y + 1, w);
         else if (id === 'drive') this.driveBox(g, x, y + 1, w);
+        else if (id === 'engines') this.engines(g, x, y + 1, w);
         else this.throttle(g, x, y + 1, w);
         x += w + 2;
       }
@@ -1310,6 +1370,68 @@ export class Cabin {
     disc(c, cx - 3, by + 4 + (pr ? 2 : 0), 4, '#ff6a50');
     pxMini(c, 'STOP', cx, by + 26, '#ffd0c0', 'center');
     this.hit('stop', x0, by - 6, w, 42);
+  }
+
+  /** The toroid buttons (as the ship: fore pair on top) and the brake handle. */
+  private engines(g: Game, x0: number, y0: number, w: number): void {
+    const c = this.x;
+    const s = g.titan;
+    pxMini(c, 'TOROIDS', x0 + w / 2, y0 + 2, '#c0b8a8', 'center');
+    // A little hull outline between the buttons.
+    const cx = Math.round(x0 + w / 2);
+    c.fillStyle = '#2a2824';
+    c.fillRect(cx - 5, y0 + 14, 10, 50);
+    c.fillStyle = '#5a564c';
+    c.fillRect(cx - 3, y0 + 12, 6, 2);
+    c.fillRect(cx - 4, y0 + 14, 1, 50);
+    const bw = 20, bh = 20;
+    for (let i = 0; i < 4; i++) {
+      const bx = i % 2 === 0 ? x0 + 3 : x0 + w - 3 - bw;
+      const by = y0 + 11 + (i < 2 ? 0 : bh + 4);
+      const on = g.helm.toroids[i];
+      const h = s.toroids[i];
+      const out = toroidOut(s, g.helm.toroids, i);
+      const pr = (this.press[`tor${i}`] ?? 0) > 0;
+      c.fillStyle = '#141412';
+      c.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+      c.fillStyle = on ? '#3a3e46' : '#26282c';
+      c.fillRect(bx, by + (pr ? 1 : 0), bw, bh - 1);
+      c.fillStyle = on ? '#5a606c' : '#34363a';
+      c.fillRect(bx, by + (pr ? 1 : 0), bw, 1);
+      // The lamp: lit green, hurt amber, dead red, off dark.
+      const lamp = !on ? '#202020' : h <= 0.1 ? (Math.floor(this.time * 3) % 2 ? '#ff2010' : '#501008') : damageState(h).color;
+      c.fillStyle = '#0a0a0a';
+      c.fillRect(bx + bw / 2 - 4, by + 3 + (pr ? 1 : 0), 8, 6);
+      c.fillStyle = lamp;
+      c.fillRect(bx + bw / 2 - 3, by + 4 + (pr ? 1 : 0), 6, 4);
+      pxMini(c, TOROIDS[i].short, bx + bw / 2, by + 11 + (pr ? 1 : 0), on ? '#e8e0d0' : '#707070', 'center', null);
+      // Output bar.
+      c.fillStyle = '#0a0a0a';
+      c.fillRect(bx + 2, by + bh - 4, bw - 4, 2);
+      c.fillStyle = '#18ffff';
+      c.fillRect(bx + 2, by + bh - 4, Math.round((bw - 4) * out * (0.3 + 0.7 * g.player.spool)), 2);
+      this.hit(`tor${i}`, bx, by, bw, bh);
+    }
+    // The brake handle: a notched quadrant, released on the left, full on the right.
+    const ty = y0 + 72, tx = x0 + 6, tw = w - 12;
+    pxMini(c, 'BRAKE', x0 + w / 2, ty - 8, g.helm.brake > 0 ? '#ff8060' : '#c0b8a8', 'center');
+    c.fillStyle = '#0c0c0c';
+    c.fillRect(tx, ty, tw, 3);
+    for (let i = 0; i <= 4; i++) {
+      c.fillStyle = i === 0 ? '#80c080' : '#ff6040';
+      c.fillRect(tx + Math.round((tw * i) / 4), ty + 4, 1, 2);
+    }
+    const hx = Math.round(tx + g.helm.brake * tw);
+    c.fillStyle = '#0a0a0a';
+    c.fillRect(hx - 3, ty - 5, 7, 13);
+    c.fillStyle = g.helm.brake > 0 ? '#c03020' : '#8a3a2a';
+    c.fillRect(hx - 2, ty - 4, 5, 11);
+    c.fillStyle = '#ff8a70';
+    c.fillRect(hx - 2, ty - 4, 5, 2);
+    pxMini(c, 'REL', tx, ty + 8, '#80c080', 'left', null);
+    pxMini(c, 'FUL', tx + tw, ty + 8, '#ff8060', 'right', null);
+    this.rects.brakeSlot = { id: 'slot', x: tx, y: ty, w: tw, h: 3 };
+    this.hit('brake', x0, ty - 10, w, 24);
   }
 
   private throttle(g: Game, x0: number, y0: number, w: number): void {
