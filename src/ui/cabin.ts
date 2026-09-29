@@ -4,7 +4,7 @@ import { isDocked } from '../game/campaign';
 import { CLASSES } from '../game/classes';
 import { dumpHalon, HALON_CD, HALON_WATER, HORN_CD, soundHorn } from '../game/systems/helm';
 import { COMPARTMENTS, crawlersUp, FUEL_MAX, WATER_MAX } from '../game/systems/titan';
-import { archFor, creatureSprite } from '../render/px/creatures2d';
+import { archFor, creatureSprite, lookFor } from '../render/px/creatures2d';
 import { glowSprite } from '../render/px/fx2d';
 import { hash2, rgb } from '../render/px/pixels';
 import { paintTitan } from '../render/px/titan2d';
@@ -645,7 +645,7 @@ export class Cabin {
       const lift = e.flying ? 10 + e.z * 3 : 0;
       const base = hz + ((cam.h - lift) * f) / z;
       const px = Math.min(96, Math.round(hpx));
-      const img = creatureSprite(archFor(e.kind, def?.arch), e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', px, Math.floor(e.anim * 2) & 1, e.boss ? 'boss' : e.elite ? 'elite' : 'normal');
+      const img = creatureSprite(archFor(e.kind, def?.arch), e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', px, Math.floor(e.anim * 2) & 1, e.boss ? 'boss' : e.elite ? 'elite' : 'normal', lookFor(e.kind, def?.faction));
       list.push({ z, sx, base, hpx, img, flip: e.vx * fy - e.vy * fx > 0 });
     }
     for (const t of g.tanks) {

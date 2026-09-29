@@ -1,6 +1,6 @@
 import type { Arch } from '../../game/enemyDefs';
 import { ctx2d, makeCanvas, shade } from './pixels';
-import { creatureHD } from './creaturesHD';
+import { creatureHD, type Look } from './creaturesHD';
 
 /**
  * Creatures from above, as pixel art. Every body plan is drawn on a 16-unit grid facing right (+x), at the exact
@@ -181,6 +181,7 @@ const LEGACY: Record<string, Arch> = {
   rat: 'swarm', swarmer: 'swarm', leaper: 'canine', bomber: 'insect', spitter: 'insect', stalker: 'beast', brute: 'golem', guardian: 'golem',
   raider: 'humanoid', buggy: 'vehicle', drone: 'flyer', bat: 'flyer', phantom: 'entity', skeleton: 'humanoid', cy_hound: 'canine', mil_bot: 'bot',
   titan_walker: 'golem', titan_beast: 'beast', titan_worm: 'worm',
+  necromancer: 'humanoid', rocketeer: 'humanoid', skel_archer: 'humanoid', mech: 'bot', wraith: 'entity', gunship: 'flyer', bone_golem: 'golem',
 };
 
 export function archFor(kind: string, arch?: Arch): Arch {
@@ -193,13 +194,20 @@ export function archFor(kind: string, arch?: Arch): Arch {
   return 'beast';
 }
 
+/** A humanoid's look: zombies shamble with their arms out, the dead are bare bone, everyone else carries a rifle. */
+export function lookFor(kind: string, faction?: string): Look {
+  if (faction === 'zombie' || kind.startsWith('z_')) return 'zombie';
+  if (kind.startsWith('skel') || kind.includes('skeleton') || kind.includes('bone')) return 'skeleton';
+  return '';
+}
+
 const cache = new Map<string, HTMLCanvasElement>();
 
 /** A creature sprite `px` pixels across (plus a 1 px outline), facing right. */
-export function creatureSprite(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss' = 'normal'): HTMLCanvasElement {
+export function creatureSprite(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss' = 'normal', look: Look = ''): HTMLCanvasElement {
   const S = Math.max(3, Math.min(640, Math.round(px)));
   // Big enough for detail: the high-resolution painter.
-  if (S >= 10) return creatureHD(arch, color, S, frame, kind);
+  if (S >= 10) return creatureHD(arch, color, S, frame, kind, look);
   const key = `${arch}|${color}|${S}|${frame}|${kind}`;
   const hit = cache.get(key);
   if (hit) return hit;

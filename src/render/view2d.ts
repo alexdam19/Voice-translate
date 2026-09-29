@@ -12,13 +12,14 @@ import { TER } from '../shared/map';
 import { NODE_INFO, RUNE_INFO } from '../shared/mapgen';
 import { RARITIES } from '../shared/rarity';
 import { DEAD_ZONE, ZONES } from '../shared/zones';
-import { allySprite, archFor, creatureSprite } from './px/creatures2d';
+import { allySprite, archFor, creatureSprite, lookFor } from './px/creatures2d';
 import { Fx2D, glowSprite, type ScreenMap } from './px/fx2d';
 import { makeCanvas, mix, shade } from './px/pixels';
 import { BLOCK, Terrain2D } from './px/terrain2d';
 import { paintSmallTank, type HullLight } from './px/titan2d';
 import { paintTitanHD } from './px/titanhd';
 import { drawTitanSprite } from './px/titanSprite';
+import { altarSprite, gateSprite, nodeSprite, siteSprite } from './px/decorArt';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
 import { quantizeSize } from './px/creaturesHD';
@@ -497,75 +498,51 @@ export class View2D {
     if (g.mode !== 'world') return;
     const c = this.ctx;
     const ppm = this.ppm;
-    // Resource nodes: a few boulders with the ore showing through.
+    // Resource nodes: ore boulders with veins, crystal clusters, scrap heaps, vents, fungus beds.
     for (const n of g.gen.nodes) {
-      if (n.respawnAt > 0 || !this.near(n.x, n.y, 10) || !g.isExplored(n.x, n.y)) continue;
+      if (n.respawnAt > 0 || !this.near(n.x, n.y, 12) || !g.isExplored(n.x, n.y)) continue;
       const info = NODE_INFO[n.type];
-      const s = Math.max(3, Math.round((3 + (n.amount / n.max) * 4) * ppm));
+      const fill = n.amount / n.max;
+      const s = Math.max(10, Math.round((6 + fill * 4) * ppm));
+      const img = nodeSprite(n.type, info.color, s, fill, n.id);
       const x = Math.round(this.bx(n.x, n.y)), y = Math.round(this.by(n.x, n.y));
-      c.fillStyle = 'rgba(0,0,0,0.35)';
-      c.fillRect(x - s / 2 + 1, y - s / 2 + 2, s, s);
-      c.fillStyle = '#5a5450';
-      c.fillRect(x - s / 2, y - s / 2, s, s);
-      c.fillStyle = '#77706a';
-      c.fillRect(x - s / 2, y - s / 2, s, Math.max(1, Math.round(s / 3)));
-      c.fillStyle = info.color;
-      const k = Math.max(1, Math.round(s / 3));
-      c.fillRect(x - k, y - k + 1, k, k);
-      c.fillRect(x + 1, y, k, k);
+      c.drawImage(img, x - img.width / 2, y - img.height / 2);
       if (g.harvestId === n.id) {
         c.strokeStyle = '#ffd740';
         c.lineWidth = 1;
         c.strokeRect(x - s / 2 - 2.5, y - s / 2 - 2.5, s + 5, s + 5);
       }
     }
-    // Loot areas: a ruin at the centre.
-    for (const s of g.gen.sites) {
-      if (!this.near(s.x, s.y, 20) || !g.isExplored(s.x, s.y)) continue;
-      const ready = s.readyAt <= g.time;
-      const w = Math.max(4, Math.round(8 * ppm));
-      const x = Math.round(this.bx(s.x, s.y)), y = Math.round(this.by(s.x, s.y));
-      c.fillStyle = 'rgba(0,0,0,0.4)';
-      c.fillRect(x - w / 2 + 1, y - w / 2 + 1, w, w);
-      c.fillStyle = ready ? '#a1887f' : '#616161';
-      c.fillRect(x - w / 2, y - w / 2, w, w);
-      c.fillStyle = ready ? '#ffd740' : '#9e9e9e';
-      c.fillRect(x - 1, y - 1, 2, 2);
+    // Loot areas: a wreck or a ruin, with a lit crate while there's something in it.
+    for (const st of g.gen.sites) {
+      if (!this.near(st.x, st.y, 20) || !g.isExplored(st.x, st.y)) continue;
+      const ready = st.readyAt <= g.time;
+      const img = siteSprite(st.name, Math.max(14, Math.round(16 * ppm)), ready, st.id);
+      c.drawImage(img, Math.round(this.bx(st.x, st.y) - img.width / 2), Math.round(this.by(st.x, st.y) - img.height / 2));
     }
-    // Rune altars: a dark stone ring and a glowing crystal.
+    // Rune altars: a ring of standing stones and a crystal, a column of light while charged.
     for (const r of g.gen.runes) {
       if (!this.near(r.x, r.y, 20) || !g.isExplored(r.x, r.y)) continue;
       const info = RUNE_INFO[r.rune];
       const ready = r.readyAt <= g.time;
-      const w = Math.max(5, Math.round(7 * ppm));
+      const img = altarSprite(r.rune, info.color, Math.max(12, Math.round(10 * ppm)), ready, this.time);
       const x = Math.round(this.bx(r.x, r.y)), y = Math.round(this.by(r.x, r.y));
-      c.fillStyle = '#2b2830';
-      c.fillRect(x - w / 2, y - w / 2, w, w);
-      c.fillStyle = ready ? info.color : '#555';
-      const k = Math.max(2, Math.round(w / 3));
-      c.fillRect(x - k / 2, y - k / 2, k, k);
+      c.drawImage(img, x - img.width / 2, y - img.height / 2);
       if (ready) {
         c.globalCompositeOperation = 'lighter';
-        c.globalAlpha = 0.35 + 0.2 * Math.sin(this.time * 3 + r.id);
+        c.globalAlpha = 0.3 + 0.2 * Math.sin(this.time * 3 + r.id);
+        c.fillStyle = info.color;
         const hgt = Math.min(y, Math.max(12, 40 * ppm));
         c.fillRect(x - 1, y - hgt, 2, hgt);
         c.globalAlpha = 1;
         c.globalCompositeOperation = 'source-over';
       }
     }
-    // The Dead Zone gate: a spinning portal.
+    // The Dead Zone gate: a stone ring round a turning rift.
     const gt = g.gen.gate;
     if (this.near(gt.x, gt.y, 20)) {
-      this.worldPath();
-      c.strokeStyle = '#ea80fc';
-      c.lineWidth = 1.2;
-      for (let k = 0; k < 3; k++) {
-        const a = this.time * 1.5 + (k * Math.PI * 2) / 3;
-        c.beginPath();
-        c.arc(gt.x, gt.y, 7 - k * 1.5, a, a + 2.2);
-        c.stroke();
-      }
-      c.setTransform(1, 0, 0, 1, 0, 0);
+      const img = gateSprite(Math.max(20, Math.round(16 * ppm)), this.time);
+      c.drawImage(img, Math.round(this.bx(gt.x, gt.y) - img.width / 2), Math.round(this.by(gt.x, gt.y) - img.height / 2));
     }
   }
 
@@ -880,7 +857,7 @@ export class View2D {
       // Painted at quantised sizes and scaled the rest of the way (zooming doesn't repaint every creature).
       const q = quantizeSize(size);
       const ks = size / q;
-      const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', q, frame, variant);
+      const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', q, frame, variant, arch === 'humanoid' ? lookFor(e.kind, def?.faction) : '');
       const sx = Math.round(this.bx(e.x, e.y)), sy = Math.round(this.by(e.x, e.y) - (e.flying ? Math.max(2, (1.6 + visZ(e.z)) * ppm * ZK * 1.3) : visZ(e.z) * ppm * ZK));
       // Shadow on the ground (flyers' is further off).
       const so = e.flying ? Math.max(3, size * 0.4) : Math.max(1, size * 0.08);
