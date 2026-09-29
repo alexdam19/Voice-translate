@@ -188,11 +188,11 @@ export class Game {
   driveInput = { x: 0, y: 0, active: false };
   /**
    * The helm: a throttle lever that stays where you set it (-0.5 full astern .. 1 full ahead), the overdrive switch,
-   * and whether the lever is resting on the 0% detent (you have to let go and press again to go past it). The
+   * the brake handle (0-1; with the lever off and no brake she coasts a long way), and whether the lever is resting on the 0% detent (you have to let go and press again to go past it). The
    * captain's cabin adds switches: floodlights, the bilge pump boost, the master arm (guns safe), power diverted from
    * the shield generator to the drive, and cooldowns on the horn and the halon fire suppression.
    */
-  helm = { lever: 0, overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false };
+  helm = { lever: 0, brake: 0, brakeSet: false, overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false };
   /** Cruise time-warp (1, 4 or 8): the Crater is 140 km across. Drops to 1 when anything hostile comes near. */
   warp = 1;
   /** People held in reserve in the Barracks (they step in for casualties and make up repair teams and work crews). */

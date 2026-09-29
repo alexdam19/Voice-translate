@@ -283,8 +283,8 @@ export class Panels {
     <h3>THE BASICS</h3>
     <ul>
       ${isTouch()
-        ? '<li>You command a <b>Titan Crawler</b>: 200 m of armoured city on eight crawlers. <b>Stick up/down</b> is the throttle, <b>left/right</b> steers. It builds speed slowly (top speed about 25 km/h), takes seconds to stop and turns wide; the dashed lane shows where it is going. <b>Tap the ground</b> to drive there. <b>Pinch</b> to zoom.</li>'
-        : '<li>You command a <b>Titan Crawler</b>: 200 m of armoured city on eight crawlers. <kbd>W</kbd>/<kbd>S</kbd> is the throttle, <kbd>A</kbd>/<kbd>D</kbd> steers. It builds speed slowly (top speed about 25 km/h), takes seconds to stop and turns wide; the dashed lane ahead shows where it is going. Right-click drives there. Mouse wheel zooms.</li>'}
+        ? '<li>You command a <b>Titan Crawler</b>: 200 m of armoured city on eight crawlers. <b>Stick up/down</b> is the throttle, <b>left/right</b> steers. It is slow to get going but runs past 200 km/h once it has way on (Overdrive for more), coasts a long way when you ease off (hold S on zero or ALL STOP to brake) and turns wider the faster it goes; the dashed lane shows where it is going. <b>Tap the ground</b> to drive there. <b>Pinch</b> to zoom.</li>'
+        : '<li>You command a <b>Titan Crawler</b>: 200 m of armoured city on eight crawlers. <kbd>W</kbd>/<kbd>S</kbd> is the throttle, <kbd>A</kbd>/<kbd>D</kbd> steers. It is slow to get going but runs past 200 km/h once it has way on (Overdrive for more), coasts a long way when you ease off (hold S on zero or ALL STOP to brake) and turns wider the faster it goes; the dashed lane ahead shows where it is going. Right-click drives there. Mouse wheel zooms.</li>'}
       <li>Your guns <b>aim and fire on their own</b>: a pad on every corner and the main battery up front, with more as the Command Center grows.</li>
       <li><b>Nothing stops you</b>: you crush rubble, climb cliffs and wade through lava. The right <b>drive train</b> makes it fast (and lava safe); tap the drive chip by your hull bar, or leave it on AUTO.</li>
       <li><b>Park on a resource node</b> to drill it.</li>

@@ -215,7 +215,7 @@ export function crushUnder(g: Game, t: Tank, full = false): void {
   if (n > 0) {
     g.navDirty = true;
     // Rubble slows you a little; ploughing through a skyscraper slows you more. A Titan barely notices.
-    if (t.fortress) t.speed *= Math.pow(0.9985, Math.min(n, 20)) * Math.max(0.96, 1 - heavy * 0.0002);
+    if (t.fortress) t.speed *= Math.pow(0.9996, Math.min(n, 20)) * Math.max(0.97, 1 - heavy * 0.00015);
     else t.speed *= Math.pow(0.985, Math.min(n, 12)) * Math.max(0.8, 1 - heavy * 0.0015);
     if (Math.random() < 0.5) g.hooks.sound('crunch', t.x, t.y, Math.min(1, 0.3 + n * 0.1));
     if (n >= 4) g.fx.push({ t: 'shake', amt: t.fortress ? 0.08 : 0.15 });
@@ -296,6 +296,8 @@ export interface ManualDrive {
   wantRot: number;
   /** Tank-style turning: -1 left, 1 right (overrides wantRot). */
   turn?: number;
+  /** The Titan's brake handle, 0-1 (0: lever off means she coasts). */
+  brake?: number;
 }
 
 /**
@@ -324,7 +326,7 @@ export function arcThrottle(diff: number): number {
  * turns in wide differential arcs (a slow pivot only when nearly stopped, on firm ground). Heavy, but readable:
  * the HUD shows the throttle, both crawler sides and the predicted path.
  */
-export const TITAN = { accel: 2.2, brake: 3.2, reverseBrake: 4, yaw: 0.34, pivot: 0.14, cap: 70 } as const;
+export const TITAN = { accel: 2.4, brake: 1.8, coast: 0.4, reverseBrake: 2.8, yaw: 0.3, pivot: 0.12, cap: 125, carve: 22 } as const;
 /** Overdrive: this much more speed, for this much more fuel and wear. */
 export const OVERDRIVE = { speed: 1.45, fuel: 3, wear: 5 } as const;
 
@@ -338,9 +340,12 @@ export function handling(t: Tank): { turn: number; accel: number; brake: number 
 
 /** Yaw rate a fortress can manage at `speed`: a slow pivot when stopped, up to the full rate once moving. */
 export function titanYaw(t: Tank, speed: number, firm: boolean): number {
-  const k = Math.min(1, Math.abs(speed) / 4);
+  const v = Math.abs(speed);
+  const k = Math.min(1, v / 4);
   const pivot = firm ? TITAN.pivot : 0.01;
-  return (pivot + (TITAN.yaw - pivot) * k) * t.handling;
+  // At speed she carves ever wider: like a train on a bend, momentum wins over the crawlers.
+  const carve = 1 / (1 + Math.max(0, v - 12) / TITAN.carve);
+  return (pivot + (TITAN.yaw - pivot) * k) * carve * t.handling;
 }
 
 export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: ManualDrive, kick = 1): void {
@@ -390,6 +395,11 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   const up = t.speed < target;
   const gaining = up ? t.speed >= 0 : t.speed <= 0;
   let rate = (gaining ? hd.accel : hd.brake) * (rev ? TITAN.reverseBrake / TITAN.brake : 1);
+  // Lever off: she rolls on and only drag slows her; pulling it back (or STOP) works the brakes, still slowly.
+  if (t.fortress && manual && !gaining && !rev && throttle === 0) {
+    const b = manual.brake ?? 0;
+    rate = b > 0 ? TITAN.brake * (0.35 + 0.65 * b) : TITAN.coast + 0.006 * Math.abs(t.speed);
+  }
   if (t.fortress) {
     // The engine spools toward the lever (winding down faster than up); she pulls weakly until it has, then harder
     // and harder as she gathers way.

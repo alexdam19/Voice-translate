@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { driveTank, TITAN } from '../src/game/systems/movement';
+import { driveTank, TITAN, titanYaw } from '../src/game/systems/movement';
 import { engineSpec } from '../src/game/systems/engine';
 import { helmDrive, stepWorld, warpBlocked } from '../src/game/systems/step';
 import { CH, OBS, TER } from '../src/shared/map';
@@ -21,11 +21,11 @@ function hold(g: ReturnType<typeof game>, ix: number, iy: number, secs: number, 
 const top = (g: ReturnType<typeof game>): number => Math.min(TITAN.cap, g.player.stats.topSpeed);
 
 describe('Titan Crawler handling', () => {
-  it('is slow off the mark, then pulls harder and harder; the lever holds its speed', () => {
+  it('is slow off the mark, then very fast once she has way on; she coasts and brakes slowly', () => {
     const g = game();
     const p = g.player;
-    expect(top(g) * 3.6).toBeGreaterThan(62);
-    expect(top(g) * 3.6).toBeLessThan(85);
+    expect(top(g) * 3.6).toBeGreaterThan(230);
+    expect(top(g) * 3.6).toBeLessThan(330);
     // W pushes the lever up; it stays there when you let go (cruise control).
     const t = hold(g, 0, -1, 30, () => g.helm.lever >= 1);
     expect(t).toBeLessThan(2);
@@ -33,24 +33,41 @@ describe('Titan Crawler handling', () => {
     hold(g, 0, 0, 3 - t);
     const v3 = p.speed;
     expect(v3).toBeLessThan(top(g) * 0.15);
-    // ...then she pulls much harder over the next three, and is at speed well inside fifteen.
+    // ...then she pulls much harder over the next three, and is running fast inside half a minute.
     hold(g, 0, 0, 3);
     expect(p.speed - v3).toBeGreaterThan(v3 * 1.5);
     expect(p.spool).toBeGreaterThan(0.9);
-    hold(g, 0, 0, 9);
-    expect(p.speed).toBeGreaterThan(top(g) * 0.85 * p.trac);
-    // Down through 0% stops on the detent.
-    hold(g, 0, 1, 3);
+    hold(g, 0, 0, 24);
+    expect(p.speed).toBeGreaterThan(top(g) * 0.55 * p.trac);
+    expect(p.speed * 3.6).toBeGreaterThan(120);
+    // Down through 0% stops on the detent; let go and she coasts on a long way.
+    hold(g, 0, 1, 1.3, () => g.helm.lever === 0);
     expect(g.helm.lever).toBe(0);
+    const v0 = p.speed;
+    hold(g, 0, 0, 8);
+    expect(g.helm.brake).toBe(0);
+    expect(p.speed).toBeGreaterThan(v0 * 0.6);
+    // Holding S on zero works the brake: still a long stop, but a stop.
     let stop = Infinity;
-    for (let s = 0; s < 20; s += DT) {
+    g.driveInput = { x: 0, y: 1, active: true };
+    for (let s = 0; s < 60; s += DT) {
       driveTank(g, p, DT, 1, helmDrive(g, DT));
       if (Math.abs(p.speed) < 0.05) {
         stop = s;
         break;
       }
     }
-    expect(stop).toBeLessThan(10);
+    expect(stop).toBeGreaterThan(4);
+    expect(stop).toBeLessThan(40);
+  });
+
+  it('turns ever wider as she gathers speed', () => {
+    const g = game();
+    const p = g.player;
+    const slow = titanYaw(p, 6, true), fast = titanYaw(p, 60, true);
+    expect(fast).toBeLessThan(slow * 0.4);
+    // A quarter-mile radius or more at full tilt.
+    expect(60 / fast).toBeGreaterThan(400);
   });
 
   it('a better engine: turbos get her rolling sooner, a bigger block goes faster', () => {

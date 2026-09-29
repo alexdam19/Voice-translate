@@ -30,6 +30,9 @@ interface Block {
   hd2: HTMLCanvasElement | null;
   hd4: HTMLCanvasElement | null;
   hdUsed: number;
+  /** Something on it was crushed: redraw it when the frame has time (the old picture shows until then). */
+  stale?: boolean;
+  hdStale?: boolean;
 }
 
 /** How much each ground's colour varies pixel to pixel at high resolution. */
@@ -124,7 +127,12 @@ export class Terrain2D {
   /** A map chunk changed (something was crushed): rebuild its block, and the ones its walls and shadows reach. */
   invalidate(cx: number, cy: number): void {
     const bx = Math.floor(cx / CPB), by = Math.floor(cy / CPB);
-    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0], [0, -1]]) this.blocks.delete(this.key(bx + dx, by + dy));
+    // A Titan at speed crushes something every frame: mark the blocks and redraw a couple a frame rather than all of
+    // them at once.
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1], [-1, 0], [0, -1]]) {
+      const b = this.blocks.get(this.key(bx + dx, by + dy));
+      if (b) b.stale = true;
+    }
   }
 
   beginFrame(): void {
@@ -154,6 +162,15 @@ export class Terrain2D {
       const built = this.build(bx, by);
       b = { lod: [built.canvas, null, null], used: this.tick, px: built.px, tb: built.tb, ob: built.ob, hd2: null, hd4: null, hdUsed: 0 };
       this.blocks.set(k, b);
+    } else if (b.stale && this.built < Math.min(budget, 1)) {
+      this.built++;
+      const built = this.build(bx, by);
+      b.lod = [built.canvas, null, null];
+      b.px = built.px;
+      b.tb = built.tb;
+      b.ob = built.ob;
+      b.stale = false;
+      b.hdStale = true;
     }
     b.used = this.tick;
     if (lod > 0 && !b.lod[lod]) {
@@ -221,13 +238,17 @@ export class Terrain2D {
     b.used = this.tick;
     b.hdUsed = this.tick;
     const have = f === 4 ? b.hd4 : b.hd2;
-    if (have) return have;
-    if (this.builtHD >= budget) return null;
+    if (have && !b.hdStale) return have;
+    if (this.builtHD >= (have ? Math.min(budget, 1) : budget)) return have;
     this.builtHD++;
     const c = this.buildHD(b, bx, by, f);
+    const before = (b.hd2 ? 1 : 0) + (b.hd4 ? 1 : 0);
+    // Redrawn after a crush: the other resolution is out of date too.
+    if (have) b.hd2 = b.hd4 = null;
     if (f === 4) b.hd4 = c;
     else b.hd2 = c;
-    this.hdCount++;
+    b.hdStale = false;
+    this.hdCount += (b.hd2 ? 1 : 0) + (b.hd4 ? 1 : 0) - before;
     return c;
   }
 

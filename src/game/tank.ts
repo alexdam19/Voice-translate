@@ -577,7 +577,7 @@ export class Tank {
     const dread = this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote';
     const length = this.rows * this.cell + (dread ? 2 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
-    const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? (20 + 3 * Math.min(1, ratio * 3)) * es.top : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * driveRatio) * hull.speed * (1 + crew.speed) * cm.speed * (1 + 0.05 * rf('engines'));
+    const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? (70 + 12 * Math.min(1, ratio * 3)) * es.top : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * driveRatio) * hull.speed * (1 + crew.speed) * cm.speed * (1 + 0.05 * rf('engines'));
     this.handling = cm.turn * (1 + 0.04 * rf('treads'));
     this.ram = cm.ram;
     this.nitroMult = cm.nitro;

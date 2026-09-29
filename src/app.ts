@@ -728,6 +728,8 @@ export class App {
   /** All stop: the throttle lever back to zero. */
   allStop(): void {
     this.game.helm.lever = 0;
+    this.game.helm.brake = 1;
+    this.game.helm.brakeSet = true;
     this.game.player.path = [];
     this.game.player.goal = null;
   }

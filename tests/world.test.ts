@@ -21,12 +21,12 @@ describe('The Crater', () => {
     for (const [dx, dy] of [[0, 0], [3, 5], [-4, 12]]) expect(Array.from(b.map.chunk(cx + dx, cy + dy).ter)).toEqual(Array.from(gen.map.chunk(cx + dx, cy + dy).ter));
   });
 
-  it('is 140 km across: crossing it takes the best part of an hour even flat out', () => {
+  it('is 140 km across: crossing it is a long drive even flat out on overdrive', () => {
     const g = game();
     expect(MAP_SIZE).toBe(140000);
     expect(WORLD_KM).toBe(140);
     const secs = (MAP_SIZE * 0.9) / (g.player.stats.topSpeed * 1.45);
-    expect(secs / 60).toBeGreaterThan(30);
+    expect(secs / 60).toBeGreaterThan(15);
   });
 
   it('puts every place from the map in its zone', () => {

@@ -65,6 +65,13 @@ export function helmDrive(g: Game, dt: number): ManualDrive | undefined {
     helm.lever = 0;
     return undefined;
   }
+  // The brake handle: holding S with the lever on zero works it on; opening the throttle lets it off.
+  // ALL STOP sets it hard and it stays set until the throttle opens again.
+  if (helm.lever > 0) {
+    helm.brake = 0;
+    helm.brakeSet = false;
+  } else if (di.active && di.y > 0 && helm.lever === 0 && helm.detent) helm.brake = Math.min(1, helm.brake + dt * 0.8);
+  else if (!helm.brakeSet) helm.brake = Math.max(0, helm.brake - dt * 1.5);
   if (di.active && di.y) {
     const was = helm.lever;
     const next = Math.max(-0.5, Math.min(1, was - di.y * dt * 0.8));
@@ -73,8 +80,8 @@ export function helmDrive(g: Game, dt: number): ManualDrive | undefined {
       helm.lever = 0;
       helm.detent = true;
     } else if (!helm.detent) helm.lever = next;
-  } else if (di.active) helm.detent = false;
-  return { throttle: helm.lever, wantRot: p.rot, turn: di.active ? Math.max(-1, Math.min(1, di.x)) : 0 };
+  } else helm.detent = false;
+  return { throttle: helm.lever, wantRot: p.rot, turn: di.active ? Math.max(-1, Math.min(1, di.x)) : 0, brake: helm.brake };
 }
 
 function respawn(g: Game): void {

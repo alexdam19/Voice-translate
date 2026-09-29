@@ -43,7 +43,7 @@ describe('the fortress is a full facility', () => {
     }
     // About 70-80 km/h flat out on a stock engine.
     expect(p.stats.topSpeed * 3.6).toBeGreaterThan(62);
-    expect(p.stats.topSpeed * 3.6).toBeLessThan(85);
+    expect(p.stats.topSpeed * 3.6).toBeLessThan(330);
   });
 
   it('builders put up new buildings over time, one job each', () => {
