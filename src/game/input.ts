@@ -14,7 +14,14 @@ export class Input {
     tap: false,
     /** One finger is held (or dragged) on the battlefield: not a tap, not a pinch. */
     drag: false,
+    /** Screen pixels the view was dragged this frame (the left button held and moved, the middle button, or two fingers). */
+    panX: 0,
+    panY: 0,
+    /** The left press turned into a drag of the view (so letting go isn't a click). */
+    panned: false,
   };
+  private press0: { x: number; y: number } | null = null;
+  private twoMid: { x: number; y: number } | null = null;
   /** True once the player has touched the screen (switches the UI to touch mode). */
   touchMode = false;
   onTouchMode?: () => void;
@@ -38,6 +45,19 @@ export class Input {
     });
     // Mouse (touch pointers call preventDefault, so no emulated mouse events arrive from the battlefield).
     window.addEventListener('mousemove', (e) => {
+      // Dragging the battlefield (left or middle button) pans the view.
+      if ((this.mouse.left && this.press0) || this.mouse.middle) {
+        if (this.mouse.middle || this.mouse.panned || Math.hypot(e.clientX - this.press0!.x, e.clientY - this.press0!.y) > 7) {
+          if (!this.mouse.panned && this.press0 && !this.mouse.middle) {
+            this.mouse.panX += e.clientX - this.press0.x;
+            this.mouse.panY += e.clientY - this.press0.y;
+          } else {
+            this.mouse.panX += e.clientX - this.mouse.x;
+            this.mouse.panY += e.clientY - this.mouse.y;
+          }
+          this.mouse.panned = true;
+        }
+      }
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
       this.mouse.overUI = e.target !== target;
@@ -48,6 +68,8 @@ export class Input {
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
       this.mouse.overUI = false;
+      this.mouse.panned = false;
+      this.press0 = { x: e.clientX, y: e.clientY };
       if (e.button === 0) {
         this.mouse.left = true;
         this.mouse.leftPressed = true;
@@ -105,8 +127,17 @@ export class Input {
         const d = this.spread();
         if (this.pinchDist > 0 && d > 0) this.mouse.wheel += Math.log(this.pinchDist / d) * 10;
         this.pinchDist = d;
+        // Two fingers moving together pan the view.
+        const pts = [...this.touches.values()];
+        const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        if (this.twoMid) {
+          this.mouse.panX += mid.x - this.twoMid.x;
+          this.mouse.panY += mid.y - this.twoMid.y;
+        }
+        this.twoMid = mid;
         return;
       }
+      this.twoMid = null;
       if (Math.hypot(t.x - t.sx, t.y - t.sy) > 14) {
         this.tapOk = false;
         this.mouse.drag = true;
@@ -128,6 +159,7 @@ export class Input {
         this.mouse.drag = false;
       }
       this.pinchDist = this.touches.size >= 2 ? this.spread() : 0;
+      this.twoMid = null;
     };
     target.addEventListener('pointerup', end);
     target.addEventListener('pointercancel', end);
@@ -181,5 +213,7 @@ export class Input {
     this.mouse.leftReleased = false;
     this.mouse.wheel = 0;
     this.mouse.tap = false;
+    this.mouse.panX = 0;
+    this.mouse.panY = 0;
   }
 }

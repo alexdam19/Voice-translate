@@ -1729,3 +1729,6 @@ html.touch .joy { display: block; }
 .toss-tab.L { border-left: 0; transform: rotate(180deg); }
 .toss-tab.R { border-right: 0; }
 .toss-tab:hover { color: #fff; background: #2a1e50; }
+.recenter-btn { display: none; position: absolute; left: 50%; top: 70px; transform: translateX(-50%); z-index: 8; pointer-events: auto; font: 11px var(--px); letter-spacing: 1px; color: #d8fff8; background: #0c2a2a; border: 2px solid #20d6c7; padding: 5px 12px; cursor: pointer; box-shadow: 0 0 10px rgba(32, 214, 199, 0.4); }
+.recenter-btn small { color: #6ad8cc; margin-left: 6px; font-size: 9px; }
+.recenter-btn:hover { background: #134040; }

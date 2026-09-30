@@ -916,6 +916,7 @@ export class View2D {
         c.beginPath();
         c.ellipse(gx + so, this.by(e.x, e.y) + so + sh.fh * k * 0.18, sh.fw * k * 0.26, sh.fh * k * 0.12, 0, 0, Math.PI * 2);
         c.fill();
+        this.hostileRing(gx, this.by(e.x, e.y) + sh.fh * k * 0.18, sh.fw * k * 0.3, sh.fh * k * 0.14, e.boss, e.elite);
         if (e.elite) {
           c.strokeStyle = '#d500f9';
           c.lineWidth = 1;
@@ -941,6 +942,7 @@ export class View2D {
       const so = e.flying ? Math.max(3, size * 0.4) : Math.max(1, size * 0.08);
       c.fillStyle = 'rgba(0,0,0,0.3)';
       c.fillRect(Math.round(sx - size * 0.35 + so), Math.round(this.by(e.x, e.y) - size * 0.25 + so), Math.round(size * 0.7), Math.round(size * 0.5));
+      this.hostileRing(sx, this.by(e.x, e.y), size * 0.5, size * 0.36, e.boss, e.elite);
       const ca = Math.cos(a), sa = Math.sin(a);
       c.setTransform(ca * ks, sa * ks, -sa * ks, ca * ks, sx, sy);
       c.drawImage(img, -img.width / 2, -img.height / 2);
@@ -952,6 +954,24 @@ export class View2D {
       if (e.titan && !e.flying && Math.random() < 0.15) this.fx.emit(e.x + (Math.random() - 0.5) * e.r, e.y + (Math.random() - 0.5) * e.r, 0.5, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 1, 1.4, Math.max(1, e.r * 0.3), '#8d7a62', { grow: 2, alpha: 0.5 });
       if (e.aim) this.drawAimLine(e);
     }
+  }
+
+  /**
+   * A ring on the ground under everything hostile, so a creature reads against any ground and at any zoom: red, a
+   * dark edge outside it, magenta for elites and bosses.
+   */
+  private hostileRing(x: number, y: number, rx: number, ry: number, boss?: boolean, elite?: boolean): void {
+    const c = this.ctx;
+    rx = Math.max(4, rx);
+    ry = Math.max(2.5, ry);
+    c.beginPath();
+    c.ellipse(Math.round(x) + 0.5, Math.round(y) + 0.5, rx + 1, ry + 1, 0, 0, Math.PI * 2);
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(10,0,0,0.45)';
+    c.stroke();
+    c.lineWidth = boss ? 2 : 1.3;
+    c.strokeStyle = boss ? '#ff40ff' : elite ? '#e040fb' : 'rgba(255,58,38,0.95)';
+    c.stroke();
   }
 
   /** The Mega Hangar's airships: high overhead (their shadows far below), lowering crates on cables over the deck. */

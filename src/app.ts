@@ -80,6 +80,8 @@ export class App {
   private packHint = false;
   /** Camera look-ahead in the driving direction. */
   private camLead = { x: 0, y: 0 };
+  /** Where you've dragged the view to, off the fortress (world metres); RECENTER or Home brings it back. */
+  private camPan = { x: 0, y: 0 };
   private villageZoomMul = 1;
   private vstate: VillageState = { hover: null, selected: 0, ghost: null, deck: 0 };
   private trackT = 0;
@@ -108,6 +110,7 @@ export class App {
       outrider: (c) => this.outriderCmd(c),
       minimapClick: (x, y, right) => this.minimapClick(x, y, right),
       minimapZoom: (d) => this.minimap.setZoom(this.minimap.zoom + d),
+      recenter: () => this.recenter(),
       cardAim: (slot, x, y, over) => this.cardAim(slot, x, y, over),
       cardDrop: (slot, x, y, over) => this.cardDrop(slot, x, y, over),
       cardTap: (slot) => this.cardTap(slot),
@@ -634,8 +637,8 @@ export class App {
     this.camLead.x += (Math.cos(p.rot) * lead - this.camLead.x) * (1 - Math.pow(0.05, dt));
     this.camLead.y += (Math.sin(p.rot) * lead - this.camLead.y) * (1 - Math.pow(0.05, dt));
     if (!this.village) {
-      tx += this.camLead.x;
-      ty += this.camLead.y;
+      tx += this.camLead.x + this.camPan.x;
+      ty += this.camLead.y + this.camPan.y;
     }
     if (this.village) {
       // Nudge the view so the building card at the bottom doesn't cover the fortress.
@@ -651,6 +654,11 @@ export class App {
     const wantYaw = this.village ? p.rot : -Math.PI / 2;
     v.cam.yaw = wrapAngle(v.cam.yaw + wrapAngle(wantYaw - v.cam.yaw) * k);
     v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;
+  }
+
+  /** Back to the fortress after dragging the view away. */
+  recenter(): void {
+    this.camPan.x = this.camPan.y = 0;
   }
 
   /** Overdrive: more speed for a lot more fuel and wear on the drive. */
@@ -804,6 +812,7 @@ export class App {
       if (this.panels.isOpen) this.panels.close();
       this.setVillage(!this.village);
     }
+    if (i.consume('Home')) this.recenter();
     if (i.consume('KeyT')) this.toggleCamp();
     if (i.consume('KeyF')) this.toggleCabin();
     if (i.consume('KeyG')) this.toggleInterior();
@@ -910,8 +919,14 @@ export class App {
     if (m.tap) {
       // A tap is a left click in the base, with a card armed, or on your own fortress (opens the base);
       // anywhere else it's the right-click: drive there, attack, drill, interact.
-      if (this.village || this.hud.armed >= 0 || (g.mode === 'world' && !g.player.dead && g.player.hits(w.x, w.y, 0.5))) m.leftPressed = true;
-      else m.rightPressed = true;
+      if (this.village || this.hud.armed >= 0 || (g.mode === 'world' && !g.player.dead && g.player.hits(w.x, w.y, 0.5))) {
+        m.leftPressed = true;
+        // (Opening the base from your fortress happens on letting go.)
+        if (!this.village && this.hud.armed < 0) {
+          m.leftReleased = true;
+          m.panned = false;
+        }
+      } else m.rightPressed = true;
       this.tapHintT = 2.5;
     }
     if (this.village) {
@@ -936,7 +951,24 @@ export class App {
       this.hud.setHint('');
       return;
     }
-    if (m.leftPressed && this.hud.armed < 0 && !g.player.dead && g.mode === 'world' && g.player.hits(w.x, w.y, 0.5)) {
+    // Dragging the battlefield looks round: the view slides with the drag and stays there.
+    if ((m.panX || m.panY) && this.hud.armed < 0) {
+      const a = this.view.screenToWorld(m.x - m.panX, m.y - m.panY), b = this.view.screenToWorld(m.x, m.y);
+      const dx = b.x - a.x, dy = b.y - a.y;
+      this.camPan.x -= dx;
+      this.camPan.y -= dy;
+      this.view.cam.x -= dx;
+      this.view.cam.y -= dy;
+      const lim = this.view.cam.zoom * 4 + g.player.stats.length;
+      const d = Math.hypot(this.camPan.x, this.camPan.y);
+      if (d > lim) {
+        this.camPan.x *= lim / d;
+        this.camPan.y *= lim / d;
+      }
+      this.canvas.style.cursor = 'grabbing';
+    }
+    this.hud.setPanned(Math.hypot(this.camPan.x, this.camPan.y) > 5);
+    if (m.leftReleased && !m.panned && this.hud.armed < 0 && !g.player.dead && g.mode === 'world' && g.player.hits(w.x, w.y, 0.5)) {
       // Tapping your own fortress opens the base.
       this.setVillage(true);
       return;

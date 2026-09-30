@@ -19,6 +19,7 @@ The pieces:
 - **Two kinds of progress.** Materials and weapons come from combat and scavenging. **Commander XP** comes only from fighting (kills, loot areas, outposts, raider tanks, runes, titans). Each level adds hull and damage, gives a card pack, and unlocks buildings, weapons and features on the **Level Road**.
 - **Squads.** Army buildings train sub-units: marines, scout buggies, guard drones, a fighter wing and a walker mech. They follow you, **guard a spot** (drag their badge onto the map), or **scavenge ahead** (collect loot drops and drill nodes, then drive the haul home).
 - **Satnav.** A route is always planned to where you're going (a course you click on the map, or the mission's next objective), along the Crater's roads where they go the right way and straight across country where they don't, and planned again when you stray. It's drawn on the ground as a glowing line with chevrons flowing toward the goal, on the minimap and the world map, and in the cab as chevrons on the terrain ahead and a pillar of light over the goal. Your first officer's face reads it out in the **NAV** box on the ship console, like the face at the bottom of an old shooter's screen: it talks when there's a new instruction ("IN 600 M, TURN LEFT", "BEAR RIGHT", "TURN AROUND", "BACK TO THE ROAD"), looks the way to turn, winces as the hull takes damage and grins when you arrive.
+- **Look round.** Drag the battlefield (left or middle mouse, or two fingers) to slide the view away from your fortress and look anywhere nearby; **BACK TO THE SHIP** (or `Home`) brings it back. Everything hostile stands on a red ring (magenta for elites and bosses) so it reads against any ground.
 - **Boxes out of your way.** Every box on the HUD (the mission, the goal, the zone, the intercom, the commander, the builders) can be dragged anywhere, flung at the side of the screen to fold it into a tab (tap the tab to bring it back), or closed with its × until it has something new to say. Double-click a box's grip to put it back. Where they sit is remembered. The cab's intercom has its own ×.
 - **Tracking.** Can't afford an upgrade? Press **TRACK**. A box lists what you still need, and a marker and beam of light point at the nearest place to get the first missing thing.
 - When your fortress goes down, it's towed back to camp and comes back **fully repaired**.
@@ -70,6 +71,7 @@ Everything works with the mouse. The camera always follows your fortress.
 | **I** / **M** / **H** / **Esc** | Cargo, Refinery & Workshop · World map · Help · Menu |
 | **N** | Blueprint: the whole fortress drawn out, with an analysis |
 | **Y** | Ship vitals: hull, armour zones, crawlers, systems, supplies, fires and flooding, population; send repair teams |
+| **Home** | Bring the view back to your fortress after dragging it away |
 | **F** / **G** | The captain's cabin (first person, levers and switches) · Inside the Titan (every deck, the crew, work orders) |
 | **O** / **Space** / **.** | Overdrive (until the engine overheats) · All stop · Cruise warp |
 | **HANGAR** button | The Mega Hangar airlift: supplies, crew and endless refits by airship |

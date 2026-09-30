@@ -73,6 +73,8 @@ export interface HudActions {
   interior(): void;
   /** Ask the Mega Hangar's Gate Control to open the main gate. */
   gate(): void;
+  /** Bring the view back to the fortress after dragging it away. */
+  recenter(): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -114,6 +116,8 @@ export class Hud {
   /** The main gate: shown near it while it's shut, to ask Gate Control for clearance. */
   private gateBtn = h('button', 'gate-btn');
   /** The intercom: the Mega Hangar agent's face and what they're saying. */
+  /** Shown while the view has been dragged off the fortress. */
+  private recenterBtn = h('button', 'recenter-btn', '⌖ BACK TO THE SHIP <small>Home</small>');
   private commBox = h('div', 'comm-box');
   private commBody = h('div', 'cb-body');
   private commKey = '';
@@ -193,6 +197,10 @@ export class Hud {
     this.joy = new Joystick(this.root);
     const tl = h('div', 'hud-tl');
     this.commBox.appendChild(this.commBody);
+    this.recenterBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      act.recenter();
+    });
     this.toss = {
       cmd: new Tossable(this.cmd, 'cmd', 'COMMANDER', { noClose: true }),
       zone: new Tossable(this.zone, 'zone', 'ZONE'),
@@ -353,7 +361,7 @@ export class Hud {
       zoomBox.appendChild(b);
     }
     this.mmWrap.appendChild(zoomBox);
-    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost, this.gateBtn, this.commBox);
+    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost, this.gateBtn, this.commBox, this.recenterBtn);
     this.gateBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.act.gate();
@@ -506,6 +514,11 @@ export class Hud {
   }
 
   /* ---------------- per-frame ---------------- */
+
+  /** Whether the view is dragged away from the fortress (shows the button back). */
+  setPanned(on: boolean): void {
+    this.recenterBtn.style.display = on ? 'block' : 'none';
+  }
 
   update(g: Game, dt: number, village: boolean): void {
     this.game = g;
