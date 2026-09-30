@@ -49,6 +49,8 @@ export interface Resident {
   walking: boolean;
   /** Guards: a post to stand at, or a stretch of wall to walk. */
   post?: { ax: number; ay: number; bx: number; by: number };
+  /** Seconds left running out of a hull's path (they sprint for the side and wait for it to pass). */
+  dodge?: number;
 }
 
 export interface GuestBase {
@@ -911,16 +913,72 @@ function updateCars(g: Game, dt: number): void {
   }
 }
 
+/**
+ * A hull bearing down on someone: they sprint for the nearer side, out past its flank, and stay there till it's by.
+ * They see it coming a few seconds out (twice as far when your beacons are turning). True while they're dodging.
+ */
+function dodgeHulls(g: Game, r: Resident, hulls: Tank[], dt: number): boolean {
+  if ((r.dodge ?? 0) > 0) {
+    r.dodge = Math.max(0, r.dodge! - dt);
+    const dx = r.tx - r.x, dy = r.ty - r.y, d = Math.hypot(dx, dy);
+    if (d > 0.4) {
+      r.x += (dx / d) * Math.min(d, 4.4 * dt);
+      r.y += (dy / d) * Math.min(d, 4.4 * dt);
+      r.face = dx >= 0 ? 1 : -1;
+      r.walking = true;
+    } else r.walking = false;
+    if (r.dodge === 0) {
+      // Back to it: a guard to their post, anyone else to their patch after a moment.
+      r.wait = r.post ? 0 : 1.5;
+      if (r.post) {
+        r.tx = r.post.ax;
+        r.ty = r.post.ay;
+      }
+    }
+    return true;
+  }
+  for (const t of hulls) {
+    if (t.dead || Math.abs(t.speed) < 0.6) continue;
+    const L = t.stats.length / 2, W = t.stats.width / 2;
+    const reach = (Math.abs(t.speed) * 5 + 25) * (t === g.player && g.helm.beacons ? 2 : 1);
+    if (Math.abs(r.x - t.x) > L + reach + W || Math.abs(r.y - t.y) > L + reach + W) continue;
+    const l = t.toLocal(r.x, r.y);
+    const along = l.lx * Math.sign(t.speed);
+    if (along < -L || along > L + reach || Math.abs(l.lz) > W + 10) continue;
+    const side = l.lz >= 0 ? 1 : -1;
+    const out = t.toWorld(l.lx, side * (W + 16 + ((r.anim * 7) % 10)));
+    r.tx = out.x;
+    r.ty = out.y;
+    // Long enough to get there and wait for the hull to pass.
+    r.dodge = Math.hypot(out.x - r.x, out.y - r.y) / 4.4 + 2 + Math.min(6, (L * 2) / Math.max(1, Math.abs(t.speed)));
+    r.wait = 0;
+    return true;
+  }
+  return false;
+}
+
 function updatePeople(g: Game, dt: number): void {
   const h = home(g)!;
   const cs = g.compound;
   const run = cs.alarm;
   const apron = AREAS.findIndex((a) => a.kind === 'apron');
+  const hulls: Tank[] = [g.player, ...cs.bases.map((b) => b.tank)];
   for (const r of cs.people) {
     r.anim += dt;
+    if (dodgeHulls(g, r, hulls, dt)) continue;
     if (r.post) {
       // Guards: walk their stretch of wall, or stand their post (facing out, rifles up in a siege).
       if (r.post.ax === r.post.bx && r.post.ay === r.post.by) {
+        // (Walking back to it after getting out of a hull's way.)
+        const bd = Math.hypot(r.post.ax - r.x, r.post.ay - r.y);
+        if (bd > 0.5) {
+          r.x += ((r.post.ax - r.x) / bd) * Math.min(bd, 1.6 * dt);
+          r.y += ((r.post.ay - r.y) / bd) * Math.min(bd, 1.6 * dt);
+          r.tx = r.post.ax;
+          r.ty = r.post.ay;
+          r.walking = true;
+          continue;
+        }
         r.walking = false;
         if (r.kind === 'guard') r.face = r.x < h.x ? -1 : 1;
         continue;

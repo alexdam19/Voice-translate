@@ -561,6 +561,8 @@ function look(r: Resident, i: number, alarm: boolean, drill: number, waving: boo
   const walkF = Math.floor(r.anim * 7);
   if (r.walking) {
     const role: HeroRole = r.kind === 'guard' || r.kind === 'soldier' ? 'rifleman' : r.kind === 'mech' ? 'mechanic' : r.kind === 'worker' ? 'engineer' : r.kind === 'pilot' ? 'pilot' : r.kind === 'trader' ? 'trader' : (['crew', 'deckhand', 'medic', 'crew', 'officer'] as HeroRole[])[i % 5];
+    // Sprinting out of a hull's way.
+    if ((r.dodge ?? 0) > 0) return { role, pose: 'run', frame: Math.floor(r.anim * 11) };
     return { role, pose: 'walk', frame: walkF };
   }
   switch (r.kind) {

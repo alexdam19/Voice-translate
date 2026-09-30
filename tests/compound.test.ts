@@ -185,3 +185,34 @@ describe('the garrison', () => {
     expect(g.compound.air.every((a) => a.state === 'parked')).toBe(true);
   });
 });
+
+describe('People and the ship', () => {
+  it('run out of the way of a hull bearing down on them, sooner with the beacons on', () => {
+    const g = game();
+    const p = g.player;
+    const cs = g.compound;
+    for (let i = 0; i < 5; i++) updateCompound(g, 0.1);
+    const r = cs.people.find((k) => !k.post)!;
+    expect(r).toBeTruthy();
+    const put = (d: number): void => {
+      const at = p.toWorld(p.stats.length / 2 + d, 4);
+      r.x = r.tx = at.x;
+      r.y = r.ty = at.y;
+      r.dodge = 0;
+      r.wait = 5;
+    };
+    p.speed = 6;
+    put(40);
+    for (let i = 0; i < 160; i++) updateCompound(g, 0.1);
+    const l = p.toLocal(r.x, r.y);
+    expect(Math.abs(l.lz)).toBeGreaterThan(p.stats.width / 2 + 5);
+    // Further out, they only move for it when the beacons are turning.
+    put(90);
+    updateCompound(g, 0.1);
+    expect(r.dodge ?? 0).toBe(0);
+    g.helm.beacons = true;
+    put(90);
+    updateCompound(g, 0.1);
+    expect(r.dodge ?? 0).toBeGreaterThan(0);
+  });
+});

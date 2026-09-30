@@ -572,7 +572,7 @@ export class Cabin3D {
     for (const r of g.compound.people) {
       if (Math.hypot(r.x - ex, r.y - ey) > 500) continue;
       const moving = r.walking ? Math.atan2(r.ty - r.y, r.tx - r.x) : r.face < 0 ? Math.PI : 0;
-      this.creatures.add({ arch: 'humanoid', x: r.x, y: r.y, z: groundLevel(r.x, r.y), rot: moving, len: 1.85, t: r.anim, gait: r.walking ? 0.7 : 0, body: new THREE.Color(r.uniform || '#56603f'), eye: new THREE.Color('#000000'), flash: false, look: '' }, this.ox, this.oz);
+      this.creatures.add({ arch: 'humanoid', x: r.x, y: r.y, z: groundLevel(r.x, r.y), rot: moving, len: 1.85, t: r.anim, gait: r.walking ? ((r.dodge ?? 0) > 0 ? 1.4 : 0.7) : 0, body: new THREE.Color(r.uniform || '#56603f'), eye: new THREE.Color('#000000'), flash: false, look: '' }, this.ox, this.oz);
     }
     this.creatures.end();
     // Shots in flight.
