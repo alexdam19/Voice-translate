@@ -204,7 +204,7 @@ Drive into the gate north-east of camp. Loot crates and supply drops, fight othe
 
 ## Tech
 
-- **TypeScript + Vite**, a **Canvas 2D** pixel-art renderer, **ws** for the server, **Vitest** for tests. The Titan is drawn from its design sheet (`src/assets/ship/`: the top view with the main turret cut out so it can turn, plus side, front, rear and 3/4 views for the cabin, title and screens; inlined into the single-file build). Everything else (creatures, props, terrain, interiors, portraits, card art, icons, sound) is generated at startup.
+- **TypeScript + Vite**, a **Canvas 2D** pixel-art renderer, **ws** for the server, **Vitest** for tests. The Titan is drawn from its design sheet (`src/assets/ship/`: the top view with the main turret cut out so it can turn, plus side, front, rear and 3/4 views for the cabin, title and screens; inlined into the single-file build). The world's props, trees, boulders and ground details are pixel-art atlases painted in **LibreSprite** (see below and [art/README.md](art/README.md)). Everything else (creatures, terrain, interiors, portraits, card art, icons, sound) is generated at startup.
 - **Pixel art:** sprites are painted at the size they're shown in six-tone hue-shifted ramps with ordered dithering and dark outlines, and scaled by whole steps; the view renders at native resolution.
 - **Simulation:** fixed 60 Hz steps.
   - One world unit is one metre; a Titan's deck cell is 5 m (enemy rigs use smaller cells), and its guns reach four times as far as the same gun on a buggy. Nothing blocks it: A* weighs terrain by the drive train's traction and makes cliffs cost more, and it flattens obstacles and props under its hull. The terrain chunks it touches are rebuilt in the same frame.
@@ -223,6 +223,8 @@ src/ui/       HUD (commander, hand, energy, squads, tracker, horde bar, drive ch
 src/net/      Dead Zone client (WebSocket with an in-browser fallback)
 server/       Node host for the Dead Zone (serves dist/ too)
 legacy/2d/    the original side-view 2D prototype, kept for reference
+art/          LibreSprite sources: the painting scripts (art/scripts), their brushes (art/lib/paint.js), the AAP-64 palette and
+              the editable .ase files they produce; tools/art/build.mjs paints them into src/assets/px/
 ```
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the design notes.
@@ -237,3 +239,26 @@ from a clone of OpenHV: `node tools/import-openhv.mjs ../OpenHV`.
 
 The world map, colossi and new UI art are snapped to or drawn from **AAP-64**, Adigun A. Polack's 64-colour pixel-art
 palette (https://lospec.com/palette-list/aap-64), as shipped with the LibreSprite editor's palettes.
+
+### The world's pixel art, painted in LibreSprite
+
+The ground's props (58 designs: wrecked cars, buses and tanks, containers, dead trees, skeletons and giant skulls,
+barrels and toxic drums, signs, pipelines, crystals, cacti, glowing mushrooms, masts and dishes, tents), its tree
+crowns and boulders (24) and its ground details (30: grass tufts, flowers, pebbles, cracks, snow drifts, ripples,
+puddles, embers, rubble) are original art painted with [LibreSprite](https://github.com/LibreSprite/LibreSprite)
+1.1, the open-source pixel-art editor, driven headless by scripts in `art/scripts/`. LibreSprite lays them out as
+indexed sprites in the AAP-64 palette and saves each atlas twice: as an editable `.ase` in `art/` (open it in
+LibreSprite or Aseprite to retouch by hand) and as the PNG sheet the game loads from `src/assets/px/`. The ground
+stamps them into its close-up blocks with cast shadows:
+
+- **props**, drawn twice life size so they read beside a 200 m Titan; small ones are common, big wrecks and
+  skeletons are rare landmarks, and the rest stay a few pixels of debris;
+- **tree crowns** over woods and hedgerows (broadleaf, birch and autumn trees over grass, pines elsewhere, snowed-on
+  pines on snow), and **boulders** in the stone of their country (sandstone in the dunes, basalt in the ash and
+  volcanic lands, ice in the frost);
+- **ground details** painted in *tone*: the game doesn't paste their colours but lightens or darkens the soil under
+  them, so one tuft or crack suits every ground.
+
+Rebuild them after editing a script with `LIBRESPRITE=/path/to/libresprite npm run art` (details in
+[art/README.md](art/README.md)). LibreSprite is GPL-2.0 and is only used as a tool here; none of its code or skins
+ship with the game.

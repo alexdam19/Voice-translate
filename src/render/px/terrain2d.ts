@@ -1,5 +1,6 @@
-import { CH, OBS, OBS_COLOR, TER, TERRAIN, type GameMap } from '../../shared/map';
+import { CH, OBS, OBS_COLOR, TER, TERRAIN, ZONE, type GameMap, type MapChunk, type Prop } from '../../shared/map';
 import { hash2, rgb, type RGB } from './pixels';
+import { GROUND, loadWorldArt, NATURE, PROPS, propShare, type AtlasSprite } from './worldArt';
 
 /**
  * The ground as pixel art, one pixel per metre tile, baked in 128 m blocks and seen in a slight 3/4 view:
@@ -87,6 +88,73 @@ const PROP: Record<string, { c: RGB; hi: RGB; w: number; h: number }> = {
   antenna: { c: rgb('#7a7c80'), hi: rgb('#cfd2d6'), w: 1, h: 3 },
 };
 
+/** Props that stand on made ground (roads, decks, pavement) were cleared away. */
+const onPavement = (t: number): boolean => t === TER.ROAD || t === TER.METAL || t === TER.CONCRETE;
+
+/**
+ * A prop's sprite (its kind and variant, snowed on over snow and ice), or '' to leave it as a few pixels of debris:
+ * only a share of props get one, fewer the bigger the sprite.
+ */
+function propSpriteName(pr: Prop, t: number): string {
+  let name = `${pr.kind}${pr.v & 3}`;
+  if (!PROPS.has(name)) name = `${pr.kind}0`;
+  if (!PROPS.has(name) || hash2(Math.floor(pr.x * 8), Math.floor(pr.y * 8), 97) >= propShare(name)) return '';
+  if ((t === TER.SNOW || t === TER.ICE) && PROPS.has(`${name}s`)) return `${name}s`;
+  return name;
+}
+
+/** A tree crown for a tree tile: broadleaf over grass (bushes in the hedgerows), snowy pines, conifers elsewhere. */
+export function crownName(t: number, oh: number, h: number): string {
+  if (t === TER.SNOW || t === TER.ICE) return h < 0.5 ? 'pine0s' : 'pine1s';
+  if (t !== TER.GRASS) return h < 0.4 ? 'pine0' : h < 0.75 ? 'pine1' : 'bush0';
+  if (oh < 8) return h < 0.45 ? 'bush0' : h < 0.62 ? 'bush1' : h < 0.95 ? 'oak1' : 'autumn1';
+  return h < 0.3 ? 'oak0' : h < 0.55 ? 'oak2' : h < 0.74 ? 'oak1' : h < 0.9 ? 'birch0' : h < 0.96 ? 'autumn0' : 'autumn1';
+}
+
+/** A boulder in the stone of its country (or of the ground under it). */
+export function boulderName(t: number, zone: number, h: number): string {
+  const stone =
+    zone === ZONE.DUNES || zone === ZONE.PASS || t === TER.SAND || t === TER.DUNE ? 'sandstone'
+    : zone === ZONE.ASH || zone === ZONE.SCORCHED || zone === ZONE.SPIRES || t === TER.BASALT || t === TER.LAVA ? 'basalt'
+    : zone === ZONE.FROST || t === TER.SNOW || t === TER.ICE ? 'ice'
+    : 'rock';
+  return `boulder_${stone}${Math.floor(h * 3)}`;
+}
+/** How many boulders get a sprite (the rest stay small rocks baked into the ground). */
+const BOULDER_SHARE = 0.2;
+
+/**
+ * Ground details by the ground they grow on: [family, share of tiles]. Tone details lighten and darken the soil
+ * under them, colour ones are pasted.
+ */
+export const DETAILS: Partial<Record<number, [string, number][]>> = {
+  [TER.GRASS]: [['t_tuft', 0.07], ['c_flower', 0.008]],
+  [TER.DIRT]: [['t_pebble', 0.025], ['t_crack', 0.01], ['c_weed', 0.015], ['t_tuft', 0.012]],
+  [TER.RUST]: [['t_pebble', 0.025], ['t_crack', 0.014]],
+  [TER.CAMP]: [['t_pebble', 0.02], ['t_rubble', 0.008]],
+  [TER.SAND]: [['t_ripple', 0.008], ['t_pebble', 0.008], ['c_weed', 0.005], ['c_bonebit', 0.002]],
+  [TER.DUNE]: [['t_ripple', 0.01], ['c_bonebit', 0.0015]],
+  [TER.SNOW]: [['t_drift', 0.01], ['t_pebble', 0.003]],
+  [TER.ICE]: [['t_crack', 0.015]],
+  [TER.ASH]: [['c_ember', 0.008], ['t_pebble', 0.015], ['t_scorch', 0.002], ['c_bonebit', 0.003]],
+  [TER.BASALT]: [['t_pebble', 0.04], ['t_crack', 0.008]],
+  [TER.CRATER]: [['t_scorch', 0.003], ['t_pebble', 0.025], ['t_rubble', 0.005]],
+  [TER.MUD]: [['t_puddle', 0.012], ['t_tuft', 0.008]],
+  [TER.ROAD]: [['t_crack', 0.015], ['t_oil', 0.003], ['t_rubble', 0.004]],
+  [TER.CONCRETE]: [['t_crack', 0.015], ['t_rubble', 0.008]],
+  [TER.GLASS]: [['c_shard', 0.03]],
+};
+const DETAIL_MAX = 0.08;
+
+/** How much a tone pixel lightens or darkens the ground: mid grey leaves it, black halves it, white brightens it. */
+const TONE = new Float32Array(256);
+for (let l = 0; l < 256; l++) TONE[l] = l < 100 ? 0.45 + 0.55 * (l / 100) : 1 + ((l - 100) / 155) * 0.55;
+
+/** The ground under a prop (it lives in the chunk that holds its tile). */
+function terUnder(c: MapChunk, pr: Prop): number {
+  return c.ter[(Math.floor(pr.y) - c.cy * CH) * CH + Math.floor(pr.x) - c.cx * CH];
+}
+
 /** Smooth value noise (0..1) on a grid of `cell` tiles. */
 function vnoise(x: number, y: number, cell: number, seed: number): number {
   const fx0 = x / cell, fy0 = y / cell;
@@ -113,7 +181,12 @@ export class Terrain2D {
   private builtHD = 0;
   private hdCount = 0;
 
-  constructor(private map: GameMap) {}
+  constructor(private map: GameMap) {
+    // The prop sprites come from an image: once it's in, redraw the close-up ground with them.
+    loadWorldArt(() => {
+      for (const b of this.blocks.values()) if (b.hd2 || b.hd4) b.hdStale = true;
+    });
+  }
 
   setMap(map: GameMap): void {
     this.map = map;
@@ -323,11 +396,146 @@ export class Terrain2D {
         }
       }
     }
+    this.stampDetails(d, bx, by, f, tb, ob);
     const out = document.createElement('canvas');
     out.width = S;
     out.height = S;
-    out.getContext('2d')!.putImageData(img, 0, 0);
+    const ctx = out.getContext('2d')!;
+    ctx.putImageData(img, 0, 0);
+    this.stampSprites(ctx, bx, by, f);
     return out;
+  }
+
+  /**
+   * Scatters small details over a high-resolution block's open ground (tufts on grass, pebbles and cracks on dirt,
+   * drifts on snow, embers in ash...), each tile's by its own hash so neighbouring blocks agree on the ones across
+   * their edge. Tone details shade the soil under them; colour ones replace it.
+   */
+  private stampDetails(d: Uint8ClampedArray, bx: number, by: number, f: number, tb: Uint8Array, ob: Uint8Array): void {
+    if (!GROUND.ready) return;
+    const S = BLOCK * f, B2 = BLOCK + 2, M = 4;
+    const x0 = bx * BLOCK, y0 = by * BLOCK;
+    for (let ty = -M; ty < BLOCK + M; ty++) {
+      for (let tx = -M; tx < BLOCK + M; tx++) {
+        const wx = x0 + tx, wy = y0 + ty;
+        const h = hash2(wx, wy, 131);
+        if (h >= DETAIL_MAX) continue;
+        const inner = tx >= -1 && ty >= -1 && tx <= BLOCK && ty <= BLOCK;
+        const t = inner ? tb[(ty + 1) * B2 + tx + 1] : this.map.getTer(wx, wy);
+        const list = DETAILS[t];
+        if (!list) continue;
+        if (inner ? ob[(ty + 1) * B2 + tx + 1] : this.map.getObs(wx, wy)) continue;
+        let fam = '';
+        let acc = 0;
+        for (const [name, p] of list) {
+          acc += p;
+          if (h < acc) {
+            fam = name;
+            break;
+          }
+        }
+        if (!fam) continue;
+        const names = GROUND.family(fam);
+        if (!names.length) continue;
+        const px = GROUND.pixels(names[Math.floor(hash2(wx, wy, 137) * names.length)], f);
+        if (!px) continue;
+        const tone = fam.startsWith('t_');
+        const ox = Math.round((tx + hash2(wx, wy, 139)) * f) - px.ax, oy = Math.round((ty + hash2(wx, wy, 141)) * f) - px.ay;
+        const src = px.data;
+        for (let yy = 0; yy < px.h; yy++) {
+          const y = oy + yy;
+          if (y < 0 || y >= S) continue;
+          for (let xx = 0; xx < px.w; xx++) {
+            const x = ox + xx;
+            if (x < 0 || x >= S) continue;
+            const i = (yy * px.w + xx) * 4;
+            if (src[i + 3] < 128) continue;
+            const q = (y * S + x) * 4;
+            if (tone) {
+              const k = TONE[(src[i] * 77 + src[i + 1] * 150 + src[i + 2] * 29) >> 8];
+              d[q] *= k;
+              d[q + 1] *= k;
+              d[q + 2] *= k;
+            } else {
+              d[q] = src[i];
+              d[q + 1] = src[i + 1];
+              d[q + 2] = src[i + 2];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Stamps the sprites standing on a high-resolution block, with their shadows, south over north: the props, a tree
+   * crown for every few metres of wood or hedgerow, a boulder on each boulder tile. Those just outside whose sprites
+   * reach in are drawn too (the neighbouring block draws the rest).
+   */
+  private stampSprites(x: CanvasRenderingContext2D, bx: number, by: number, f: number): void {
+    const x0 = bx * BLOCK, y0 = by * BLOCK, S = BLOCK * f;
+    const list: { px: number; py: number; s: AtlasSprite }[] = [];
+    const add = (wx: number, wy: number, s: AtlasSprite | null): void => {
+      if (!s) return;
+      const px = Math.round((wx - x0) * f), py = Math.round((wy - y0) * f);
+      const w = s.shadow ? s.shadow.width : s.w, h = s.shadow ? s.shadow.height : s.h;
+      if (px - s.ax > S || py - s.ay > S || px - s.ax + w < 0 || py - s.ay + h < 0) return;
+      list.push({ px, py, s });
+    };
+    // The biggest prop reaches about 12 m either way at 4 pixels a metre (twice that at 2).
+    if (PROPS.ready) {
+      const M = Math.ceil(48 / f) + 2;
+      for (let cy = Math.floor((y0 - M) / CH); cy <= Math.floor((y0 + BLOCK + M) / CH); cy++) {
+        for (let cx = Math.floor((x0 - M) / CH); cx <= Math.floor((x0 + BLOCK + M) / CH); cx++) {
+          if (!this.map.inside(cx * CH, cy * CH)) continue;
+          const c = this.map.chunk(cx, cy);
+          for (const pr of c.props) {
+            if (pr.gone) continue;
+            const t = terUnder(c, pr);
+            if (onPavement(t)) continue;
+            const name = propSpriteName(pr, t);
+            if (name) add(pr.x, pr.y, PROPS.sprite(name, f));
+          }
+        }
+      }
+    }
+    if (NATURE.ready) {
+      // Trees: in every 4 m cell of the wood, the tile with the lowest hash carries a crown.
+      const M = 16, C = 4;
+      const m = this.map;
+      for (let gy = Math.floor((y0 - M) / C); gy <= Math.floor((y0 + BLOCK + M) / C); gy++) {
+        for (let gx = Math.floor((x0 - M) / C); gx <= Math.floor((x0 + BLOCK + M) / C); gx++) {
+          // A cell lies inside one chunk (its size divides the chunk's): read the chunk's tiles directly.
+          if (!m.inside(gx * C, gy * C)) continue;
+          const c = m.chunk((gx * C) >> 5, (gy * C) >> 5);
+          let best = 2, bxT = 0, byT = 0;
+          for (let k = 0; k < C * C; k++) {
+            const tx = gx * C + (k % C), ty = gy * C + Math.floor(k / C);
+            const o = c.obs[((ty & 31) << 5) | (tx & 31)];
+            if (o === OBS.BOULDER) {
+              const hb = hash2(tx, ty, 151);
+              if (hb < BOULDER_SHARE) add(tx + 0.5, ty + 0.7, NATURE.sprite(boulderName(m.getTer(tx, ty), m.getZone(tx, ty), hb / BOULDER_SHARE), f));
+            }
+            if (o !== OBS.TREE) continue;
+            const h = hash2(tx, ty, 149);
+            if (h < best) {
+              best = h;
+              bxT = tx;
+              byT = ty;
+            }
+          }
+          if (best > 1) continue;
+          const h2 = hash2(bxT, byT, 153);
+          add(bxT + 0.5, byT + 0.5, NATURE.sprite(crownName(m.getTer(bxT, byT), m.getOh(bxT, byT), h2), f));
+        }
+      }
+    }
+    if (!list.length) return;
+    list.sort((a, b) => a.py - b.py || a.px - b.px);
+    x.globalAlpha = 0.32;
+    for (const { px, py, s } of list) if (s.shadow) x.drawImage(s.shadow, px - s.ax, py - s.ay);
+    x.globalAlpha = 1;
+    for (const { px, py, s } of list) x.drawImage(s.sheet, s.sx, s.sy, s.w, s.h, px - s.ax, py - s.ay, s.w, s.h);
   }
 
   private build(bx: number, by: number): { canvas: HTMLCanvasElement; px: Uint8ClampedArray; tb: Uint8Array; ob: Uint8Array } {
@@ -446,7 +654,11 @@ export class Terrain2D {
         this.put(d, x, y, r, g, b);
       }
     }
-    this.drawProps(d, bx, by, x0, y0);
+    // Debris props are baked in for every view; the sprite props only as dots in the far view (up close the
+    // high-resolution blocks stamp their sprites over clean ground).
+    this.drawProps(d, bx, by, x0, y0, false);
+    const ground = new Uint8ClampedArray(d);
+    this.drawProps(d, bx, by, x0, y0, true);
     const out = document.createElement('canvas');
     out.width = BLOCK;
     out.height = BLOCK;
@@ -459,7 +671,7 @@ export class Terrain2D {
       tb[y * B2 + x] = ter[i];
       ob[y * B2 + x] = obs[i] && obs[i] !== OBS.TREE ? 1 : 0;
     }
-    return { canvas: out, px: new Uint8ClampedArray(d), tb, ob };
+    return { canvas: out, px: ground, tb, ob };
   }
 
   /** Writes a pixel with a little extra saturation and contrast (the wasteland should pop, not wash out). */
@@ -578,8 +790,8 @@ export class Terrain2D {
     return [r * k, g * k, b * k];
   }
 
-  /** Props: a few shaded pixels each, with a shadow. */
-  private drawProps(d: Uint8ClampedArray, bx: number, by: number, x0: number, y0: number): void {
+  /** Props as a few shaded pixels each, with a shadow: the debris ones, or (far view) the ones with sprites. */
+  private drawProps(d: Uint8ClampedArray, bx: number, by: number, x0: number, y0: number, sprites: boolean): void {
     const set = (qx: number, qy: number, c: RGB | [number, number, number], mul = 1): void => {
       if (qx < 0 || qy < 0 || qx >= BLOCK || qy >= BLOCK) return;
       const q = (qy * BLOCK + qx) * 4;
@@ -602,11 +814,9 @@ export class Terrain2D {
           if (pr.gone) continue;
           const p = PROP[pr.kind];
           if (!p) continue;
+          const t = terUnder(c, pr);
+          if (onPavement(t) || !!propSpriteName(pr, t) !== sprites) continue;
           const px = Math.floor(pr.x) - x0, py = Math.floor(pr.y) - y0;
-          if (px >= 0 && py >= 0 && px < BLOCK && py < BLOCK) {
-            const t = this.ter[(py + PAD) * W + px + PAD];
-            if (t === TER.ROAD || t === TER.METAL || t === TER.CONCRETE) continue;
-          }
           const s = Math.max(1, Math.round(pr.s));
           const w = p.w * s, h = p.h * s;
           for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) darken(px + xx + 1, py + yy + 1);
