@@ -4,6 +4,7 @@ import { craterZone, DIVOT, LOCATIONS, locationById, WORLD_KM } from '../src/sha
 import { CH, OBS, TER, TRACTION, ZONE } from '../src/shared/map';
 import { generateWorld, HANGAR, threatAt, threatTier } from '../src/shared/mapgen';
 import { circleBlocked, findPath, losClear, moveCircle } from '../src/shared/motion';
+import { FORWARD } from '../src/shared/compound';
 import { game } from './helpers';
 
 const gen = generateWorld(1234);
@@ -119,11 +120,11 @@ describe('The Crater', () => {
 });
 
 describe('motion', () => {
-  /** An obstacle tile with open ground west of it, near the hangar. */
+  /** An obstacle tile with open ground west of it, out past the Mega Hangar's front. */
   function obstacleWithRoom(): [number, number] {
     const m = gen.map;
     const free = (a: number, b: number): boolean => !m.blocked(a, b, 'ground');
-    const x0 = Math.floor(H.x), y0 = Math.floor(H.y + HANGAR.d / 2 + 400);
+    const x0 = Math.floor(H.x), y0 = Math.floor(H.y + FORWARD.y1 + 500);
     for (let y = y0 - 400; y < y0 + 400; y++) {
       for (let x = x0 - 400; x < x0 + 400; x++) {
         if (m.getObs(x, y) && free(x - 1, y) && free(x - 2, y) && free(x - 3, y) && free(x - 2, y - 1) && free(x - 2, y + 1) && !m.solid(x + 3, y) && !m.solid(x - 3, y)) return [x, y];

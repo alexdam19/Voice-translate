@@ -1,15 +1,19 @@
 import { hash2 } from './rng';
 
 /**
- * The Mega Hangar's compound: a walled town round the Hangar, laid out by hand. Everything here is in metres
- * relative to the Hangar's centre (x east, y south); the Hangar itself is 700 x 420 with its great door facing south.
+ * The Mega Hangar's compound: a walled military base round the Hangar, laid out by hand. Everything here is in
+ * metres relative to the Hangar's centre (x east, y south); the Hangar itself is 700 x 420 with its great door facing
+ * south.
  *
  *  - A fortified wall 8 m thick (a Titan can neither crush nor climb it) with a guard tower every 160 m and one big
  *    gate in the south wall, 140 m wide, flanked by two gate towers. Only the gate lets anything in or out.
- *  - East of the Hangar, the town: fuel tanks, barracks, a workshop and a canteen, streets of container homes, the
- *    market square with its stalls, a clinic, a water tower, the radio mast, greenhouses, a warehouse, the armory.
+ *  - East of the Hangar, the garrison: fuel tanks, barracks, the workshop and the mess, rows of Quonset huts, the
+ *    parade ground with its flagpole, four gunship pads, the clinic, the water tower, the radio mast, ammunition
+ *    bunkers, the warehouse, the motor pool with its tanks and trucks in rows, the armory.
  *  - West, the docks: three pads where other crawler bases park, with their workshops and stores.
  *  - Down the middle, a wide lane from the Hangar door to the gate for the Titans, gatehouses by the gate.
+ *  - Outside the gate, the front: gun bunkers and dug-in tanks either side of the exit lane, sandbag lines, rows of
+ *    tank traps and searchlight masts. They hold the ground in front of the gate so the ships can get out.
  */
 
 export const COMPOUND = {
@@ -27,7 +31,8 @@ export const COMPOUND = {
 
 export type StructKind =
   | 'tank' | 'barracks' | 'workshop' | 'bar' | 'home' | 'stall' | 'statue' | 'watertower' | 'clinic' | 'mast'
-  | 'warehouse' | 'greenhouse' | 'garage' | 'armory' | 'gatehouse' | 'command' | 'depot' | 'store' | 'mess';
+  | 'warehouse' | 'greenhouse' | 'garage' | 'armory' | 'gatehouse' | 'command' | 'depot' | 'store' | 'mess'
+  | 'quonset' | 'ammo' | 'flagpole' | 'bunker' | 'sandbag' | 'hedgehog' | 'searchlight';
 
 export interface Struct {
   x0: number;
@@ -48,13 +53,12 @@ function layout(): Struct[] {
     S(540, -416, 730, -360, 16, 'barracks'),
     S(396, -330, 520, -262, 18, 'workshop'),
     S(560, -330, 680, -272, 12, 'bar'),
-    S(560, 275 - 5, 570, 275 + 5, 12, 'statue'),
+    S(470, 196, 473, 199, 64, 'flagpole'),
     S(400, 410, 416, 426, 52, 'watertower'),
     S(440, 404, 560, 480, 14, 'clinic'),
     S(690, 410, 698, 418, 70, 'mast'),
     S(590, 440, 736, 560, 20, 'warehouse'),
-    S(396, 520, 560, 548, 8, 'greenhouse'), S(396, 566, 560, 594, 8, 'greenhouse'),
-    S(396, 640, 520, 740, 18, 'garage'),
+    S(396, 520, 470, 550, 10, 'ammo'), S(486, 520, 560, 550, 10, 'ammo'), S(396, 566, 470, 596, 10, 'ammo'), S(486, 566, 560, 596, 10, 'ammo'),
     S(560, 620, 736, 700, 16, 'armory'),
     S(560, 740, 736, 800, 14, 'barracks'),
     S(396, 790, 520, 850, 12, 'garage'),
@@ -73,18 +77,73 @@ function layout(): Struct[] {
     for (let k = 0; k < 7; k++) {
       if (hash2(k, r, 4401) < 0.16) continue;
       const x0 = 396 + k * 48, y0 = -230 + r * 48;
-      L.push(S(x0, y0, x0 + 34, y0 + 30, 10 + Math.floor(hash2(k, r, 4402) * 3) * 4, 'home'));
+      L.push(S(x0, y0, x0 + 34, y0 + 30, 10 + Math.floor(hash2(k, r, 4402) * 2) * 2, 'quonset'));
     }
-  }
-  // Market stalls round the square.
-  for (let k = 0; k < 12; k++) {
-    L.push(S(410 + k * 26, 176, 426 + k * 26, 186, 4, 'stall'));
-    L.push(S(410 + k * 26, 364, 426 + k * 26, 374, 4, 'stall'));
   }
   return L;
 }
 
 export const STRUCTS: Struct[] = layout();
+
+/** The gunships' landing pads (centres), 40 m across, east of the parade ground. */
+export const HELIPADS: { x: number; y: number }[] = [{ x: 606, y: 236 }, { x: 684, y: 236 }, { x: 606, y: 318 }, { x: 684, y: 318 }];
+
+/** The parade ground (where the garrison drills) and the motor pool's hardstanding. */
+export const PARADE = { x0: 404, y0: 190, x1: 556, y1: 362 };
+export const MOTOR_POOL = { x0: 392, y0: 612, x1: 548, y1: 776 };
+
+/**
+ * The front: the defended ground outside the main gate, either side of the exit lane (which stays clear for the
+ * ships): bunkers with twin guns, dug-in tanks behind sandbag horseshoes, a sandbag line, rows of tank traps and
+ * searchlight masts by the gate.
+ */
+export const FORWARD = { x0: -470, x1: 470, y0: 1000, y1: 1330, lane: 110 } as const;
+
+export interface FrontGun {
+  x: number;
+  y: number;
+  kind: 'bunker' | 'tank';
+}
+
+function front(): { structs: Struct[]; guns: FrontGun[] } {
+  const L: Struct[] = [];
+  const guns: FrontGun[] = [];
+  for (const sx of [-1, 1]) {
+    for (const [bx, by] of [[175, 1052], [345, 1076]]) {
+      const x = sx * bx;
+      L.push(S(x - 11, by - 7, x + 11, by + 7, 12, 'bunker'));
+      guns.push({ x, y: by, kind: 'bunker' });
+    }
+    for (const [tx, ty] of [[255, 1150], [420, 1152]]) {
+      const x = sx * tx;
+      // A sandbag horseshoe open to the gate, the tank sitting in it.
+      L.push(S(x - 12, ty + 8, x + 12, ty + 10, 4, 'sandbag'));
+      L.push(S(x - 12, ty - 6, x - 10, ty + 8, 4, 'sandbag'));
+      L.push(S(x + 10, ty - 6, x + 12, ty + 8, 4, 'sandbag'));
+      guns.push({ x, y: ty, kind: 'tank' });
+    }
+    // The sandbag line, with gaps for the patrols.
+    for (let x = 130; x < 462; x += 66) L.push(S(Math.min(sx * x, sx * (x + 52)), 1212, Math.max(sx * x, sx * (x + 52)), 1215, 4, 'sandbag'));
+    // Tank traps, three staggered rows.
+    for (let row = 0; row < 3; row++) {
+      for (let x = 140 + (row % 2) * 11; x < 462; x += 22) {
+        const cx = sx * x, cy = 1250 + row * 25;
+        L.push(S(cx - 1.5, cy - 1.5, cx + 1.5, cy + 1.5, 5, 'hedgehog'));
+      }
+    }
+    L.push(S(sx * 118 - 1.5, 1026, sx * 118 + 1.5, 1029, 40, 'searchlight'));
+  }
+  return { structs: L, guns };
+}
+
+const FRONT = front();
+export const FRONT_STRUCTS: Struct[] = FRONT.structs;
+export const FRONT_GUNS: FrontGun[] = FRONT.guns;
+
+/** In the front (the defended ground outside the gate)? */
+export function inFront(hx: number, hy: number, pad = 0): boolean {
+  return hx >= FORWARD.x0 - pad && hx < FORWARD.x1 + pad && hy >= FORWARD.y0 - pad && hy < FORWARD.y1 + pad;
+}
 
 /** The docking pads for visiting bases (centre, bow pointing north), 110 x 250. */
 export const PADS: { x: number; y: number }[] = [{ x: -560, y: -250 }, { x: -560, y: 160 }, { x: -560, y: 560 }];
@@ -135,9 +194,15 @@ export function inCompound(hx: number, hy: number, pad = 0): boolean {
  * What the compound puts on a tile (relative to the Hangar), or null outside it: the wall and its towers (the gate's
  * doors closed), the buildings, and the ground (the lane and the pads in plating, the rest concrete).
  */
-export function compoundTile(hx: number, hy: number): { t: 'concrete' | 'metal' | 'road'; o: 'bastion' | 'struct' | null; h: number } | null {
+export function compoundTile(hx: number, hy: number): { t: 'concrete' | 'metal' | 'road' | 'dirt'; o: 'bastion' | 'struct' | 'wall' | null; h: number } | null {
   const C = COMPOUND;
-  if (!inCompound(hx, hy)) return null;
+  if (!inCompound(hx, hy)) {
+    if (!inFront(hx, hy)) return null;
+    // The front: its works on churned dirt, the exit lane paved.
+    // (A Titan flattens sandbags and tank traps; the bunkers and masts stand.)
+    for (const s of FRONT_STRUCTS) if (hx + 0.5 >= s.x0 && hx + 0.5 < s.x1 && hy + 0.5 >= s.y0 && hy + 0.5 < s.y1) return { t: 'dirt', o: s.kind === 'sandbag' || s.kind === 'hedgehog' ? 'wall' : 'struct', h: s.h };
+    return { t: Math.abs(hx + 0.5) < 60 ? 'road' : 'dirt', o: null, h: 0 };
+  }
   for (const tw of TOWERS) if (Math.abs(hx + 0.5 - tw.x) < tw.half && Math.abs(hy + 0.5 - tw.y) < tw.half) return { t: 'concrete', o: 'bastion', h: tw.gate ? 64 : 48 };
   if (hx < C.x0 + C.wall || hx >= C.x1 - C.wall || hy < C.y0 + C.wall || hy >= C.y1 - C.wall) return { t: 'concrete', o: 'bastion', h: 30 };
   for (const s of STRUCTS) if (hx >= s.x0 && hx < s.x1 && hy >= s.y0 && hy < s.y1) return { t: 'concrete', o: 'struct', h: s.h };
@@ -147,11 +212,14 @@ export function compoundTile(hx: number, hy: number): { t: 'concrete' | 'metal' 
 }
 
 /**
- * Open ground where people go about their day (rectangles relative to the Hangar), weighted by how many live there:
- * the market square, the lane's edges, the Hangar's apron, the streets between the homes, round the pads.
+ * Open ground where people go about their day (rectangles relative to the Hangar), weighted by how many are there:
+ * the parade ground, the gunship pads, the motor pool, the lane's edges, the Hangar's apron, the streets between
+ * the huts, round the docking pads.
  */
-export const AREAS: { x0: number; y0: number; x1: number; y1: number; n: number; kind: 'market' | 'street' | 'apron' | 'dock' | 'lane' }[] = [
-  { x0: 404, y0: 192, x1: 726, y1: 360, n: 22, kind: 'market' },
+export const AREAS: { x0: number; y0: number; x1: number; y1: number; n: number; kind: 'parade' | 'pads' | 'motor' | 'street' | 'apron' | 'dock' | 'lane' }[] = [
+  { x0: 404, y0: 192, x1: 556, y1: 360, n: 24, kind: 'parade' },
+  { x0: 572, y0: 200, x1: 720, y1: 356, n: 6, kind: 'pads' },
+  { x0: 392, y0: 612, x1: 548, y1: 776, n: 6, kind: 'motor' },
   { x0: -150, y0: 240, x1: -112, y1: 980, n: 6, kind: 'lane' },
   { x0: 112, y0: 240, x1: 150, y1: 980, n: 6, kind: 'lane' },
   { x0: -320, y0: 214, x1: 320, y1: 300, n: 10, kind: 'apron' },

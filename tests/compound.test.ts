@@ -157,3 +157,31 @@ describe('a hull wedged in the compound', () => {
     expect(Math.hypot(p.x - g.gen.spawn.x, p.y - g.gen.spawn.y)).toBeLessThan(5);
   });
 });
+
+describe('the garrison', () => {
+  it('guns at the front shoot what comes at the gate; the gunships go up when a ship is cleared out and come home after', { timeout: 40000 }, () => {
+    const g = quiet();
+    const h = home(g)!;
+    run(g, 0.5);
+    // Signallers at the gate, a squad on the parade ground, sentries at the bunkers.
+    const kinds = new Set(g.compound.people.map((r) => r.kind));
+    for (const k of ['signal', 'soldier', 'officer', 'sentry', 'pilot']) expect(kinds.has(k as never)).toBe(true);
+    expect(g.compound.air.every((a) => a.state === 'parked')).toBe(true);
+    // A creature out in front of the bunkers gets shot.
+    const e = g.spawnEnemy('d_sand_rat', h.x + 175, h.y + COMPOUND.y1 + 260, 1);
+    e.hp = e.maxHp = 1e6;
+    run(g, 3);
+    expect(e.hp).toBeLessThan(1e6);
+    expect(g.compound.front.some((f) => Math.abs(f.aim - Math.PI / 2) > 0.01 || f.flash > 0)).toBe(true);
+    e.hp = 0;
+    // Clearance for a departure: the gunships lift off...
+    requestClearance(g, 'player');
+    run(g, 12);
+    expect(g.compound.air.filter((a) => a.state !== 'parked').length).toBeGreaterThan(2);
+    expect(Math.max(...g.compound.air.map((a) => a.z))).toBeGreaterThan(20);
+    // ...and once it's quiet, come home and land.
+    g.compound.sortie = 0;
+    run(g, 60, () => g.compound.air.every((a) => a.state === 'parked'));
+    expect(g.compound.air.every((a) => a.state === 'parked')).toBe(true);
+  });
+});

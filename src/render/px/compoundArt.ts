@@ -1,4 +1,4 @@
-import { COMPOUND, STRUCTS, type Struct, type Tower } from '../../shared/compound';
+import { COMPOUND, FRONT_STRUCTS, STRUCTS, type Struct, type Tower } from '../../shared/compound';
 import { pxMini } from '../../ui/pixfont';
 import { ctx2d, hash2, makeCanvas, shade } from './pixels';
 
@@ -654,11 +654,105 @@ function paintStatue(c: C, w: number, d: number, f: number): void {
   R(c, cx - 3, d + 1, 6, Math.max(1, f - 2), '#b89a50');
 }
 
+/** A Quonset hut: a half-cylinder of corrugated steel along its length, lit on its north slope, end walls and doors. */
+function paintQuonset(c: C, w: number, d: number, f: number, seed: number): void {
+  const r = rnd(seed);
+  const base = ['#6a7048', '#5e6a50', '#707060', '#6a6250'][Math.floor(r() * 4)];
+  for (let y = 0; y < d; y++) {
+    const t = (y + 0.5) / d;
+    // The curve: brightest a third of the way down from the north edge, dark at the south eave.
+    const k = 0.55 + 0.5 * Math.sin(Math.PI * Math.min(1, t * 1.25)) * (1.1 - t * 0.6) - (t > 0.85 ? 0.25 : 0);
+    R(c, 0, y, w, 1, shade(base, Math.max(-0.5, Math.min(0.35, k - 0.8))));
+  }
+  for (let x = 2; x < w - 2; x += 3) R(c, x, 1, 1, d - 2, 'rgba(0,0,0,0.16)');
+  R(c, 0, 0, 3, d, shade(base, -0.3));
+  R(c, w - 3, 0, 3, d, shade(base, -0.35));
+  R(c, 0, 0, w, 1, shade(base, 0.2));
+  // Roof vents and a stove pipe.
+  for (let k = 0; k < 2; k++) disc(c, w * (0.3 + k * 0.4), d * 0.32, 1.6, '#2a2c2e');
+  R(c, w * 0.8, d * 0.2, 2, 2, '#3a3a3a');
+  weather(c, w, d, seed, 3);
+  face(c, w, d, f, shade(base, -0.25), { win: '#28323c', lit: 0.3, doors: 1, door: '#3a2a1c', ribs: 3, seed });
+}
+
+/** An ammunition bunker: an earth-covered mound, a concrete headwall with a striped blast door. */
+function paintAmmo(c: C, w: number, d: number, f: number, seed: number): void {
+  for (let y = 0; y < d; y++) {
+    const t = (y + 0.5) / d;
+    const k = Math.sin(Math.PI * t);
+    R(c, 2, y, w - 4, 1, shade('#6a7040', 0.25 * k - 0.15 - t * 0.12));
+  }
+  weather(c, w, d, seed, 6);
+  const r = rnd(seed);
+  for (let k = 0; k < w * 0.6; k++) R(c, 3 + r() * (w - 6), r() * (d - 2), 1, 1, r() < 0.5 ? '#8a9050' : '#4a5030');
+  R(c, 0, d - 4, w, 4, '#8a8a84');
+  R(c, 0, d - 4, w, 1, '#a8a8a2');
+  face(c, w, d, f, '#6a6a64', { seed });
+  const dw = Math.min(w * 0.4, 20);
+  for (let k = 0; k < dw; k += 2) R(c, w / 2 - dw / 2 + k, d + 1, 2, Math.max(1, f - 1), Math.floor(k / 2) % 2 ? '#1a1a1a' : '#d8a020');
+  R(c, w * 0.12, d + 1, 4, 2, '#c02020');
+}
+
+/** The flagpole's concrete base (the flag flies live overhead). */
+function paintFlagpole(c: C, w: number, d: number): void {
+  slab(c, 0, 0, w, d, '#9a9890');
+  disc(c, w / 2, d / 2, 1.2, '#d8d8d0');
+}
+
+/** A gun bunker: a concrete pillbox under a camouflage net, sandbags round it, firing slits south (its twin gun turns
+ * live on the roof). */
+function paintBunker(c: C, w: number, d: number, f: number, seed: number): void {
+  slab(c, 0, 0, w, d, '#7a786e');
+  const r = rnd(seed);
+  for (let k = 0; k < (w * d) / 40; k++) {
+    c.fillStyle = r() < 0.5 ? 'rgba(70,82,44,0.55)' : 'rgba(96,78,46,0.5)';
+    c.beginPath();
+    c.ellipse(r() * w, r() * d, 3 + r() * 5, 2 + r() * 3, r() * 3, 0, Math.PI * 2);
+    c.fill();
+  }
+  sandbags(c, 0, 0, w, d);
+  disc(c, w / 2, d / 2, Math.min(w, d) * 0.3, '#3a3c3e');
+  disc(c, w / 2, d / 2, Math.min(w, d) * 0.24, '#565a5e');
+  face(c, w, d, f, '#5e5c54', { seed });
+  for (let x = 6; x < w - 6; x += 10) R(c, x, d + Math.max(1, Math.floor(f * 0.35)), 6, Math.max(1, Math.floor(f * 0.2)), '#0e0e10');
+}
+
+function paintSandbag(c: C, w: number, d: number, f: number, seed: number): void {
+  const col = '#a89868';
+  for (let y = 0; y < d; y += 2) {
+    for (let x = ((y / 2) % 2) * 1.5; x < w; x += 3) {
+      R(c, x, y, 2.6, 1.8, hash2(x, y, seed) > 0.5 ? col : shade(col, -0.12));
+      R(c, x, y, 2.6, 0.6, shade(col, 0.2));
+    }
+  }
+  face(c, w, d, f, shade(col, -0.25), { seed });
+}
+
+/** A Czech hedgehog: three steel beams welded across each other. */
+function paintHedgehog(c: C, w: number, d: number, f: number): void {
+  line(c, 0.5, 0.5, w - 0.5, d - 0.5, '#2a2c30', 1.6);
+  line(c, w - 0.5, 0.5, 0.5, d - 0.5, '#3a3d42', 1.6);
+  line(c, w / 2, 0, w / 2, d, '#4a4e54', 1.2);
+  R(c, w / 2 - 0.5, d / 2 - 0.5, 1, 1, '#8a8e94');
+  if (f > 0) R(c, w / 2 - 1, d, 2, f, '#2a2c30');
+}
+
+/** A searchlight mast's foot (the light and its beam are drawn live). */
+function paintSearchlight(c: C, w: number, d: number, f: number): void {
+  slab(c, 0, 0, w, d, '#4a4d54');
+  disc(c, w / 2, d / 2, Math.min(w, d) * 0.4, '#2a2c30');
+  if (f > 0) {
+    R(c, w / 2 - 1, d, 2, f, '#3a3d42');
+    for (let y = d + 2; y < d + f; y += 4) R(c, w / 2 - 2, y, 4, 1, '#5a5e66');
+  }
+}
+
 const PAINT: Record<Struct['kind'], (c: C, w: number, d: number, f: number, seed: number) => void> = {
   home: paintHome, stall: paintStall, tank: paintTank, watertower: paintWaterTower, mast: paintMast, barracks: paintBarracks,
   workshop: paintWorkshop, bar: paintBar, clinic: paintClinic, warehouse: paintWarehouse, greenhouse: paintGreenhouse,
   garage: paintGarage, armory: paintArmory, gatehouse: paintGatehouse, command: paintCommand, depot: paintDepot,
-  store: paintStore, mess: paintMess, statue: paintStatue,
+  store: paintStore, mess: paintMess, statue: paintStatue, quonset: paintQuonset, ammo: paintAmmo, flagpole: paintFlagpole,
+  bunker: paintBunker, sandbag: paintSandbag, hedgehog: paintHedgehog, searchlight: paintSearchlight,
 };
 
 const structCache: (Sprite | undefined)[] = [];
@@ -670,16 +764,30 @@ export const hasStructSprite = (i: number): boolean => !!structCache[i];
 export function structSprite(i: number): Sprite {
   const have = structCache[i];
   if (have) return have;
-  const s = STRUCTS[i];
+  const sp = paintStruct(STRUCTS[i], i);
+  structCache[i] = sp;
+  return sp;
+}
+
+const frontCache: (Sprite | undefined)[] = [];
+
+/** The sprite for FRONT_STRUCTS[i], the works outside the gate. */
+export function frontSprite(i: number): Sprite {
+  const have = frontCache[i];
+  if (have) return have;
+  const sp = paintStruct(FRONT_STRUCTS[i], 500 + i);
+  frontCache[i] = sp;
+  return sp;
+}
+
+function paintStruct(s: Struct, i: number): Sprite {
   const w = (s.x1 - s.x0) * ART_PX, d = (s.y1 - s.y0) * ART_PX, f = faceTiles(s.h) * ART_PX;
   const cv = makeCanvas(w, d + f);
   const c = ctx2d(cv);
   const seed = (Math.floor(s.x0 * 7 + s.y0 * 13) >>> 0) + i;
   PAINT[s.kind](c, w, d, f, seed);
   finish(cv, seed, s.kind === 'greenhouse' ? 0.03 : 0.07);
-  const sp = { c: cv, x: s.x0, y: s.y0 };
-  structCache[i] = sp;
-  return sp;
+  return { c: cv, x: s.x0, y: s.y0 };
 }
 
 // ---------------------------------------------------------------- the wall and its towers

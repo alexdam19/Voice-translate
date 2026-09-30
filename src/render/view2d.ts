@@ -29,6 +29,7 @@ import { drawColossus, type ColossusView } from './px/colossusDraw';
 import { prewarmColossi } from './px/colossusArt';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
+import { hero, heroFoot } from './px/heroes';
 import { quantizeSize } from './px/creaturesHD';
 import type { Aboard } from '../game/aboard';
 
@@ -1022,6 +1023,24 @@ export class View2D {
       if (flyer !== air || !this.near(a.x, a.y, 10)) continue;
       const real = a.kind === 'dragon' ? 14 : a.kind === 'mech' ? 5 : a.kind === 'minitank' ? 6 : a.kind === 'buggy' ? 4 : a.kind === 'jet' ? 8 : a.kind === 'drone' ? 2 : a.kind === 'mine' ? 1 : 1.2;
       const size = Math.max(a.kind === 'mine' ? 6 : 10, real * ppm * 1.4);
+      if (a.kind === 'marine' || a.kind === 'heavy') {
+        // Soldiers are painted figures, upright, facing the way they're going (rifles up when they have a target).
+        const S = Math.max(22, Math.min(48, Math.round(1.8 * ppm * 3.2 / 4) * 4));
+        const moving = this.headingOf(a.id + 1e9, a.x, a.y, a.rot);
+        const hx = Math.cos(moving + this.th);
+        const pose = a.targetId > 0 && a.cd < 0.6 ? 'aim' : 'walk';
+        const img = hero({ role: a.kind === 'heavy' ? 'heavy' : a.id % 3 === 0 ? 'rifleman' : 'marine', seed: a.id }, pose, Math.floor(a.anim * 7), S);
+        const ft = heroFoot(S);
+        const sx = Math.round(this.bx(a.x, a.y)), sy = Math.round(this.by(a.x, a.y));
+        c.fillStyle = 'rgba(0,0,0,0.3)';
+        c.fillRect(sx - Math.round(S * 0.2), sy - 1, Math.round(S * 0.4), 2);
+        if (hx < 0) {
+          c.setTransform(-1, 0, 0, 1, sx, sy);
+          c.drawImage(img, -(img.width - ft.x), -ft.y);
+          c.setTransform(1, 0, 0, 1, 0, 0);
+        } else c.drawImage(img, sx - ft.x, sy - ft.y);
+        continue;
+      }
       const vehicle = a.kind === 'buggy' || a.kind === 'minitank' || a.kind === 'jet' || a.kind === 'drone' || a.kind === 'dragon';
       const rot = vehicle ? a.rot : this.headingOf(a.id + 1e9, a.x, a.y, a.rot);
       const img = allySprite(a.kind, size, Math.floor(a.anim));

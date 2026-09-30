@@ -7,11 +7,14 @@ import { compIndex, FUEL_MAX } from '../game/systems/titan';
 import { CRUDE_MAX, refineRate } from '../game/systems/fuel';
 import { armRoofOrder, cancelOrder, createOrder, MAX_ORDERS, mountKinds, planFetches, refitOrder, stepLabel, upgradeOrder, type OrderStep } from '../game/systems/workorders';
 import type { ModuleInst } from '../game/tank';
-import { HAIRS_HD, hatKindFor, personHD, type Look, type PoseHD } from '../render/px/people';
+import { type PoseHD } from '../render/px/people';
+import { hero, heroFoot, roleForAct } from '../render/px/heroes';
+
+/** Crew figures aboard are painted this many pixels square. */
+const HERO_S = 36;
 import { discAt, drawCorridor, drawRoom, glowAt, IA, type Slots } from '../render/px/interiorArt';
 import { SHIP_ART, shipView } from '../render/px/shipArt';
 import { drawService } from '../render/px/deckArt';
-import type { Act } from '../game/aboard';
 import { hash2 } from '../render/px/pixels';
 import { esc, h } from './dom';
 import { pxMini } from './pixfont';
@@ -72,9 +75,6 @@ function sideTops(img: HTMLCanvasElement): Int16Array {
   edges.set(img, e);
   return e;
 }
-/** Hat colours by what people are doing. */
-const HAT_COL: Partial<Record<Act, string>> = { gun: '#5a646e', soldier: '#56663a', engine: '#f0b020', build: '#ff8a20', weld: '#ff8a20', drill: '#f0b020', mechanic: '#4a90d0', haul: '#f0b020', console: '#1c3048', hose: '#d02818', pump: '#d02818', fix: '#d02818' };
-
 /** The high-res pose for what someone's doing where they are. */
 function poseHD(pr: Person): PoseHD {
   switch (pr.act) {
@@ -861,13 +861,10 @@ export class Interior {
       } else loose.push(pr);
     }
     const draw = (pr: Person, x: number, floor: number, pose: PoseHD): void => {
-      const lk: Look = {
-        uniform: pr.color, hat: hatKindFor(pr.act), hatCol: HAT_COL[pr.act] ?? '#5a646e', hair: HAIRS_HD[pr.id % HAIRS_HD.length], skin: pr.id % 4,
-        stripe: pr.color === '#ff4fd8' || pr.color === '#c6ff00' || pr.act === 'build' ? '#e8f040' : undefined,
-      };
-      const img = personHD(pose, Math.floor(pr.t * 7), lk);
+      const img = hero({ role: roleForAct(pr.act, pr.id), seed: pr.id, color: pr.color }, pose, Math.floor(pr.t * 7), HERO_S);
       const flip = pr.dir < 0;
-      const dx = Math.round(x - img.width / 2), dy = Math.round(floor - img.height);
+      const ft = heroFoot(HERO_S);
+      const dx = Math.round(flip ? x - (img.width - ft.x) : x - ft.x), dy = Math.round(floor - ft.y);
       if (flip) {
         c.save();
         c.translate(dx + img.width, dy);
@@ -891,13 +888,13 @@ export class Interior {
       const rest = list.filter((q) => q.act !== 'sleep' && q.act !== 'eat');
       sleepers.slice(0, sl?.beds.length ?? 0).forEach((q, i) => {
         const b = sl!.beds[i];
-        const img = personHD('sleep', 0, { uniform: q.color, hat: 'none', hatCol: '#000', hair: HAIRS_HD[q.id % HAIRS_HD.length], skin: q.id % 4 });
-        c.drawImage(img, Math.round(b.x - img.width / 2), Math.round(b.y - img.height + 4));
+        const img = hero({ role: roleForAct('sleep', q.id), seed: q.id, color: q.color }, 'sleep', 0, HERO_S);
+        c.drawImage(img, Math.round(b.x - img.width / 2), Math.round(b.y - img.height + 5));
         if (Math.floor(this.time * 0.7 + q.id) % 5 === 0) pxMini(c, 'z', b.x + 8, b.y - 12, '#b0c4de', 'left', null);
       });
       eaters.slice(0, sl?.seats.length ?? 0).forEach((q, i) => draw(q, sl!.seats[i].x, floor, 'sit'));
       // Everyone else across the room (at its machines first), as many as fit; the rest are a number on the door.
-      const fit = Math.max(1, Math.floor((xb - xa) / 9));
+      const fit = Math.max(1, Math.floor((xb - xa) / 13));
       const shown = rest.slice(0, fit);
       shown.forEach((q, i) => {
         const post = sl?.posts[i];
@@ -930,10 +927,11 @@ export class Interior {
         const x = sv.xa + 9 + ((Math.sin(ph) + 1) / 2) * span;
         const still = Math.abs(Math.cos(ph)) < 0.3;
         const pose: PoseHD = still ? (hash2(seed, 3) > 0.5 ? 'type' : 'stand') : 'walk';
-        const lk: Look = { uniform: OFF[seed % OFF.length], hat: 'none', hatCol: '#000', hair: HAIRS_HD[seed % HAIRS_HD.length], skin: seed % 4 };
-        const img = personHD(pose, Math.floor(this.time * 7 + seed), lk);
-        const dx = Math.round(x - img.width / 2), dy = Math.round(floor - img.height);
-        if (Math.cos(ph) < 0) {
+        const img = hero({ role: seed % 3 === 0 ? 'deckhand' : 'crew', seed, color: OFF[seed % OFF.length] }, pose, Math.floor(this.time * 7 + seed), HERO_S);
+        const ft = heroFoot(HERO_S);
+        const left = Math.cos(ph) < 0;
+        const dx = Math.round(left ? x - (img.width - ft.x) : x - ft.x), dy = Math.round(floor - ft.y);
+        if (left) {
           c.save();
           c.translate(dx + img.width, dy);
           c.scale(-1, 1);

@@ -1,7 +1,7 @@
 import { MAP_SIZE } from './constants';
 import { craterNoise, craterThreat, craterZone, DIVOT, inLake, LOCATIONS, locationById, RIVERS, ROAD_LINKS, ZONE_INFO } from './crater';
 import { CH, GameMap, OBS, TER, ZONE, type Building, type MapChunk } from './map';
-import { COMPOUND, compoundTile, inCompound } from './compound';
+import { COMPOUND, compoundTile, FORWARD, inCompound, inFront } from './compound';
 import { Perlin } from './noise';
 import { RNG, hash2 } from './rng';
 
@@ -431,7 +431,7 @@ export class OpenWorld implements WorldGen {
   private inNamed(x: number, y: number, pad: number): boolean {
     for (const m of this.regions) {
       if (m.kind === 'divot' || m.kind === 'lake' || m.kind === 'spires') continue;
-      if (m.kind === 'hangar' ? inCompound(x - m.x, y - m.y, pad + 60) : Math.hypot(m.x - x, m.y - y) < m.r + pad) return true;
+      if (m.kind === 'hangar' ? inCompound(x - m.x, y - m.y, pad + 60) || inFront(x - m.x, y - m.y, pad + 60) : Math.hypot(m.x - x, m.y - y) < m.r + pad) return true;
     }
     return false;
   }
@@ -627,7 +627,7 @@ export class OpenWorld implements WorldGen {
     const zs = new Uint8Array(81);
     for (let j = 0; j <= 8; j++) for (let i = 0; i <= 8; i++) zs[j * 9 + i] = this.zoneOf(x0 + i * 4, y0 + j * 4);
     const h = this.hangar;
-    const nearHangar = Math.abs(mx - h.x) < COMPOUND.x1 + 60 && my - h.y > COMPOUND.y0 - 60 && my - h.y < COMPOUND.y1 + 60;
+    const nearHangar = Math.abs(mx - h.x) < COMPOUND.x1 + 60 && my - h.y > COMPOUND.y0 - 60 && my - h.y < FORWARD.y1 + 60;
     const divD = Math.hypot(mx - DIVOT.x, my - DIVOT.y);
     const seenBld = new Map<string, 'solid' | 'ruin' | 'none'>();
     for (let ly = 0; ly < CH; ly++) {
@@ -879,8 +879,8 @@ export class OpenWorld implements WorldGen {
           const W = HANGAR.w / 2, D = HANGAR.d / 2;
           const ct = compoundTile(x - h.x, y - h.y);
           if (ct) {
-            t = ct.t === 'metal' ? TER.METAL : ct.t === 'road' ? TER.ROAD : TER.CONCRETE;
-            o = ct.o === 'bastion' ? OBS.BASTION : ct.o === 'struct' ? OBS.STRUCT : 0;
+            t = ct.t === 'metal' ? TER.METAL : ct.t === 'road' ? TER.ROAD : ct.t === 'dirt' ? TER.DIRT : TER.CONCRETE;
+            o = ct.o === 'bastion' ? OBS.BASTION : ct.o === 'struct' ? OBS.STRUCT : ct.o === 'wall' ? OBS.WALL : 0;
             oh = ct.o ? ct.h : 0;
           }
           // The Hangar itself.
@@ -948,6 +948,8 @@ export class OpenWorld implements WorldGen {
         const x = x0 + lx, y = y0 + ly;
         const z = c.zone[i];
         if (z === ZONE.EDGE || c.obs[i] || c.ter[i] === TER.LAVA || c.ter[i] === TER.ACID || c.ter[i] === TER.ROAD || c.ter[i] === TER.WATER || c.ter[i] === TER.METAL) continue;
+        // The Mega Hangar's base and its front are kept clear.
+        if (nearHangar && (inCompound(x - h.x, y - h.y) || inFront(x - h.x, y - h.y))) continue;
         const hs = hash2(x, y, seed + 101);
         if (hs > 1 / 90) continue;
         const list = PROPS[z];

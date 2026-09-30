@@ -1,6 +1,6 @@
 import type { Game } from '../game';
 import type { Tank } from '../tank';
-import { AREAS, COMPOUND, GATE, inCompound, PADS, TOWERS } from '../../shared/compound';
+import { AREAS, COMPOUND, FORWARD, FRONT_GUNS, GATE, HELIPADS, inCompound, inFront, PADS, PARADE, TOWERS } from '../../shared/compound';
 import { hardObs, OBS } from '../../shared/map';
 import { threatAt } from '../../shared/mapgen';
 import { ENEMIES } from '../enemyDefs';
@@ -17,15 +17,21 @@ import { pickKind } from './world';
  *  - THE TOWERS. Every tower on the wall has a gun crew: they shoot anything hostile in reach, inside or out.
  *  - SIEGES. Now and then, while you're near home, a horde comes for the compound. They make for the gate and claw
  *    at it; the towers (and your guns, over the wall) cut them down. Open the gate on them and they pour in.
- *  - PEOPLE. Traders and shoppers in the market, mechanics round the docks, workers on the apron, guards on the
- *    gate and walking the wall. When the sirens go they run for the Hangar.
+ *  - THE FRONT. Outside the gate, bunkers with twin guns and dug-in tanks hold the ground either side of the exit lane.
+ *  - GUNSHIPS. Four sit on their pads by the parade ground. When a ship is cleared out of the gate, or a horde comes,
+ *    they lift off: over the front to hold it, or out ahead of a departing Titan to clear its way, rockets and
+ *    chain guns on anything in reach. When it's quiet again they come home and land.
+ *  - PEOPLE. A squad drilling on the parade ground, pilots and mechanics on the pads and in the motor pool, workers
+ *    on the apron, guards on the gate and walking the wall, sentries at the bunkers, and flag signallers at the gate
+ *    waving the ships through. When the sirens go the others run for the Hangar and the soldiers bring their rifles
+ *    up.
  *  - OTHER BASES. Crawler bases from other crews dock on the west pads; now and then one leaves (asking for
  *    clearance like you do) and another rolls in.
  *
  * Only simulated while you're within a few kilometres; the doors' tiles on the map follow the gate.
  */
 
-export type PersonKind = 'civ' | 'trader' | 'mech' | 'guard' | 'worker';
+export type PersonKind = 'civ' | 'trader' | 'mech' | 'guard' | 'worker' | 'soldier' | 'officer' | 'signal' | 'pilot' | 'sentry';
 
 export interface Resident {
   x: number;
@@ -107,10 +113,36 @@ export const CAR_SIZE: Record<Car['kind'], { l: number; w: number; v: number }> 
   tanker: { l: 12, w: 3.6, v: 8 },
 };
 
+/** A gunship: parked on its pad, lifting off, out on station, coming home, landing. */
+export interface Gunship {
+  pad: number;
+  x: number;
+  y: number;
+  /** Height above the ground (m). */
+  z: number;
+  rot: number;
+  vx: number;
+  vy: number;
+  state: 'parked' | 'up' | 'out' | 'home' | 'down';
+  /** Orbit phase round its station. */
+  ph: number;
+  /** Chain gun and rocket cooldowns, muzzle flash, where the gun points, the rotor's turn. */
+  cd: number;
+  rcd: number;
+  flash: number;
+  aim: number;
+  rotor: number;
+}
+
 export interface CompoundState {
   inited: boolean;
   gate: GateState;
   towers: { cd: number; aim: number; flash: number }[];
+  /** The front's guns (bunkers and tanks, see FRONT_GUNS). */
+  front: { cd: number; aim: number; flash: number }[];
+  air: Gunship[];
+  /** Seconds the gunships stay out (a departure or a siege sends them up). */
+  sortie: number;
   people: Resident[];
   cars: Car[];
   bases: GuestBase[];
@@ -130,6 +162,9 @@ export const newCompound = (): CompoundState => ({
   inited: false,
   gate: { open: 0, target: 0, idle: 0, req: null, applied: -1, deny: 0, hp: 1, clawT: 0, breach: 0 },
   towers: [],
+  front: [],
+  air: [],
+  sortie: 0,
   people: [],
   cars: [],
   bases: [],
@@ -153,7 +188,7 @@ export function home(g: Game): { x: number; y: number } | null {
 /** Is (x, y) solid wall or building of the compound (nothing gets through)? Cheap away from home. */
 export function hardAt(g: Game, x: number, y: number): boolean {
   const h = home(g);
-  if (!h || !inCompound(x - h.x, y - h.y, 12)) return false;
+  if (!h || !(inCompound(x - h.x, y - h.y, 12) || inFront(x - h.x, y - h.y, 12))) return false;
   const tx = Math.floor(x), ty = Math.floor(y);
   return g.map.inside(tx, ty) && hardObs(g.map.getObs(tx, ty));
 }
@@ -163,7 +198,7 @@ export function hullBlocked(g: Game, t: Tank): boolean {
   const h = home(g);
   if (!h) return false;
   const L = t.stats.length / 2, W = t.stats.width / 2;
-  if (!inCompound(t.x - h.x, t.y - h.y, L + 20)) return false;
+  if (!inCompound(t.x - h.x, t.y - h.y, L + 20) && !inFront(t.x - h.x, t.y - h.y, L + 20)) return false;
   const step = 5;
   for (let lx = -L; lx <= L + 0.01; lx += step) {
     for (const lz of [-W, W]) {
@@ -260,6 +295,8 @@ function answer(g: Game): void {
   }
   gate.target = 1;
   gate.idle = 0;
+  // The gunships go up to clear the way out.
+  cs.sortie = Math.max(cs.sortie, 75);
   g.hooks.toast(you ? 'GATE CONTROL: Clearance granted, Titan. Opening the main gate: roll through, we close behind you.' : `GATE CONTROL: ${req.who}, cleared. Opening the gate.`, '#40c4ff');
   g.hooks.sound('alarm', g.player.x, g.player.y, 0.25);
 }
@@ -294,15 +331,34 @@ function init(g: Game): void {
   const h = home(g)!;
   cs.inited = true;
   cs.towers = TOWERS.map(() => ({ cd: Math.random(), aim: Math.PI / 2, flash: 0 }));
+  cs.front = FRONT_GUNS.map(() => ({ cd: Math.random() * 2, aim: Math.PI / 2, flash: 0 }));
+  cs.air = HELIPADS.map((pd, i) => ({ pad: i, x: h.x + pd.x, y: h.y + pd.y, z: 0, rot: -Math.PI / 2, vx: 0, vy: 0, state: 'parked' as const, ph: i * 1.6, cd: 0, rcd: i, flash: 0, aim: 0, rotor: 0 }));
   // People, spread over the open ground by how many each place holds.
   let id = 0;
   AREAS.forEach((a, ai) => {
+    if (a.kind === 'parade') return;
     for (let k = 0; k < a.n; k++) {
-      const kind: PersonKind = a.kind === 'market' ? (k % 3 === 0 ? 'trader' : 'civ') : a.kind === 'dock' ? 'mech' : a.kind === 'apron' ? 'worker' : 'civ';
+      const kind: PersonKind = a.kind === 'dock' || a.kind === 'motor' ? 'mech' : a.kind === 'apron' ? 'worker' : a.kind === 'pads' ? (k % 2 ? 'pilot' : 'mech') : k % 4 === 0 ? 'soldier' : 'civ';
       const x = h.x + a.x0 + Math.random() * (a.x1 - a.x0), y = h.y + a.y0 + Math.random() * (a.y1 - a.y0);
       cs.people.push(person(kind, x, y, ai, id++));
     }
   });
+  const fixed = (kind: PersonKind, x: number, y: number, face: number): void => {
+    const r = person(kind, x, y, -1, id++);
+    r.post = { ax: x, ay: y, bx: x, by: y };
+    r.face = face;
+    cs.people.push(r);
+  };
+  // The drill squad on the parade ground, four ranks of six facing their sergeant under the flag.
+  for (let rank = 0; rank < 4; rank++) for (let file = 0; file < 6; file++) fixed('soldier', h.x + PARADE.x0 + 44 + file * 13, h.y + PARADE.y0 + 46 + rank * 16, -1);
+  fixed('officer', h.x + PARADE.x0 + 20, h.y + PARADE.y0 + 70, 1);
+  // Flag signallers either side of the lane, inside the gate and out at the front.
+  for (const sx of [-1, 1]) {
+    fixed('signal', h.x + sx * 78, h.y + COMPOUND.y1 - 40, -sx);
+    fixed('signal', h.x + sx * 80, h.y + COMPOUND.y1 + 34, -sx);
+  }
+  // Sentries at the bunkers.
+  for (const gn of FRONT_GUNS) if (gn.kind === 'bunker') for (const sx of [-1, 1]) fixed('sentry', h.x + gn.x + sx * 15, h.y + gn.y + 4, gn.x < 0 ? -1 : 1);
   // Guards: at the gate, and walking the south and east walls.
   const gx = h.x + GATE.x, gy = h.y + GATE.y - 18;
   for (const s of [-1, 1]) {
@@ -377,7 +433,7 @@ function unstick(g: Game, dt: number): void {
 
 function person(kind: PersonKind, x: number, y: number, area: number, id: number): Resident {
   const civ = CIV_COLS[id % CIV_COLS.length];
-  const uniform = kind === 'guard' ? '#4a5a3a' : kind === 'mech' ? '#d0a020' : kind === 'worker' ? '#c06a20' : kind === 'trader' ? '#8a4a8a' : civ;
+  const uniform = kind === 'guard' || kind === 'soldier' || kind === 'sentry' ? '#4a5a3a' : kind === 'mech' ? '#d0a020' : kind === 'worker' ? '#c06a20' : kind === 'trader' ? '#8a4a8a' : civ;
   const hat = kind === 'guard' ? '#3a4a2a' : kind === 'mech' || kind === 'worker' ? '#ffd740' : HAIR[id % HAIR.length];
   return { x, y, tx: x, ty: y, area, kind, uniform, hat, skin: id % 5, wait: Math.random() * 4, face: id % 2 ? 1 : -1, anim: Math.random() * 10, walking: false };
 }
@@ -569,12 +625,18 @@ function updateGate(g: Game, dt: number): void {
   applyGate(g);
 }
 
+/** How hard the garrison's guns hit here and now. */
+function garrisonDmg(g: Game): number {
+  const h = home(g)!;
+  return 14 * (0.8 + 0.25 * threatAt(h.x, h.y)) * Math.max(1, g.escalation() * 0.8);
+}
+
 /** Tower gun crews: the nearest hostile in reach, a burst every half second or so. */
 function updateTowers(g: Game, dt: number): void {
   const h = home(g)!;
   const cs = g.compound;
   // Enough to thin a horde at the gate, not to stop it dead: they get to the doors and claw at them.
-  const dmg = 14 * (0.8 + 0.25 * threatAt(h.x, h.y)) * Math.max(1, g.escalation() * 0.8);
+  const dmg = garrisonDmg(g);
   TOWERS.forEach((tw, i) => {
     const st = cs.towers[i];
     st.flash = Math.max(0, st.flash - dt);
@@ -605,6 +667,177 @@ function updateTowers(g: Game, dt: number): void {
   });
 }
 
+/** The front's guns: bunker twin guns (quick bursts) and dug-in tanks (a heavy shell that bursts among them). */
+function updateFront(g: Game, dt: number, dmg: number): void {
+  const h = home(g)!;
+  const cs = g.compound;
+  FRONT_GUNS.forEach((gn, i) => {
+    const st = cs.front[i];
+    if (!st) return;
+    st.flash = Math.max(0, st.flash - dt);
+    st.cd -= dt;
+    if (st.cd > 0) return;
+    const tank = gn.kind === 'tank';
+    st.cd = (tank ? 2.6 : 0.55) * (0.85 + Math.random() * 0.3);
+    const x = h.x + gn.x, y = h.y + gn.y;
+    const e = nearestHostile(g, x, y, tank ? 460 : 360);
+    if (!e) return;
+    st.aim = Math.atan2(e.y - y, e.x - x);
+    st.flash = tank ? 0.14 : 0.07;
+    if (tank) {
+      g.fx.push({ t: 'beam', x0: x, y0: y, x1: e.x, y1: e.y, color: '#ffd080', w: 2, life: 0.06 });
+      g.fx.push({ t: 'boom', x: e.x, y: e.y, r: 9, color: '#ffab40' });
+      for (const o of g.enemiesNear(e.x, e.y, 10)) {
+        if (o.hp <= 0) continue;
+        const hit = dmg * 3.2;
+        if (o.hp <= hit) o.xp *= 0.25;
+        damageEnemy(g, o, hit, { silent: true });
+      }
+      if (Math.random() < 0.4) g.hooks.sound('cannon', x, y, 0.2);
+    } else {
+      for (const s of [-1, 1]) g.fx.push({ t: 'beam', x0: x + s * 1.2, y0: y - 3, x1: e.x, y1: e.y, color: '#ffe082', w: 1, life: 0.06 });
+      const hit = dmg * 1.3;
+      if (e.hp <= hit) e.xp *= 0.25;
+      damageEnemy(g, e, hit, { silent: true });
+      if (Math.random() < 0.12) g.hooks.sound('smg', x, y, 0.12);
+    }
+  });
+}
+
+/** The nearest live hostile to (x, y) within `r` (none underground). */
+function nearestHostile(g: Game, x: number, y: number, r: number): Game['enemies'][number] | null {
+  let best: Game['enemies'][number] | null = null, bd = r;
+  for (const e of g.enemies) {
+    if (e.hp <= 0 || e.burrowed) continue;
+    const dx = e.x - x, dy = e.y - y;
+    if (Math.abs(dx) > bd || Math.abs(dy) > bd) continue;
+    const d = Math.hypot(dx, dy);
+    if (d < bd) {
+      bd = d;
+      best = e;
+    }
+  }
+  return best;
+}
+
+/** Where a gunship out on a sortie holds: ahead of your Titan while it's heading out, otherwise over the front. */
+function station(g: Game, a: Gunship, i: number): { x: number; y: number } {
+  const h = home(g)!;
+  const p = g.player;
+  const gy = h.y + COMPOUND.y1;
+  const out = !p.dead && p.y > gy - 40 && Math.abs(p.x - h.x) < 2400 && p.y - gy < 2400;
+  if (out) {
+    const L = p.stats.length / 2;
+    const f = L + 140 + (i >> 1) * 70, lat = (i % 2 ? 1 : -1) * (60 + (i >> 1) * 40);
+    return { x: p.x + Math.cos(p.rot) * f - Math.sin(p.rot) * lat, y: p.y + Math.sin(p.rot) * f + Math.cos(p.rot) * lat };
+  }
+  const spots: [number, number][] = [[-150, 300], [150, 300], [-280, 440], [280, 440]];
+  const [sx, sy] = spots[i % spots.length];
+  return { x: h.x + sx, y: gy + sy };
+}
+
+function fly(a: Gunship, tx: number, ty: number, dt: number, top: number): number {
+  const dx = tx - a.x, dy = ty - a.y;
+  const d = Math.hypot(dx, dy);
+  const sp = Math.min(top, d * 0.9);
+  const wx = d > 0.01 ? (dx / d) * sp : 0, wy = d > 0.01 ? (dy / d) * sp : 0;
+  const k = Math.min(1, dt * 2.2);
+  a.vx += (wx - a.vx) * k;
+  a.vy += (wy - a.vy) * k;
+  a.x += a.vx * dt;
+  a.y += a.vy * dt;
+  if (Math.hypot(a.vx, a.vy) > 3) {
+    const want = Math.atan2(a.vy, a.vx);
+    let da = want - a.rot;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    a.rot += Math.max(-2.2 * dt, Math.min(2.2 * dt, da));
+  }
+  return d;
+}
+
+/** The gunships: lift off for a sortie, hold their station firing on anything near, come home and land. */
+function updateAir(g: Game, dt: number, dmg: number): void {
+  const h = home(g)!;
+  const cs = g.compound;
+  cs.sortie = Math.max(0, cs.sortie - dt);
+  if (cs.alarm) cs.sortie = Math.max(cs.sortie, 25);
+  cs.air.forEach((a, i) => {
+    const pd = HELIPADS[a.pad];
+    const px = h.x + pd.x, py = h.y + pd.y;
+    a.flash = Math.max(0, a.flash - dt);
+    if (a.state !== 'parked') a.rotor += dt * 26;
+    switch (a.state) {
+      case 'parked':
+        a.x = px;
+        a.y = py;
+        a.z = 0;
+        // They go up one after another.
+        if (cs.sortie > 0 && (i === 0 || cs.air[i - 1].state !== 'parked' || cs.air[i - 1].z > 8)) a.state = 'up';
+        break;
+      case 'up':
+        a.rotor += dt * 10;
+        a.z = Math.min(30, a.z + 9 * dt);
+        if (a.z >= 30) a.state = 'out';
+        break;
+      case 'out': {
+        const st = station(g, a, i);
+        a.ph += dt * 0.55;
+        const ox = Math.cos(a.ph + i) * 70, oy = Math.sin(a.ph + i) * 46;
+        fly(a, st.x + ox, st.y + oy, dt, 72);
+        a.z = 30 + Math.sin(a.ph * 2 + i) * 2;
+        const e = nearestHostile(g, a.x, a.y, 300);
+        if (e) {
+          a.aim = Math.atan2(e.y - a.y, e.x - a.x);
+          a.cd -= dt;
+          a.rcd -= dt;
+          if (a.cd <= 0) {
+            a.cd = 0.22;
+            a.flash = 0.06;
+            g.fx.push({ t: 'beam', x0: a.x, y0: a.y - 10, x1: e.x + (Math.random() - 0.5) * 3, y1: e.y + (Math.random() - 0.5) * 3, color: '#ffe082', w: 1, life: 0.05 });
+            const hit = dmg * 0.8;
+            if (e.hp <= hit) e.xp *= 0.25;
+            damageEnemy(g, e, hit, { silent: true });
+          }
+          if (a.rcd <= 0) {
+            a.rcd = 3.2 + Math.random();
+            // A pair of rockets into the thick of them.
+            for (const s of [-1, 1]) {
+              const tx = e.x + s * 5, ty = e.y + (Math.random() - 0.5) * 6;
+              g.fx.push({ t: 'beam', x0: a.x + s * 3, y0: a.y - 10, x1: tx, y1: ty, color: '#ff9100', w: 1.6, life: 0.12 });
+              g.fx.push({ t: 'boom', x: tx, y: ty, r: 8, color: '#ff9100' });
+              for (const o of g.enemiesNear(tx, ty, 9)) {
+                if (o.hp <= 0) continue;
+                const hit = dmg * 2.2;
+                if (o.hp <= hit) o.xp *= 0.25;
+                damageEnemy(g, o, hit, { silent: true });
+              }
+            }
+            if (Math.random() < 0.5) g.hooks.sound('rocket', a.x, a.y, 0.2);
+          }
+        } else a.aim += (a.rot - a.aim) * Math.min(1, dt * 2);
+        if (cs.sortie <= 0 && !nearestHostile(g, st.x, st.y, 380)) a.state = 'home';
+        break;
+      }
+      case 'home':
+        if (cs.sortie > 0) {
+          a.state = 'out';
+          break;
+        }
+        a.z += (30 - a.z) * Math.min(1, dt);
+        if (fly(a, px, py, dt, 60) < 3) a.state = 'down';
+        break;
+      case 'down':
+        a.vx = a.vy = 0;
+        a.x += (px - a.x) * Math.min(1, dt * 2);
+        a.y += (py - a.y) * Math.min(1, dt * 2);
+        a.rot += Math.atan2(Math.sin(-Math.PI / 2 - a.rot), Math.cos(-Math.PI / 2 - a.rot)) * Math.min(1, dt * 1.5);
+        a.z = Math.max(0, a.z - 7 * dt);
+        if (a.z <= 0) a.state = cs.sortie > 0 ? 'up' : 'parked';
+        break;
+    }
+  });
+}
+
 /** A horde comes for the compound: out of the wastes to the south (east, south or west of the gate), making for it. */
 function spawnSiege(g: Game): void {
   const h = home(g)!;
@@ -629,6 +862,7 @@ function spawnSiege(g: Game): void {
   }
   const dirs = ['EAST', 'SOUTH-EAST', 'SOUTH', 'SOUTH-WEST', 'WEST', 'NORTH-WEST', 'NORTH', 'NORTH-EAST'];
   const dir = dirs[((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8];
+  g.compound.sortie = Math.max(g.compound.sortie, 140);
   g.hooks.toast(`GATE CONTROL: HORDE SIGHTED TO THE ${dir}, ${(d / 1000).toFixed(1)} KM, ${made} STRONG. SIRENS ON, TOWERS WEAPONS FREE.`, '#ff5252');
   g.hooks.sound('alarm', g.player.x, g.player.y, 0.6);
 }
@@ -688,7 +922,7 @@ function updatePeople(g: Game, dt: number): void {
       // Guards: walk their stretch of wall, or stand their post (facing out, rifles up in a siege).
       if (r.post.ax === r.post.bx && r.post.ay === r.post.by) {
         r.walking = false;
-        r.face = r.x < h.x ? -1 : 1;
+        if (r.kind === 'guard') r.face = r.x < h.x ? -1 : 1;
         continue;
       }
       const dx = r.tx - r.x, dy = r.ty - r.y, d = Math.hypot(dx, dy);
@@ -761,13 +995,15 @@ export function updateCompound(g: Game, dt: number): void {
   // The towers watch the compound and the ground round it: always in sight while you're near home.
   if (!g.fog.lit.length) {
     const pad = 260;
-    g.fog.lit = [{ x0: h.x + COMPOUND.x0 - pad, y0: h.y + COMPOUND.y0 - pad, x1: h.x + COMPOUND.x1 + pad, y1: h.y + COMPOUND.y1 + pad }];
+    g.fog.lit = [{ x0: h.x + COMPOUND.x0 - pad, y0: h.y + COMPOUND.y0 - pad, x1: h.x + COMPOUND.x1 + pad, y1: h.y + FORWARD.y1 + pad }];
     g.fog.version++;
   }
   if (!cs.inited) init(g);
   unstick(g, dt);
   updateGate(g, dt);
   updateTowers(g, dt);
+  updateFront(g, dt, garrisonDmg(g));
+  updateAir(g, dt, garrisonDmg(g));
   updateBases(g, dt);
   updateCars(g, dt);
   // The sirens: hostiles near the wall.

@@ -18,7 +18,7 @@ import { hash2, rgb } from '../render/px/pixels';
 import { paintTitan } from '../render/px/titan2d';
 import { paintTitanFlat } from '../render/px/titanSprite';
 import { shipView } from '../render/px/shipArt';
-import { personSprite } from '../render/px/people';
+import { hero } from '../render/px/heroes';
 import { OBS, OBS_COLOR, TER, TERRAIN } from '../shared/map';
 import type { OpenWorld } from '../shared/mapgen';
 import { oilWord } from '../shared/oil';
@@ -1093,10 +1093,13 @@ export class Cabin {
           if (z < 3 || z > 400) continue;
           const side = -dx * fy + dy * fx;
           const sx = W / 2 + (side * f) / z;
-          const hpx = Math.max(2, (1.3 * f) / z);
+          // The painted figure fills about nine tenths of its square: 2 m of square is a 1.8 m person.
+          const hpx = Math.max(3, (2 * f) / z);
           if (sx < -hpx || sx > W + hpx) continue;
           const pose = sp.aim ? (Math.floor(this.time * 2 + sp.x) % 5 === 0 ? 'stand' : 'aim') : Math.floor(this.time + sp.y) % 4 === 0 ? 'work' : 'stand';
-          list.push({ z, sx, base: hz + ((cam.h - roof) * f) / z, hpx, img: personSprite(pose, d.nest ? '#4a5a3a' : '#5a6a7a', d.nest ? '#3a4a2a' : '#ffd740', m.id % 5, '#6a6a70'), flip: side > 0 });
+          const px = hpx > 40 ? 64 : hpx > 20 ? 40 : 24;
+          const img = hero({ role: d.nest ? (m.id % 3 === 0 ? 'heavy' : 'rifleman') : 'engineer', seed: m.id * 7 + Math.round(sp.x) }, pose, Math.floor(this.time * 3), px);
+          list.push({ z, sx, base: hz + ((cam.h - roof) * f) / z, hpx, img, flip: side > 0 });
         }
       }
     }
