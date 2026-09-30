@@ -324,7 +324,7 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 
 /* map */
 .map-wrap { display: flex; gap: 14px; }
-.bigmap { border: 2px solid var(--gold); image-rendering: pixelated; cursor: crosshair; }
+.bigmap { border: 2px solid var(--gold); image-rendering: pixelated; cursor: crosshair; align-self: flex-start; flex: none; }
 .map-side { flex: 1; overflow-y: auto; font-size: 13px; }
 .zrow { margin-bottom: 8px; }
 .zrow i { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; }
