@@ -4,6 +4,7 @@ import { CH, OBS, TER, ZONE, type Building, type GameMap } from '../../shared/ma
 import { BLOCK, crownName, groundLevel, SHARP, Terrain2D, type Ground3D } from '../px/terrain2d';
 import { hash2 } from '../px/pixels';
 import { facadeTex, roofTex, type Facade, type Roof } from './textures';
+import { inFront } from '../../shared/compound';
 
 /**
  * The world around the Titan in 3D, for the view out of the cab: the Crater's ground in 128 m blocks streamed
@@ -54,12 +55,12 @@ const GEO = {
     return g;
   })(),
   broadleaf: (() => {
-    const parts = [0, 1, 2, 3].map((i) => {
-      const g = jitter(new THREE.IcosahedronGeometry(1, 2), 0.35, i + 3);
-      const a = (i / 4) * Math.PI * 2;
-      const s = i === 0 ? 0.75 : 0.55;
+    const parts = [0, 1, 2].map((i) => {
+      const g = jitter(new THREE.IcosahedronGeometry(1, 1), 0.35, i + 3);
+      const a = (i / 3) * Math.PI * 2 + 0.4;
+      const s = i === 0 ? 0.78 : 0.6;
       g.scale(s, s * 0.85, s);
-      g.translate(i === 0 ? 0 : Math.cos(a) * 0.45, i === 0 ? 0.25 : 0, i === 0 ? 0 : Math.sin(a) * 0.45);
+      g.translate(i === 0 ? 0 : Math.cos(a) * 0.42, i === 0 ? 0.22 : 0, i === 0 ? 0 : Math.sin(a) * 0.42);
       return g;
     });
     const m = mergeGeometries(parts)!;
@@ -329,8 +330,9 @@ export class World3D {
   private mats = new Mats();
   private editSeen = 0;
   private map: GameMap;
-  /** Blocks waiting to be built, nearest first. */
   time = 0;
+  /** The Mega Hangar (its base is built as models by Compound3D, not from the map's tiles). */
+  home: { x: number; y: number } | null = null;
 
   constructor(map: GameMap) {
     this.map = map;
@@ -430,7 +432,7 @@ export class World3D {
       group.add(this.groundMesh(gd.h, gd.canvas, fine ? 1 : 2, true));
       this.liquids(group, gd, x0, y0);
       this.buildings(group, gd, x0, y0, bx, by);
-      this.nature(group, gd, x0, y0);
+      this.nature(group, gd, x0, y0, fine);
       this.props(group, x0, y0);
     } else {
       const tex = this.terrain.get(bx, by, 0, 2);
@@ -693,7 +695,8 @@ export class World3D {
       for (let x = 0; x < BLOCK; x++) {
         const q = y * BLOCK + x;
         const o = gd.obs[q];
-        if (!isWall(o) || taken[q]) continue;
+        if (!isWall(o) || taken[q] || o === OBS.BASTION || o === OBS.STRUCT) continue;
+        if (this.home && inFront(x0 + x - this.home.x, y0 + y - this.home.y)) continue;
         const top = topOf(x, y);
         const base = groundLevel(x0 + x + 0.5, y0 + y + 0.5) - 1;
         const f: Facade = style.get(q) ?? (o === OBS.BASTION ? 'bunker' : o === OBS.STRUCT ? 'concrete' : o === OBS.RUIN ? 'ruin' : 'concrete');
@@ -726,9 +729,10 @@ export class World3D {
   }
 
   /** Trees, boulders, spires and fungi. */
-  private nature(group: THREE.Group, gd: Ground3D, x0: number, y0: number): void {
+  private nature(group: THREE.Group, gd: Ground3D, x0: number, y0: number, fine: boolean): void {
     const trunks = new Inst(), broad = new Inst(), pines = new Inst(), bushes = new Inst(), rocks = new Inst(), spires = new Inst(), fungi = new Inst(), caps = new Inst();
-    const C = 4;
+    // Further out, fewer (bigger) trees, only the big boulders, and no shadows from them.
+    const C = fine ? 4 : 8;
     for (let gy = 0; gy < BLOCK / C; gy++) {
       for (let gx = 0; gx < BLOCK / C; gx++) {
         let best = 2, bxT = -1, byT = -1;
@@ -740,6 +744,7 @@ export class World3D {
           if (o === OBS.BOULDER) {
             // A fifth are real boulders, the rest stones.
             const hb = hash2(tx, ty, 151);
+            if (!fine && hb >= 0.2) continue;
             const z = gd.zone[q], t = gd.ter[q];
             const stone = z === ZONE.DUNES || z === ZONE.PASS || t === TER.SAND || t === TER.DUNE ? 'sandstone' : z === ZONE.ASH || z === ZONE.SCORCHED || z === ZONE.SPIRES || t === TER.BASALT ? 'basalt' : z === ZONE.FROST || t === TER.SNOW ? 'ice' : 'rock';
             const s = hb < 0.2 ? 1.6 + hb * 12 : 0.35 + hash2(tx, ty, 4) * 0.8;
@@ -770,7 +775,7 @@ export class World3D {
         const tx = x0 + bxT, ty = y0 + byT;
         const q = byT * BLOCK + bxT;
         const name = crownName(gd.ter[q], gd.oh[q], hash2(tx, ty, 153));
-        const hgt = Math.max(3, gd.oh[q] * 0.5) * (0.85 + hash2(tx, ty, 13) * 0.3);
+        const hgt = Math.max(3, gd.oh[q] * 0.5) * (0.85 + hash2(tx, ty, 13) * 0.3) * (fine ? 1 : 1.25);
         const px = bxT + 0.5 + (hash2(tx, ty, 14) - 0.5) * 2, pz = byT + 0.5 + (hash2(tx, ty, 15) - 0.5) * 2;
         const gy0 = groundLevel(tx, ty) - 0.2;
         const ry = hash2(tx, ty, 16) * 6.28;
@@ -791,8 +796,10 @@ export class World3D {
         }
       }
     }
-    const add = (m: THREE.Object3D | null): void => {
-      if (m) group.add(m);
+    const add = (m: THREE.InstancedMesh | null): void => {
+      if (!m) return;
+      if (!fine) m.castShadow = false;
+      group.add(m);
     };
     add(trunks.mesh(GEO.trunk, this.mats.bark));
     add(broad.mesh(GEO.broadleaf, this.mats.leaves));

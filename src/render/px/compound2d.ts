@@ -157,7 +157,7 @@ function frontGround(c: CanvasRenderingContext2D): void {
 }
 
 /** Parked in the motor pool: a row each of tanks, APCs, trucks and self-propelled guns, noses to the lane. */
-const PARKED: { x: number; y: number; kind: VehicleKind; v: number }[] = (() => {
+export const PARKED: { x: number; y: number; kind: VehicleKind; v: number }[] = (() => {
   const out: { x: number; y: number; kind: VehicleKind; v: number }[] = [];
   const kinds: VehicleKind[] = ['tank', 'apc', 'artillery'];
   kinds.forEach((k, row) => {

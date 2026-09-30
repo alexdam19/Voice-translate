@@ -99,7 +99,7 @@ export function buildShip(t: Tank, klass: string): ShipModel {
   hull.rotateX(-Math.PI / 2);
   hull.translate(0, crawlH * 0.55, 0);
   // The deck art on the top face, riveted plate (in metres) on the sides.
-  const art = titanTop(L, W, topPalette(t.kind, klass, t.dead), `${t.kind}|${klass}|${t.dead}`, 3, t.modules.some((m) => m.key === 'main_gun' && m.cy > t.rows / 2), 4);
+  const art = titanTop(L, W, topPalette(t.kind, klass, t.dead), `${t.kind}|${klass}|${t.dead}`, 3, t.modules.some((m) => m.key === 'main_gun' && m.cy > t.rows / 2), 8);
   const deckTex = new THREE.CanvasTexture(art.top);
   deckTex.colorSpace = THREE.SRGBColorSpace;
   deckTex.anisotropy = 8;

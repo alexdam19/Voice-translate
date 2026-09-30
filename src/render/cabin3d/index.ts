@@ -10,6 +10,7 @@ import { Creatures3D, type CreatureDraw } from './creatures';
 import { buildShip, poseShip, shipKey, type ShipModel } from './ship';
 import { glowTex, puffTex } from './textures';
 import { World3D } from './world';
+import { Compound3D } from './compound';
 
 /**
  * The view out of the cab, in 3D (three.js): the Crater under a real sky, the world streamed round you, every
@@ -95,11 +96,14 @@ export class Cabin3D {
   private sky: THREE.Mesh;
   private skyU: Record<string, THREE.IUniform>;
   private rim: THREE.Mesh;
+  /** The ground beyond the streamed blocks, out to the haze: the zone's colour. */
+  private skirt: THREE.Mesh;
   private sun = new THREE.DirectionalLight('#ffffff', 2.4);
   private hemi = new THREE.HemisphereLight('#bcd4ff', '#4a4030', 0.9);
   private heads: THREE.SpotLight[] = [];
   private world: World3D | null = null;
   private creatures = new Creatures3D();
+  private compound = new Compound3D();
   private ships = new Map<number, ShipModel>();
   private tracers: THREE.InstancedMesh;
   private rings: THREE.InstancedMesh;
@@ -142,6 +146,9 @@ export class Cabin3D {
     // The Crater's wall far off all round: ridges on the horizon, hazed.
     this.rim = this.makeRim();
     this.scene.add(this.rim);
+    this.skirt = new THREE.Mesh(new THREE.CircleGeometry(7000, 48).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#a08060', roughness: 1 }));
+    this.skirt.receiveShadow = false;
+    this.scene.add(this.skirt);
     // Sun and sky light.
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
@@ -161,7 +168,7 @@ export class Cabin3D {
       this.heads.push(s);
       this.scene.add(s, s.target);
     }
-    this.scene.add(this.creatures.root);
+    this.scene.add(this.creatures.root, this.compound.root);
     // Tracers and shells: short glowing rods along their flight.
     this.tracers = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 6).rotateZ(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }), 1500);
     this.tracers.frustumCulled = false;
@@ -310,7 +317,9 @@ export class Cabin3D {
     const fog = this.scene.fog as THREE.FogExp2;
     fog.density = this.fogBase / (1 + Math.max(0, eh - base - H - 10) / 220);
     // World.
+    this.world.home = g.mode === 'world' ? g.gen.hangar : null;
     this.world.update(g.edits, g.editCount, ex, ey, this.ox, this.oz, this.world.count < 20 ? 60 : 9);
+    this.compound.update(g, this.ox, this.oz, v.time);
     // Ships.
     const seen = new Set<number>();
     const place = (t: Tank, sm: ShipModel, own: boolean): void => {
@@ -458,6 +467,7 @@ export class Cabin3D {
     // Sky and rim follow the camera.
     this.sky.position.copy(this.cam.position);
     this.rim.position.set(this.cam.position.x, groundLevel(ex, ey), this.cam.position.z);
+    this.skirt.position.set(this.cam.position.x, base - 2.5, this.cam.position.z);
     this.skyU.time.value = v.time;
     // Shadows cover the ground round what you're looking at.
     const fwd = new THREE.Vector3();
@@ -522,6 +532,7 @@ export class Cabin3D {
       this.hemi.groundColor.copy(lin(ground));
       this.hemi.intensity = 1.1;
       (this.rim.material as THREE.MeshBasicMaterial).color.copy(lin('#3a3430').lerp(lin(fog), 0.55));
+      (this.skirt.material as THREE.MeshStandardMaterial).color.copy(lin(ground).lerp(lin(sky), 0.25));
     }
     void time;
   }
