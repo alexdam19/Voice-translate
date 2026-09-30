@@ -259,6 +259,9 @@ export class Game {
   compound: CompoundState = newCompound();
   /** The intercom to the Mega Hangar (news, objectives, briefings). */
   comms: Comms = newComms();
+  /** Builder robots aboard (each an extra builder), and the one the workshop is making (see systems/robots). */
+  robots = 0;
+  robotBuild: { t: number } | null = null;
   /** The satnav: the route to where she's headed and the next instruction (see systems/nav). */
   nav: Nav | null = null;
   /** The flight recorder (cabin trend screens). */
@@ -384,7 +387,7 @@ export class Game {
   }
 
   builders(): number {
-    return builderCount(this.commander.level);
+    return builderCount(this.commander.level) + this.robots;
   }
 
   freeBuilders(): number {

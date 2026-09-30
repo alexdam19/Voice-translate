@@ -940,6 +940,27 @@ export class Interior {
         } else c.drawImage(img, dx, dy);
       }
     }
+    // The builder robots: hauling crates along the decks and stopping to work on things.
+    const opn = this.services.filter((sv) => p.deckOpen(sv.deck));
+    for (let i = 0; i < g.robots && opn.length; i++) {
+      const sv = opn[(i * 3) % opn.length];
+      const floor = this.deckTop(sv.deck) + DH - 3;
+      const span = Math.max(4, sv.xb - sv.xa - 18);
+      const ph = this.time * 0.16 + i * 1.9;
+      const x = sv.xa + 9 + ((Math.sin(ph) + 1) / 2) * span;
+      const still = Math.abs(Math.cos(ph)) < 0.25;
+      const img = hero({ role: 'robot', seed: i * 5 + 1 }, still ? 'work' : 'carry', Math.floor(this.time * 7 + i), HERO_S);
+      const ft = heroFoot(HERO_S);
+      const left = Math.cos(ph) < 0;
+      const dx = Math.round(left ? x - (img.width - ft.x) : x - ft.x), dy = Math.round(floor - ft.y);
+      c.save();
+      if (left) {
+        c.translate(dx + img.width, dy);
+        c.scale(-1, 1);
+        c.drawImage(img, 0, 0);
+      } else c.drawImage(img, dx, dy);
+      c.restore();
+    }
   }
 
   /* ---------------------------------------------------------------- */

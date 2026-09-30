@@ -1,5 +1,6 @@
 import { MODULES } from '../defs';
 import type { Game } from '../game';
+import { ROBOT_REPAIR } from './robots';
 import { COMPARTMENTS, compName, SYSTEMS, TOROIDS, ZONES, type ArmorZone, type SysKey } from './titan';
 import type { ModuleInst } from '../tank';
 import { WEAPONS } from '../../shared/weapons';
@@ -293,7 +294,8 @@ export function updateTeams(g: Game, dt: number): void {
       continue;
     }
     const v = level(g, t.kind, t.key);
-    const rate = RATE[t.kind] * (t.n / TEAM_SIZE) * eff * dt;
+    // Builder robots lend a hand to every team.
+    const rate = RATE[t.kind] * (t.n / TEAM_SIZE) * eff * (1 + g.robots * ROBOT_REPAIR) * dt;
     if (harmful(t.kind)) {
       const nv = Math.max(0, v - rate);
       setLevel(g, t.kind, t.key, nv);

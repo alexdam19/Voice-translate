@@ -571,7 +571,9 @@ export class Cabin3D {
         const lx = b.ax + (b.bx - b.ax) * k, lz = b.az + (b.bz - b.az) * k;
         const w = p.toWorld(lx, lz);
         const dir = Math.atan2(b.bz - b.az, b.bx - b.ax) + (ph < 1 ? 0 : Math.PI);
-        this.creatures.add({ arch: 'humanoid', x: w.x, y: w.y, z: base + H + 0.2, rot: p.rot + dir, len: 1.8, t: v.time * 1.3 + i, gait: 0.6, body: new THREE.Color(['#4a5a6a', '#8a6a3a', '#5a4a6a'][i % 3]), eye: new THREE.Color('#000000'), flash: false, look: '' }, this.ox, this.oz);
+        // The first few are the builder robots: steel and brass, a boiler glowing through the visor.
+        const robot = i < g.robots;
+        this.creatures.add({ arch: 'humanoid', x: w.x, y: w.y, z: base + H + 0.2, rot: p.rot + dir, len: robot ? 1.6 : 1.8, t: v.time * 1.3 + i, gait: 0.6, body: new THREE.Color(robot ? '#9a8a60' : ['#4a5a6a', '#8a6a3a', '#5a4a6a'][i % 3]), eye: new THREE.Color(robot ? '#ffa030' : '#000000').multiplyScalar(robot ? 2 : 1), flash: false, look: '' }, this.ox, this.oz);
       });
     }
     // The base's garrison and residents.

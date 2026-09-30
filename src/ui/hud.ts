@@ -31,6 +31,7 @@ import { itemIcon, moduleIcon, portrait } from '../render/icons';
 import { cardEl } from './cardView';
 import { button, esc, h, hideTip, isTouch, tooltip } from './dom';
 import { Tossable } from './tossable';
+import { buildRobot, ROBOT_REPAIR, ROBOT_TIME, robotBlocked, robotCap } from '../game/systems/robots';
 import { agentFace } from './agents';
 import { AGENTS } from '../game/systems/comms';
 import { Joystick } from './joystick';
@@ -230,6 +231,11 @@ export class Hud {
     });
     this.jobs.addEventListener('click', (e) => {
       e.stopPropagation();
+      if ((e.target as HTMLElement).closest('[data-robot]') && this.game) {
+        const why = buildRobot(this.game);
+        this.toast(why ?? `The workshop is building a robot (${ROBOT_TIME}s).`, why ? '#ff8a80' : '#ffb040');
+        return;
+      }
       const t = (e.target as HTMLElement).closest('[data-open]') as HTMLElement | null;
       if (t?.dataset.open === 'base') act.village(true);
       else if (t) act.openPanel(t.dataset.open!, t.dataset.tab);
@@ -852,6 +858,13 @@ export class Hud {
     }
     const free = g.freeBuilders();
     if (free > 0 && !this.village) lines.push(`<div class="rw idle" data-open="base"><small>🔨 ${free} builder${free > 1 ? 's' : ''} free</small> tap to build or upgrade</div>`);
+    // Builder robots: how many, the one being made, or a button to make one.
+    const rb = g.robotBuild;
+    if (rb) lines.push(`<div class="rw robot"><small>🤖 WORKSHOP</small> builder robot ${g.robots + 1}<div class="bar"><div style="width:${(rb.t / ROBOT_TIME) * 100}%"></div></div><small>${fmtTime(ROBOT_TIME - rb.t)}</small></div>`);
+    else if (!this.village && g.robots < robotCap(g)) {
+      const ok = !robotBlocked(g);
+      lines.push(`<div class="rw robot ${ok ? '' : 'idle'}" data-robot="1" title="A builder robot: one more builder, and repair crews work ${Math.round(ROBOT_REPAIR * 100)}% faster. 30 scrap, 4 iron plate, 2 circuits, ${ROBOT_TIME}s in the workshop."><small>🤖 ${g.robots}/${robotCap(g)} ROBOTS</small> ${ok ? 'tap to build one' : 'need 30 scrap · 4 plate · 2 circuits'}</div>`);
+    } else if (g.robots) lines.push(`<div class="rw idle"><small>🤖 ${g.robots} ROBOTS</small> at work</div>`);
     const job = g.forgeJob;
     if (job) {
       const w = [...g.armory, ...g.player.weapons().map((m) => m.weapon!)].find((k) => k.uid === job.uid);

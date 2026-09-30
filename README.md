@@ -168,6 +168,7 @@ The first touch switches the game to touch controls (phones and tablets start in
 - The camera swings in and turns so the front of your fortress points up. **Tap a building** to see it and upgrade it, move it or remove it, or jump to what it does (mount a weapon, refine ore, craft, forge, hire crew, command its squad, change the drive train).
 - **SHOP:** every building by category, with its footprint, build time, cost and how many you have of the Command Center's limit. Pick one, then tap a green spot on the deck.
 - **Builders:** 2 at the start (3 at level 10, 4 at level 20). Each works on one job at a time, in real time, while you drive and fight. Buildings keep working while they're being upgraded.
+- **Builder robots:** brass-and-steel machines with a boiler glowing in the chest, made in the workshop from the builders box on the HUD (30 scrap, 4 iron plate, 2 circuits, 30 seconds). Each is one more builder, and every robot aboard makes the repair teams work 6% faster. You can carry two plus the Command Center's level. You'll see them hauling crates along the decks inside and walking the roof.
 - **Command Center:** its level (1-6) is the Titan's mark, and it sets the mounts, the open decks and the cap on everything else. Upgrading it needs commander levels 3, 7, 12, 18 and 24.
 
   | Command Center | Refit | Decks open | Built-in weapons |
