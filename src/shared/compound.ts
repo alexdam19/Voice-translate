@@ -222,8 +222,8 @@ export const AREAS: { x0: number; y0: number; x1: number; y1: number; n: number;
   { x0: 392, y0: 612, x1: 548, y1: 776, n: 6, kind: 'motor' },
   { x0: -150, y0: 240, x1: -112, y1: 980, n: 6, kind: 'lane' },
   { x0: 112, y0: 240, x1: 150, y1: 980, n: 6, kind: 'lane' },
-  { x0: -320, y0: 214, x1: 320, y1: 300, n: 10, kind: 'apron' },
-  ...Array.from({ length: 8 }, (_, r) => ({ x0: 396, y0: -198 + r * 48, x1: 730, y1: -186 + r * 48, n: 2, kind: 'street' as const })),
-  { x0: 380, y0: 600, x1: 740, y1: 616, n: 3, kind: 'street' },
+  { x0: -320, y0: 214, x1: 320, y1: 300, n: 16, kind: 'apron' },
+  ...Array.from({ length: 8 }, (_, r) => ({ x0: 396, y0: -198 + r * 48, x1: 730, y1: -186 + r * 48, n: 4, kind: 'street' as const })),
+  { x0: 380, y0: 600, x1: 740, y1: 616, n: 6, kind: 'street' },
   ...PADS.map((p) => ({ x0: p.x - PAD_W / 2 - 14, y0: p.y - PAD_L / 2, x1: p.x + PAD_W / 2 + 14, y1: p.y + PAD_L / 2, n: 4, kind: 'dock' as const })),
 ];

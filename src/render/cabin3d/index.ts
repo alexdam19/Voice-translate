@@ -582,6 +582,17 @@ export class Cabin3D {
       const moving = r.walking ? Math.atan2(r.ty - r.y, r.tx - r.x) : r.face < 0 ? Math.PI : 0;
       this.creatures.add({ arch: 'humanoid', x: r.x, y: r.y, z: groundLevel(r.x, r.y), rot: moving, len: 1.85, t: r.anim, gait: r.walking ? ((r.dodge ?? 0) > 0 ? 1.4 : 0.7) : 0, body: new THREE.Color(r.uniform || '#56603f'), eye: new THREE.Color('#000000'), flash: false, look: '' }, this.ox, this.oz);
     }
+    // Its war machines: the walkers and mechs striding their beats, the patrol tanks and the APC.
+    for (const m of g.compound.machines) {
+      if (Math.hypot(m.x - ex, m.y - ey) > 1200) continue;
+      const legs = m.kind === 'walker' || m.kind === 'mech';
+      this.creatures.add({
+        arch: legs ? 'bot' : 'vehicle', x: m.x, y: m.y, z: groundLevel(m.x, m.y), rot: legs && m.hold > 0 ? m.aim : m.rot,
+        len: m.kind === 'walker' ? 10 : m.kind === 'mech' ? 5.5 : m.kind === 'tank' ? 9.6 : 8.4, t: m.anim, gait: m.speed > 0.2 ? 0.8 : 0,
+        body: new THREE.Color(m.kind === 'mech' ? '#6a6446' : m.kind === 'walker' ? '#5e6450' : '#5a6a3a'), eye: new THREE.Color(legs ? '#6ad0e0' : '#000000').multiplyScalar(legs ? 2 : 1),
+        flash: false, look: '',
+      }, this.ox, this.oz);
+    }
     this.creatures.end();
     // Shots in flight.
     let nt = 0;
@@ -750,6 +761,13 @@ export class Cabin3D {
       }
       case 'muzzle':
         if (Math.random() < 0.6) this.glowAt(e.x, e.y, groundLevel(e.x, e.y) + (e.z ?? H * 0.6) + 2, 2 + e.size * 1.6, '#fff0a0', 0.07);
+        break;
+      case 'beam':
+        // Tracer fire (the base's guns and riflemen): the muzzle's flash and the hit.
+        if (Math.random() < 0.5) {
+          this.glowAt(e.x0, e.y0, groundLevel(e.x0, e.y0) + 2 + e.w * 2, 1.2 + e.w * 1.6, '#fff0a0', 0.06);
+          this.glowAt(e.x1, e.y1, groundLevel(e.x1, e.y1) + 1, 1 + e.w, e.color, 0.08);
+        }
         break;
       case 'strike':
         this.glowAt(e.x, e.y, groundLevel(e.x, e.y) + 1, 5, e.color, 0.25);

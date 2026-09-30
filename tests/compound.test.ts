@@ -186,6 +186,32 @@ describe('the garrison', () => {
   });
 });
 
+describe('the front line', () => {
+  it('has walkers, mechs, tanks and an APC on patrol and a rifle line behind the sandbags, and they fight what comes', { timeout: 30000 }, () => {
+    const g = quiet();
+    const h = home(g)!;
+    const cs = g.compound;
+    run(g, 0.5);
+    const kinds = new Set(cs.machines.map((m) => m.kind));
+    for (const k of ['walker', 'mech', 'tank', 'apc']) expect(kinds.has(k as never)).toBe(true);
+    expect(cs.people.filter((r) => r.kind === 'rifle').length).toBeGreaterThan(20);
+    // They walk and drive their loops.
+    const start = cs.machines.map((m) => [m.x, m.y]);
+    run(g, 12);
+    const moved = cs.machines.filter((m, i) => Math.hypot(m.x - start[i][0], m.y - start[i][1]) > 5).length;
+    expect(moved).toBeGreaterThan(cs.machines.length / 2);
+    // Something just beyond the sandbags: the riflemen shoulder their rifles, the walker on that side turns its guns on it.
+    const e = g.spawnEnemy('d_sand_rat', h.x + 300, h.y + 1235, 1);
+    e.hp = e.maxHp = 1e6;
+    run(g, 2);
+    expect(e.hp).toBeLessThan(1e6);
+    expect(cs.people.some((r) => r.kind === 'rifle' && (r.aimT ?? 0) > 0)).toBe(true);
+    const w = cs.machines.find((m) => m.kind === 'walker' && m.x > h.x)!;
+    expect(w.hold).toBeGreaterThan(0);
+    expect(Math.abs(Math.atan2(Math.sin(w.aim - Math.atan2(e.y - w.y, e.x - w.x)), Math.cos(w.aim - Math.atan2(e.y - w.y, e.x - w.x))))).toBeLessThan(0.2);
+  });
+});
+
 describe('People and the ship', () => {
   it('run out of the way of a hull bearing down on them, sooner with the beacons on', () => {
     const g = game();

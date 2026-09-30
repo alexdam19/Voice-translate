@@ -231,3 +231,87 @@ export function gunshipSprite(): { c: HTMLCanvasElement; l: number; w: number } 
   shipCache = cv;
   return { c: cv, l: L, w: W };
 }
+
+/**
+ * A war machine's upper body from above (pivot at its centre, guns to +x), drawn over its legs, which are animated
+ * live: the walker's armoured cab between two autocannon pods, radiators and a hazard-striped back plate; the light
+ * mech's squat body with a rocket pod on each shoulder and its canopy at the front.
+ */
+export function machineSprite(kind: 'walker' | 'mech'): VSprite {
+  const key = `machine|${kind}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const walker = kind === 'walker';
+  const L = walker ? 7.2 : 4.6, W = walker ? 6.4 : 4.4;
+  const cv = makeCanvas(L * VPX, W * VPX);
+  const c = cv.getContext('2d')!;
+  c.setTransform(VPX, 0, 0, VPX, 0, 0);
+  const body = walker ? '#5e6450' : '#6a6446';
+  if (walker) {
+    // Gun pods either side, twin barrels out ahead of the cab.
+    for (const y of [0.2, W - 1.5]) {
+      box(c, 1, y, 3.6, 1.3, shade(body, -0.22));
+      for (const by of [0.3, 0.8]) {
+        R(c, 4.6, y + by - 0.05, 2.5, 0.3, '#0a0c0e');
+        R(c, 4.6, y + by, 2.4, 0.2, '#2a2c2e');
+      }
+      R(c, 6.7, y + 0.2, 0.4, 0.9, '#141618');
+      for (let x = 1.3; x < 4.3; x += 0.5) R(c, x, y + 0.25, 0.12, 0.8, shade(body, -0.4));
+    }
+    // The cab: an armoured wedge, lit from the north-west.
+    c.fillStyle = '#0a0c0e';
+    c.beginPath();
+    c.moveTo(0.4, 1.3);
+    c.lineTo(4.4, 1.2);
+    c.lineTo(5.8, W / 2);
+    c.lineTo(4.4, W - 1.2);
+    c.lineTo(0.4, W - 1.3);
+    c.closePath();
+    c.fill();
+    c.fillStyle = body;
+    c.beginPath();
+    c.moveTo(0.65, 1.55);
+    c.lineTo(4.3, 1.45);
+    c.lineTo(5.5, W / 2);
+    c.lineTo(4.3, W - 1.45);
+    c.lineTo(0.65, W - 1.55);
+    c.closePath();
+    c.fill();
+    R(c, 0.65, 1.55, 3.6, 0.35, shade(body, 0.3));
+    R(c, 0.65, W - 1.9, 3.6, 0.35, shade(body, -0.32));
+    // Visor slit, a glint in it.
+    R(c, 4.2, W / 2 - 0.9, 0.5, 1.8, '#0e1418');
+    R(c, 4.3, W / 2 - 0.7, 0.25, 0.7, '#6ad0e0');
+    // Radiators, a hatch and the striped back plate.
+    for (let x = 1; x < 2.6; x += 0.32) R(c, x, W / 2 - 0.9, 0.16, 1.8, shade(body, -0.38));
+    disc(c, 3.3, W / 2, 0.55, shade(body, -0.18));
+    disc(c, 3.3, W / 2, 0.3, shade(body, 0.12));
+    for (let y = 1.6; y < W - 1.6; y += 0.6) R(c, 0.45, y, 0.3, 0.3, (Math.round(y / 0.6) % 2 ? '#e0b020' : '#1a1a1a'));
+    R(c, 2.8, 1.8, 0.1, 0.9, '#9aa0a4');
+  } else {
+    // Rocket pods on the shoulders: a grid of tubes each.
+    for (const y of [0.1, W - 1.4]) {
+      box(c, 0.8, y, 2.4, 1.3, shade(body, -0.15));
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) disc(c, 1.2 + i * 0.7, y + 0.38 + j * 0.55, 0.2, '#141618');
+      R(c, 3.2, y + 0.25, 0.3, 0.8, '#c83020');
+    }
+    box(c, 0.5, 1.4, 3.2, W - 2.8, body);
+    c.fillStyle = '#0a0c0e';
+    c.beginPath();
+    c.ellipse(3.7, W / 2, 0.9, 0.9, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#1a2a3a';
+    c.beginPath();
+    c.ellipse(3.7, W / 2, 0.72, 0.72, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#5a8ab0';
+    c.beginPath();
+    c.ellipse(3.85, W / 2 - 0.25, 0.35, 0.22, 0, 0, Math.PI * 2);
+    c.fill();
+    R(c, 4.3, W / 2 - 0.1, 0.3, 0.2, '#1a1c1e');
+    for (let x = 0.8; x < 2.4; x += 0.35) R(c, x, W / 2 - 0.5, 0.15, 1, shade(body, -0.35));
+  }
+  const sp = { c: cv, l: L, w: W };
+  cache.set(key, sp);
+  return sp;
+}

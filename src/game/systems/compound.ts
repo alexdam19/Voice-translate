@@ -31,7 +31,7 @@ import { pickKind } from './world';
  * Only simulated while you're within a few kilometres; the doors' tiles on the map follow the gate.
  */
 
-export type PersonKind = 'civ' | 'trader' | 'mech' | 'guard' | 'worker' | 'soldier' | 'officer' | 'signal' | 'pilot' | 'sentry';
+export type PersonKind = 'civ' | 'trader' | 'mech' | 'guard' | 'worker' | 'soldier' | 'officer' | 'signal' | 'pilot' | 'sentry' | 'rifle';
 
 export interface Resident {
   x: number;
@@ -51,6 +51,49 @@ export interface Resident {
   post?: { ax: number; ay: number; bx: number; by: number };
   /** Seconds left running out of a hull's path (they sprint for the side and wait for it to pass). */
   dodge?: number;
+  /** The rifle line: seconds it keeps its rifle up after the last target. */
+  aimT?: number;
+}
+
+/**
+ * A war machine of the garrison: two-legged walkers nine metres tall pacing the front with twin autocannons, patrol
+ * tanks crawling the line behind the sandbags, light mechs with rocket pods walking the lanes inside the wall, and an
+ * APC running troops between the motor pool and the gate. Each walks or drives its loop (routes relative to the
+ * Hangar), stops to fight anything hostile in reach and turns its guns on it, and waits for a hull in its way.
+ */
+export interface Machine {
+  kind: 'walker' | 'mech' | 'tank' | 'apc';
+  x: number;
+  y: number;
+  rot: number;
+  speed: number;
+  route: [number, number][];
+  wp: number;
+  cd: number;
+  /** Where its guns point, the muzzle flash, the walk cycle, and seconds it stands its ground after firing. */
+  aim: number;
+  flash: number;
+  anim: number;
+  hold: number;
+}
+
+const MACHINE = {
+  walker: { v: 3, range: 300, rate: 0.35, dmg: 0.8, splash: 0 },
+  mech: { v: 4.2, range: 220, rate: 1.7, dmg: 1.6, splash: 5 },
+  tank: { v: 5.5, range: 460, rate: 2.8, dmg: 3, splash: 9 },
+  apc: { v: 8, range: 150, rate: 0.5, dmg: 0.45, splash: 0 },
+} as const;
+
+/** Their loops round the base (metres from the Hangar): the front line outside the gate, the lanes inside it. */
+function machineRoutes(): { kind: Machine['kind']; route: [number, number][] }[] {
+  const out: { kind: Machine['kind']; route: [number, number][] }[] = [];
+  for (const sx of [-1, 1]) {
+    out.push({ kind: 'walker', route: [[sx * 140, 1112], [sx * 455, 1112], [sx * 455, 1122], [sx * 140, 1122]] });
+    out.push({ kind: 'tank', route: [[sx * 150, 1192], [sx * 450, 1192], [sx * 450, 1198], [sx * 150, 1198]] });
+    out.push({ kind: 'mech', route: [[sx * 132, 320], [sx * 132, 940], [sx * 170, 940], [sx * 170, 320]] });
+  }
+  out.push({ kind: 'apc', route: [[470, 690], [300, 700], [150, 700], [150, 960], [300, 960], [300, 700]] });
+  return out;
 }
 
 export interface GuestBase {
@@ -147,6 +190,8 @@ export interface CompoundState {
   sortie: number;
   people: Resident[];
   cars: Car[];
+  /** The garrison's war machines on patrol (see Machine). */
+  machines: Machine[];
   bases: GuestBase[];
   /** Seconds to the next siege and to the next base movement. */
   siegeT: number;
@@ -169,6 +214,7 @@ export const newCompound = (): CompoundState => ({
   sortie: 0,
   people: [],
   cars: [],
+  machines: [],
   bases: [],
   siegeT: 150,
   trafficT: 70,
@@ -361,6 +407,14 @@ function init(g: Game): void {
   }
   // Sentries at the bunkers.
   for (const gn of FRONT_GUNS) if (gn.kind === 'bunker') for (const sx of [-1, 1]) fixed('sentry', h.x + gn.x + sx * 15, h.y + gn.y + 4, gn.x < 0 ? -1 : 1);
+  // The rifle line: a squad either side of the lane behind the sandbags, rifles out over them.
+  for (const sx of [-1, 1]) for (let x = 140; x < 462; x += 20) fixed('rifle', h.x + sx * x, h.y + 1206, sx);
+  // The war machines on their loops.
+  cs.machines = machineRoutes().map(({ kind, route }, i) => {
+    const at = i % route.length;
+    const [ax, ay] = route[at], [bx, by] = route[(at + 1) % route.length];
+    return { kind, x: h.x + (ax + bx) / 2, y: h.y + (ay + by) / 2, rot: Math.atan2(by - ay, bx - ax), speed: 0, route, wp: (at + 1) % route.length, cd: Math.random() * 2, aim: Math.atan2(by - ay, bx - ax), flash: 0, anim: Math.random() * 10, hold: 0 };
+  });
   // Guards: at the gate, and walking the south and east walls.
   const gx = h.x + GATE.x, gy = h.y + GATE.y - 18;
   for (const s of [-1, 1]) {
@@ -435,8 +489,8 @@ function unstick(g: Game, dt: number): void {
 
 function person(kind: PersonKind, x: number, y: number, area: number, id: number): Resident {
   const civ = CIV_COLS[id % CIV_COLS.length];
-  const uniform = kind === 'guard' || kind === 'soldier' || kind === 'sentry' ? '#4a5a3a' : kind === 'mech' ? '#d0a020' : kind === 'worker' ? '#c06a20' : kind === 'trader' ? '#8a4a8a' : civ;
-  const hat = kind === 'guard' ? '#3a4a2a' : kind === 'mech' || kind === 'worker' ? '#ffd740' : HAIR[id % HAIR.length];
+  const uniform = kind === 'guard' || kind === 'soldier' || kind === 'sentry' || kind === 'rifle' ? '#4a5a3a' : kind === 'mech' ? '#d0a020' : kind === 'worker' ? '#c06a20' : kind === 'trader' ? '#8a4a8a' : civ;
+  const hat = kind === 'guard' || kind === 'rifle' ? '#3a4a2a' : kind === 'mech' || kind === 'worker' ? '#ffd740' : HAIR[id % HAIR.length];
   return { x, y, tx: x, ty: y, area, kind, uniform, hat, skin: id % 5, wait: Math.random() * 4, face: id % 2 ? 1 : -1, anim: Math.random() * 10, walking: false };
 }
 
@@ -704,6 +758,87 @@ function updateFront(g: Game, dt: number, dmg: number): void {
       if (Math.random() < 0.12) g.hooks.sound('smg', x, y, 0.12);
     }
   });
+}
+
+/** The war machines: walk or drive the loop, stop and fight whatever comes in reach, give way to a hull. */
+function updateMachines(g: Game, dt: number, dmg: number): void {
+  const h = home(g)!;
+  const cs = g.compound;
+  const hulls: Tank[] = [g.player, ...cs.bases.map((b) => b.tank)];
+  for (const m of cs.machines) {
+    const spec = MACHINE[m.kind];
+    m.flash = Math.max(0, m.flash - dt);
+    m.hold = Math.max(0, m.hold - dt);
+    m.cd -= dt;
+    // Fight: the nearest hostile in reach.
+    const e = m.cd <= 0 || m.hold > 0 ? nearestHostile(g, m.x, m.y, spec.range) : null;
+    if (e) {
+      m.aim = Math.atan2(e.y - m.y, e.x - m.x);
+      m.hold = 1.6;
+      if (m.cd <= 0) {
+        m.cd = spec.rate * (0.85 + Math.random() * 0.3);
+        m.flash = 0.1;
+        const hit = dmg * spec.dmg;
+        if (m.kind === 'walker') {
+          for (const sd of [-1, 1]) g.fx.push({ t: 'beam', x0: m.x - Math.sin(m.aim) * sd * 4, y0: m.y + Math.cos(m.aim) * sd * 4, x1: e.x, y1: e.y, color: '#ffd080', w: 1.3, life: 0.06 });
+        } else g.fx.push({ t: 'beam', x0: m.x, y0: m.y - (m.kind === 'mech' ? 3 : 1), x1: e.x, y1: e.y, color: m.kind === 'mech' ? '#ff9a50' : '#ffe0a0', w: m.kind === 'tank' ? 2 : 1, life: 0.07 });
+        if (spec.splash) {
+          g.fx.push({ t: 'boom', x: e.x, y: e.y, r: Math.min(spec.splash, 3.5), color: '#ffab40' });
+          for (const o of g.enemiesNear(e.x, e.y, spec.splash)) {
+            if (o.hp <= 0) continue;
+            if (o.hp <= hit) o.xp *= 0.25;
+            damageEnemy(g, o, hit, { silent: true });
+          }
+        } else {
+          if (e.hp <= hit) e.xp *= 0.25;
+          damageEnemy(g, e, hit, { silent: true });
+        }
+        if (Math.random() < 0.25) g.hooks.sound(m.kind === 'tank' ? 'cannon' : 'smg', m.x, m.y, 0.15);
+      }
+    }
+    // Walk the loop (standing its ground while it's fighting).
+    const [tx, ty] = m.route[m.wp];
+    const dx = h.x + tx - m.x, dy = h.y + ty - m.y, d = Math.hypot(dx, dy);
+    if (d < 2) {
+      m.wp = (m.wp + 1) % m.route.length;
+      continue;
+    }
+    const want = Math.atan2(dy, dx);
+    let da = want - m.rot;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    m.rot += Math.max(-dt * 0.9, Math.min(dt * 0.9, da));
+    let stop = m.hold > 0 || Math.abs(da) > 0.6;
+    const ax = m.x + Math.cos(m.rot) * 8, ay = m.y + Math.sin(m.rot) * 8;
+    for (const t of hulls) if (!t.dead && Math.abs(t.x - ax) < t.stats.length && Math.abs(t.y - ay) < t.stats.length && t.edgeDist(ax, ay) < 10) stop = true;
+    const v = stop ? 0 : Math.min(spec.v, d);
+    m.speed += Math.max(-4 * dt, Math.min(2 * dt, v - m.speed));
+    m.x += Math.cos(m.rot) * m.speed * dt;
+    m.y += Math.sin(m.rot) * m.speed * dt;
+    m.anim += dt * m.speed * (m.kind === 'walker' ? 0.55 : 1);
+    if (!e && m.hold <= 0) m.aim += Math.atan2(Math.sin(m.rot - m.aim), Math.cos(m.rot - m.aim)) * Math.min(1, dt * 2);
+  }
+}
+
+/** The rifle line at the front and the bunkers' sentries: a round each at the nearest hostile in reach. */
+function updateRifles(g: Game, dt: number, dmg: number): void {
+  for (const r of g.compound.people) {
+    if (r.kind !== 'rifle' && r.kind !== 'sentry') continue;
+    r.wait -= dt;
+    if (r.wait > 0) continue;
+    const e = nearestHostile(g, r.x, r.y, 230);
+    r.aimT = e ? 2 : Math.max(0, (r.aimT ?? 0) - dt);
+    if (!e) {
+      r.wait = 0.5;
+      continue;
+    }
+    r.wait = 0.7 + Math.random() * 0.6;
+    r.face = e.x < r.x ? -1 : 1;
+    g.fx.push({ t: 'beam', x0: r.x, y0: r.y + 0.6, x1: e.x, y1: e.y, color: '#fff0b0', w: 0.6, life: 0.05 });
+    if (Math.random() < 0.5) g.fx.push({ t: 'muzzle', x: r.x, y: r.y + 0.6, a: Math.atan2(e.y - r.y, e.x - r.x), size: 1, color: '#ffd54f' });
+    const hit = dmg * 0.35;
+    if (e.hp <= hit) e.xp *= 0.25;
+    damageEnemy(g, e, hit, { silent: true });
+  }
 }
 
 /** The nearest live hostile to (x, y) within `r` (none underground). */
@@ -1061,6 +1196,8 @@ export function updateCompound(g: Game, dt: number): void {
   updateGate(g, dt);
   updateTowers(g, dt);
   updateFront(g, dt, garrisonDmg(g));
+  updateMachines(g, dt, garrisonDmg(g));
+  updateRifles(g, dt, garrisonDmg(g));
   updateAir(g, dt, garrisonDmg(g));
   updateBases(g, dt);
   updateCars(g, dt);

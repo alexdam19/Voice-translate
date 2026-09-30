@@ -1,11 +1,11 @@
 import type { Game } from '../../game/game';
-import { CAR_SIZE, home, type Car } from '../../game/systems/compound';
+import { CAR_SIZE, home, type Car, type Machine } from '../../game/systems/compound';
 import { COMPOUND, FORWARD, FRONT_GUNS, FRONT_STRUCTS, GATE, HELIPADS, MOTOR_POOL, PADS, PAD_L, PAD_W, PARADE, STRUCTS, TOWERS } from '../../shared/compound';
 import { HANGAR } from '../../shared/mapgen';
 import { pxMini } from '../../ui/pixfont';
 import { ART_PX, faceTiles, frontSprite, hasStructSprite, structSprite, towerSprite, wallSprites, type Sprite } from './compoundArt';
 import { hero, heroFoot, type HeroPose, type HeroRole } from './heroes';
-import { gunshipSprite, turretSprite, vehicleSprite, type VehicleKind } from './militaryArt';
+import { gunshipSprite, machineSprite, turretSprite, vehicleSprite, type VehicleKind } from './militaryArt';
 import type { Gunship, Resident } from '../../game/systems/compound';
 
 /**
@@ -193,6 +193,97 @@ function drawVehicle(c: CanvasRenderingContext2D, kind: VehicleKind, v: number, 
     }
     c.restore();
   }
+}
+
+/**
+ * A walker or a light mech at its place (metres from the Hangar): the shadow a nine-metre machine throws, its two
+ * reverse-jointed legs striding (the foot coming forward lifted, so larger and further off its shadow), then the upper
+ * body turned to where its guns point, with the muzzles flashing as it fires.
+ */
+function drawStrider(c: CanvasRenderingContext2D, m: Machine, ox: number, oy: number): void {
+  const walker = m.kind === 'walker';
+  const k = walker ? 1.6 : 1;
+  const x = m.x - ox, y = m.y - oy;
+  const ca = Math.cos(m.rot), sa = Math.sin(m.rot);
+  const at = (lx: number, ly: number): [number, number] => [x + ca * lx - sa * ly, y + sa * lx + ca * ly];
+  const ph = m.anim * (walker ? 1.1 : 1.8);
+  const moving = m.speed > 0.2;
+  const legs = [-1, 1].map((sd) => {
+    const s = moving ? Math.sin(ph + (sd > 0 ? Math.PI : 0)) : 0;
+    const lift = moving ? Math.max(0, Math.cos(ph + (sd > 0 ? Math.PI : 0))) : 0;
+    return { sd, along: s * 2.6 * k, lift };
+  });
+  // Its shadow, thrown south-east: body and legs as one dark smudge.
+  const sh = walker ? 5 : 2;
+  c.fillStyle = 'rgba(0,0,0,0.28)';
+  c.beginPath();
+  c.ellipse(x + sh, y + sh, 3.6 * k, 3 * k, m.aim, 0, Math.PI * 2);
+  c.fill();
+  for (const l of legs) {
+    const [fx, fy] = at(l.along, l.sd * 2.9 * k);
+    c.beginPath();
+    c.ellipse(fx + 0.5, fy + 0.5, 1.1 * k, 0.8 * k, m.rot, 0, Math.PI * 2);
+    c.fill();
+  }
+  // Legs: hip, the knee bent back, the foot.
+  for (const l of legs) {
+    const [hx, hy] = at(0, l.sd * 1.6 * k);
+    const [kx, ky] = at(l.along * 0.4 - 1.9 * k, l.sd * 3.3 * k);
+    const [fx, fy] = at(l.along, l.sd * 2.9 * k);
+    const up = 1 + l.lift * 0.18;
+    for (const [w, col] of [[0.95 * k, '#0a0c0e'], [0.6 * k, walker ? '#3e4438' : '#4a4634']] as const) {
+      c.strokeStyle = col;
+      c.lineWidth = w * up;
+      c.lineCap = c.lineJoin = 'round';
+      c.beginPath();
+      c.moveTo(hx, hy);
+      c.lineTo(kx, ky);
+      c.lineTo(fx - l.lift * 0.4, fy - l.lift * 0.4);
+      c.stroke();
+    }
+    c.fillStyle = '#6a7060';
+    c.beginPath();
+    c.arc(kx, ky, 0.32 * k, 0, Math.PI * 2);
+    c.fill();
+    // A three-toed foot.
+    c.save();
+    c.translate(fx - l.lift * 0.4, fy - l.lift * 0.4);
+    c.rotate(m.rot);
+    c.scale(k * up, k * up);
+    c.fillStyle = '#0a0c0e';
+    c.fillRect(-0.9, -0.75, 1.9, 1.5);
+    c.fillStyle = '#2e322c';
+    c.fillRect(-0.75, -0.6, 1.6, 1.2);
+    c.fillStyle = '#4a5046';
+    for (const ty of [-0.55, -0.1, 0.35]) c.fillRect(0.7, ty, 0.6, 0.3);
+    c.fillStyle = '#5a6054';
+    c.fillRect(-0.75, -0.6, 1.6, 0.25);
+    c.restore();
+  }
+  // The upper body, turned to its guns, and a bob in its stride.
+  const sp = machineSprite(m.kind === 'walker' ? 'walker' : 'mech');
+  const bob = moving ? Math.abs(Math.sin(ph)) * 0.15 : 0;
+  c.save();
+  c.translate(x, y);
+  c.rotate(m.aim);
+  c.scale((1 + bob * 0.2) * (walker ? 1.25 : 1.1), (1 + bob * 0.2) * (walker ? 1.25 : 1.1));
+  c.drawImage(sp.c, -sp.l / 2, -sp.w / 2, sp.l, sp.w);
+  if (m.flash > 0) {
+    const muz: [number, number][] = walker ? [[3.5, -2.75], [3.5, -2.25], [3.5, 2.05], [3.5, 2.55]] : [[0.9, -1.45], [0.9, 1.45]];
+    for (const [mx, my] of muz) {
+      c.fillStyle = 'rgba(255,190,70,0.45)';
+      c.beginPath();
+      c.moveTo(mx, my - 0.35);
+      c.lineTo(mx + 2.2, my - 0.7);
+      c.lineTo(mx + 1.6, my);
+      c.lineTo(mx + 2.2, my + 0.7);
+      c.lineTo(mx, my + 0.35);
+      c.fill();
+      c.fillStyle = '#fff2a0';
+      c.fillRect(mx, my - 0.18, 1, 0.36);
+    }
+  }
+  c.restore();
 }
 
 /** A gunship at (x, y) metres, `z` up: its shadow on the ground, the airframe, the rotor (a blur when it spins). */
@@ -531,12 +622,23 @@ export function drawCompoundPeople(v: CompoundView, g: Game): void {
   const h = home(g);
   if (!h || !v.near(h.x, h.y + MID_Y, REACH)) return;
   const c = v.c;
-  if (v.ppm >= 0.6) {
-    toHangar(v, h.x, h.y);
-    for (const car of g.compound.cars) if (v.near(car.x, car.y, 8)) drawCar(c, car, h.x, h.y);
-    c.setTransform(1, 0, 0, 1, 0, 0);
-  }
-  if (v.ppm < 1.1) return;
+  const cs = g.compound;
+  toHangar(v, h.x, h.y);
+  if (v.ppm >= 0.6) for (const car of cs.cars) if (v.near(car.x, car.y, 8)) drawCar(c, car, h.x, h.y);
+  // The patrol tanks and the APC.
+  cs.machines.forEach((m, i) => {
+    if ((m.kind === 'tank' || m.kind === 'apc') && v.near(m.x, m.y, 10)) drawVehicle(c, m.kind, i, m.x - h.x, m.y - h.y, m.rot, m.aim, m.flash);
+  });
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  if (v.ppm >= 1.1) drawPeople(v, g);
+  // The walkers and mechs stand over everyone.
+  toHangar(v, h.x, h.y);
+  for (const m of cs.machines) if ((m.kind === 'walker' || m.kind === 'mech') && v.near(m.x, m.y, 10)) drawStrider(c, m, h.x, h.y);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function drawPeople(v: CompoundView, g: Game): void {
+  const c = v.c;
   // A person stands about 1.6 times life size (so they read), in steps of 4 px to keep the sprite cache small.
   const S = Math.max(24, Math.min(112, Math.round((v.ppm * 1.8 * 1.6) / 0.86 / 4) * 4));
   const ft = heroFoot(S, { heading: 0 });
@@ -549,7 +651,7 @@ export function drawCompoundPeople(v: CompoundView, g: Game): void {
     if (!v.near(r.x, r.y, 4)) return;
     const { role, pose, frame } = look(r, i, alarm, drill, waving, v.time);
     // Seen from above, facing the way they walk; at a post, out toward the front; otherwise left or right.
-    const hd = r.walking ? Math.atan2(r.ty - r.y, r.tx - r.x) : r.kind === 'sentry' || r.kind === 'guard' ? Math.PI / 2 : r.face < 0 ? Math.PI : 0;
+    const hd = r.walking ? Math.atan2(r.ty - r.y, r.tx - r.x) : r.kind === 'sentry' || r.kind === 'guard' || r.kind === 'rifle' ? Math.PI / 2 : r.face < 0 ? Math.PI : 0;
     const img = hero({ role, seed: i * 13 + 7, color: role === 'crew' || role === 'deckhand' ? r.uniform : undefined }, pose, frame, S, { heading: hd + v.th });
     const sx = Math.round(v.bx(r.x, r.y)), sy = Math.round(v.by(r.x, r.y));
     c.drawImage(img, sx - ft.x, sy - ft.y);
@@ -573,6 +675,10 @@ function look(r: Resident, i: number, alarm: boolean, drill: number, waving: boo
       return { role: i % 7 === 0 ? 'heavy' : 'rifleman', pose: drill === 1 ? 'salute' : drill === 2 ? 'walk' : 'stand', frame: drill === 2 ? Math.floor(time * 5) : 0 };
     case 'officer':
       return { role: 'officer', pose: drill === 1 ? 'salute' : 'stand', frame: 0 };
+    case 'rifle':
+      // The firing line: rifles up over the sandbags while there's something to shoot, easy otherwise.
+      if ((r.aimT ?? 0) > 0 || alarm) return { role: i % 6 === 0 ? 'heavy' : 'rifleman', pose: 'aim', frame: 0 };
+      return { role: i % 6 === 0 ? 'heavy' : 'rifleman', pose: Math.floor(r.anim * 0.25 + i) % 4 === 0 ? 'look' : 'stand', frame: 0 };
     case 'sentry':
       return { role: i % 2 ? 'heavy' : 'rifleman', pose: alarm ? 'aim' : Math.floor(r.anim * 0.2) % 3 === 0 ? 'look' : 'stand', frame: 0 };
     case 'guard':
