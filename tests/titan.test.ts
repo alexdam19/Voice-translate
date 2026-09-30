@@ -56,11 +56,12 @@ describe('Titan systems', () => {
       updateTitan(g, 1 / 30);
     }
     expect(g.titan.fire.filter((f) => f > 0).length).toBeGreaterThan(1);
-    // Crews and a working life support get on top of it.
+    // Crews and a working life support get on top of it (held working: a fire in its own compartment can burn it out).
     g.titan.systems.life = 1;
     p.stats.depts.works = [8, 8];
     for (let k = 0; k < 30 * 240 && g.titan.fire.some((f) => f > 0); k++) {
       p.stats.depts.works = [8, 8];
+      g.titan.systems.life = 1;
       updateTitan(g, 1 / 30);
     }
     expect(g.titan.fire.every((f) => f === 0)).toBe(true);

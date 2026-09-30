@@ -115,8 +115,13 @@ export function siteSprite(name: string, px: number, ready: boolean, seed: numbe
   const S = Math.max(10, Math.round(px));
   const kind = /train/i.test(name) ? 'train' : /tank|tanker/i.test(name) ? 'tanker' : /truck|hauler|salt/i.test(name) ? 'truck' : 'ruin';
   return cached(`s|${kind}|${S}|${ready}|${seed % 3}`, () => paintSprite(S, seed % 3 + 5, (p) => {
-    // Drifted sand around it.
-    ell(p, 16, 16, 14, 11, [176, 146, 100], 'rock', 0.4, 0.2);
+    // Scattered wreckage and a scorch round it (the ground under it is the site's own clearing).
+    for (let k = 0; k < 9; k++) {
+      const a = hash2(k, seed % 3, 21) * Math.PI * 2, d = 9 + hash2(seed % 3, k, 22) * 5;
+      const x = 16 + Math.cos(a) * d, y = 16 + Math.sin(a) * d * 0.8;
+      if (k % 3 === 0) plate(p, x - 1.2, y - 0.8, 2.4, 1.6, k % 2 ? RUST : [96, 100, 108], 'metal');
+      else ell(p, x, y, 0.9, 0.7, k % 2 ? [70, 66, 60] : [110, 100, 88], 'rock', 0.8);
+    }
     if (kind === 'ruin') {
       // Broken walls and a doorway.
       plate(p, 5, 6, 22, 3, [120, 112, 100], 'rock');
@@ -141,6 +146,10 @@ export function siteSprite(name: string, px: number, ready: boolean, seed: numbe
       // Scorch and rust.
       for (let k = 0; k < 4; k++) ell(p, 8 + hash2(k, 3) * 14, 13 + hash2(3, k) * 6, 1.4, 1.2, [50, 36, 28], 'rock', 0.4, 0, false);
     }
+    // Supply crates stacked by it and a tarp over the salvage.
+    plate(p, 3, 23, 4, 4, [138, 106, 64], 'cloth');
+    plate(p, 5, 20.5, 3.4, 3.4, [120, 92, 54], 'cloth');
+    plate(p, 24, 4, 5, 3.4, [70, 90, 60], 'cloth');
     if (ready) {
       plate(p, 13, 23, 6, 4, [200, 150, 40], 'metal');
       plate(p, 14, 24.3, 4, 1, [110, 70, 20], 'none');

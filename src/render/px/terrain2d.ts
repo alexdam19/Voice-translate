@@ -156,6 +156,25 @@ function terUnder(c: MapChunk, pr: Prop): number {
   return c.ter[(Math.floor(pr.y) - c.cy * CH) * CH + Math.floor(pr.x) - c.cx * CH];
 }
 
+/**
+ * A field in the green country: ploughed earth in furrows (dark trough, lit ridge) or standing wheat in rows, the
+ * furrows running one way or the other field to field (by the 70 x 50 m field grid).
+ */
+function fieldColour(t: number, tx: number, ty: number, r: number, g: number, b: number, n: number): [number, number, number] {
+  const along = hash2(Math.floor(tx / 70), Math.floor(ty / 50), 61) < 0.5;
+  const row = ((along ? ty : tx) % 3 + 3) % 3;
+  if (t === TER.DIRT) {
+    const k = row === 0 ? 0.74 : row === 1 ? 1.08 : 0.96;
+    return [r * k, g * k, b * k];
+  }
+  // Wheat: gold heads over the stalks, a darker gap between rows, the odd poppy.
+  if (n > 0.995) return [210, 60, 40];
+  const w = vnoise(tx, ty, 6, 23);
+  const base: [number, number, number] = [196 + w * 30, 164 + w * 26, 78 + w * 10];
+  const k = row === 0 ? 0.78 : row === 1 ? 1.06 : 0.98;
+  return [base[0] * k, base[1] * k, base[2] * k];
+}
+
 /** Smooth value noise (0..1) on a grid of `cell` tiles. */
 function vnoise(x: number, y: number, cell: number, seed: number): number {
   const fx0 = x / cell, fy0 = y / cell;
@@ -175,6 +194,7 @@ export class Terrain2D {
   private ter = new Uint8Array(W * W);
   private obs = new Uint8Array(W * W);
   private oh = new Uint8Array(W * W);
+  private zn = new Uint8Array(W * W);
   private hgt = new Float32Array(W * W);
   private img: ImageData | null = null;
   /** Blocks built this frame (building is spread over frames). */
@@ -274,6 +294,7 @@ export class Terrain2D {
           this.ter[i] = TER.BASALT;
           this.obs[i] = OBS.CLIFF;
           this.oh[i] = 40;
+          this.zn[i] = ZONE.EDGE;
           lx++;
           continue;
         }
@@ -282,18 +303,19 @@ export class Terrain2D {
         const base = ((ty & 31) << 5) | (tx & 31);
         for (let k = 0; k < run; k++) {
           this.ter[i + k] = c.ter[base + k];
+          this.zn[i + k] = c.zone[base + k];
           this.obs[i + k] = c.obs[base + k];
           this.oh[i + k] = c.oh[base + k];
         }
         lx += run;
       }
     }
-    // Rolling ground: three octaves of smooth noise.
+    // Rolling ground: broad hills, then three finer octaves of smooth noise.
     for (let ly = 0; ly < W; ly++) {
       const ty = y0 - PAD + ly;
       for (let lx = 0; lx < W; lx++) {
         const tx = x0 - PAD + lx;
-        this.hgt[ly * W + lx] = vnoise(tx, ty, 46, 11) * 3 + vnoise(tx, ty, 15, 12) * 1.1 + vnoise(tx, ty, 5, 13) * 0.35;
+        this.hgt[ly * W + lx] = vnoise(tx, ty, 150, 10) * 7 + vnoise(tx, ty, 46, 11) * 3 + vnoise(tx, ty, 15, 12) * 1.1 + vnoise(tx, ty, 5, 13) * 0.35;
       }
     }
   }
@@ -404,6 +426,7 @@ export class Terrain2D {
     const ctx = out.getContext('2d')!;
     ctx.putImageData(img, 0, 0);
     paintBuildings(ctx, this.map, bx * BLOCK, by * BLOCK, BLOCK, f);
+    this.stampDebris(ctx, bx, by, f);
     this.stampSprites(ctx, bx, by, f);
     return out;
   }
@@ -618,11 +641,14 @@ export class Terrain2D {
           b = c[2] * k;
         } else {
           [r, g, b] = this.groundColour(t, tx, ty, n);
+          // Farmland in the green country: ploughed fields in furrows, the ochre ones standing wheat in rows.
+          if (this.zn[i] === ZONE.VERDANT && (t === TER.DIRT || t === TER.RUST)) [r, g, b] = fieldColour(t, tx, ty, r, g, b, n);
           // Hill shading: faces toward the sun (north-west) lighter, the far sides darker.
           const relief = RELIEF[t] ?? 0;
           if (relief) {
-            const s = (hgt[i + W + 1] - hgt[i - W - 1]) * relief * 0.55;
-            const k = 1 + Math.max(-0.3, Math.min(0.3, s));
+            // Slopes facing the sun lit, the far sides in shade; hollows a touch darker than the crests.
+            const s = (hgt[i + W + 1] - hgt[i - W - 1]) * relief * 0.62;
+            const k = (1 + Math.max(-0.34, Math.min(0.34, s))) * (0.94 + Math.min(1, hgt[i] / 11) * 0.12);
             r *= k;
             g *= k;
             b *= k;
@@ -658,8 +684,9 @@ export class Terrain2D {
     }
     // Debris props are baked in for every view; the sprite props only as dots in the far view (up close the
     // high-resolution blocks stamp their sprites over clean ground).
-    this.drawProps(d, bx, by, x0, y0, false);
+    // (The high-resolution copies start from the ground without them and paint the debris crisp themselves.)
     const ground = new Uint8ClampedArray(d);
+    this.drawProps(d, bx, by, x0, y0, false);
     this.drawProps(d, bx, by, x0, y0, true);
     const out = document.createElement('canvas');
     out.width = BLOCK;
@@ -714,6 +741,11 @@ export class Terrain2D {
         const v = vnoise(tx, ty, 4, 7);
         r = r * (0.85 + v * 0.3);
         g = g * (0.9 + v * 0.35);
+        // Meadows: broad swathes of yellow-green and deep green across the country.
+        const m = vnoise(tx, ty, 38, 29) - 0.5;
+        r += m * 38;
+        g += m * 16;
+        b -= m * 8;
         if (n > 0.93) k -= 0.22;
         else if (n > 0.9) k += 0.2;
         if (n < 0.006) return hash2(tx, ty, 9) > 0.5 ? [240, 220, 90] : [235, 235, 240];
@@ -795,6 +827,119 @@ export class Terrain2D {
   }
 
   /** Props as a few shaded pixels each, with a shadow: the debris ones, or (far view) the ones with sprites. */
+  /**
+   * The debris without a sprite (barrels, crates, bones, pipes, wrecked cars, cacti, stumps...) painted crisp on a
+   * high-resolution block: a shadow to the south-east, a dark outline, the body lit on its north-west edges and
+   * shaded on the far ones, and a detail for what it is.
+   */
+  private stampDebris(x: CanvasRenderingContext2D, bx: number, by: number, f: number): void {
+    const x0 = bx * BLOCK, y0 = by * BLOCK;
+    const R = (a: number, b: number, w: number, h: number, c: string): void => {
+      x.fillStyle = c;
+      x.fillRect(Math.round(a), Math.round(b), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+    };
+    const hex = (c: RGB, k = 1): string => `rgb(${Math.min(255, c[0] * k) | 0},${Math.min(255, c[1] * k) | 0},${Math.min(255, c[2] * k) | 0})`;
+    for (let cy = -1; cy <= CPB; cy++) {
+      for (let cx = -1; cx <= CPB; cx++) {
+        const c = this.map.peek(bx * CPB + cx, by * CPB + cy);
+        if (!c) continue;
+        for (const pr of c.props) {
+          if (pr.gone) continue;
+          const p = PROP[pr.kind];
+          if (!p) continue;
+          const t = terUnder(c, pr);
+          if (onPavement(t) || propSpriteName(pr, t)) continue;
+          const s = Math.max(1, Math.round(pr.s));
+          const w = p.w * s * f, h = p.h * s * f;
+          const px = (pr.x - x0) * f - w / 2, py = (pr.y - y0) * f - h / 2;
+          if (px > BLOCK * f || py > BLOCK * f || px + w < 0 || py + h < 0) continue;
+          const o = Math.max(1, Math.round(f / 3));
+          x.globalAlpha = 0.35;
+          R(px + o * 2, py + o * 2, w, h, '#000');
+          x.globalAlpha = 1;
+          const round = pr.kind === 'barrel' || pr.kind === 'skull' || pr.kind === 'mushroom';
+          if (round) {
+            const cxp = px + w / 2, cyp = py + h / 2, rr = Math.max(w, h) / 2;
+            x.fillStyle = '#0c0a08';
+            x.beginPath();
+            x.arc(cxp, cyp, rr + o * 0.7, 0, Math.PI * 2);
+            x.fill();
+            x.fillStyle = hex(p.c);
+            x.beginPath();
+            x.arc(cxp, cyp, rr, 0, Math.PI * 2);
+            x.fill();
+            x.fillStyle = hex(p.hi);
+            x.beginPath();
+            x.arc(cxp - rr * 0.3, cyp - rr * 0.3, rr * 0.45, 0, Math.PI * 2);
+            x.fill();
+            if (pr.kind === 'barrel') {
+              x.strokeStyle = hex(p.c, 0.6);
+              x.lineWidth = Math.max(1, o * 0.6);
+              x.beginPath();
+              x.arc(cxp, cyp, rr * 0.65, 0, Math.PI * 2);
+              x.stroke();
+            } else if (pr.kind === 'skull') {
+              R(cxp - rr * 0.45, cyp - rr * 0.1, rr * 0.3, rr * 0.3, '#1a1612');
+              R(cxp + rr * 0.15, cyp - rr * 0.1, rr * 0.3, rr * 0.3, '#1a1612');
+            }
+            continue;
+          }
+          R(px - o, py - o, w + o * 2, h + o * 2, '#0c0a08');
+          R(px, py, w, h, hex(p.c));
+          R(px, py, w, o, hex(p.hi));
+          R(px, py, o, h, hex(p.hi, 0.92));
+          R(px, py + h - o, w, o, hex(p.c, 0.62));
+          R(px + w - o, py, o, h, hex(p.c, 0.75));
+          switch (pr.kind) {
+            case 'crate':
+              R(px + w / 2 - o / 2, py + o, o, h - o * 2, hex(p.c, 0.65));
+              R(px + o, py + h / 2 - o / 2, w - o * 2, o, hex(p.c, 0.65));
+              break;
+            case 'wreckcar':
+              R(px + w * 0.3, py + o, w * 0.3, h - o * 2, '#2a3440');
+              R(px + w * 0.32, py + o * 1.5, w * 0.1, h * 0.25, '#6a8aa0');
+              R(px + w * 0.75, py + o, o, h - o * 2, hex(p.c, 0.6));
+              for (const wx of [px + w * 0.15, px + w * 0.8]) {
+                R(wx, py - o, w * 0.12, o * 1.5, '#141414');
+                R(wx, py + h - o * 0.5, w * 0.12, o * 1.5, '#141414');
+              }
+              break;
+            case 'pipe':
+              R(px + w - o * 2, py - o * 0.5, o * 2, h + o, hex(p.c, 0.8));
+              R(px, py + h / 2 - o / 2, w, Math.max(1, o * 0.6), hex(p.c, 0.7));
+              break;
+            case 'bones':
+              R(px - o, py - o * 0.5, o * 2, h + o, hex(p.hi));
+              R(px + w - o, py - o * 0.5, o * 2, h + o, hex(p.hi));
+              break;
+            case 'cactus':
+              R(px - w * 0.6, py + h * 0.35, w * 0.6, o, hex(p.c));
+              R(px - w * 0.6, py + h * 0.15, o, h * 0.25, hex(p.c));
+              R(px + w, py + h * 0.5, w * 0.6, o, hex(p.c));
+              R(px + w * 1.6 - o, py + h * 0.3, o, h * 0.25, hex(p.c));
+              break;
+            case 'deadtree':
+              R(px - w, py + h * 0.2, w, o, hex(p.c, 0.9));
+              R(px + w, py + h * 0.45, w * 1.2, o, hex(p.c, 0.9));
+              break;
+            case 'sign':
+              R(px + w / 2 - o / 2, py + h, o, h, '#3a2a1a');
+              R(px + o, py + h * 0.4, w - o * 2, Math.max(1, o * 0.5), '#3a2a1a');
+              break;
+            case 'crystal':
+              R(px + o, py + o, Math.max(1, o), h - o * 2, '#ffffff');
+              break;
+            case 'antenna':
+              R(px + w / 2 - o / 2, py - h * 0.3, o, h * 0.3, hex(p.hi));
+              R(px + w / 2 - o, py - h * 0.35, o * 2, o, '#ff3020');
+              break;
+            default:
+          }
+        }
+      }
+    }
+  }
+
   private drawProps(d: Uint8ClampedArray, bx: number, by: number, x0: number, y0: number, sprites: boolean): void {
     const set = (qx: number, qy: number, c: RGB | [number, number, number], mul = 1): void => {
       if (qx < 0 || qy < 0 || qx >= BLOCK || qy >= BLOCK) return;

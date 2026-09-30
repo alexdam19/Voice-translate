@@ -169,7 +169,10 @@ function edgeDist(u: number, v: number): number {
 export function craterZone(x: number, y: number): number {
   const u = x / S, v = y / S;
   if (edgeDist(u, v) > 0) return ZONE.EDGE;
-  const wu = craterNoise.fbm2(u * 7, v * 7, 3) * 0.03, wv = craterNoise.fbm2(u * 7 + 9.1, v * 7 - 4.7, 3) * 0.03;
+  // Warped at three scales: the zones' broad shapes (kilometres), their borders wandering over hundreds of metres,
+  // and a ragged edge of tens of metres, so no border runs straight.
+  const wu = craterNoise.fbm2(u * 7, v * 7, 3) * 0.03 + craterNoise.fbm2(u * 90 + 3.3, v * 90, 2) * 0.0032 + craterNoise.noise2(u * 520, v * 520 + 7.7) * 0.0005;
+  const wv = craterNoise.fbm2(u * 7 + 9.1, v * 7 - 4.7, 3) * 0.03 + craterNoise.fbm2(u * 90 - 6.1, v * 90 + 2.2, 2) * 0.0032 + craterNoise.noise2(u * 520 + 4.4, v * 520) * 0.0005;
   const dd = Math.hypot(u - DIVOT.x / S, v - DIVOT.y / S) + wu * 0.4;
   if (dd < DIVOT.rimOut / S) return ZONE.DIVOT;
   const pu = u + wu, pv = v + wv;
