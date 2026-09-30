@@ -277,6 +277,7 @@ export class Overlay {
   drawHorde(g: Game): void {
     const w = g.wave;
     if (g.mode !== 'world' || g.player.dead || (w.phase !== 'warning' && w.phase !== 'surge')) return;
+    if (w.dead && w.phase === 'surge') this.drawDeadWall(g);
     if (w.phase === 'surge' && w.spawned >= w.total) return;
     const p = g.player;
     const R = p.stats.length / 2 + 60;
@@ -285,6 +286,39 @@ export class Overlay {
     const col = pulse > 0.5 ? '#ff1744' : '#ff8a80';
     this.edgeArrow(x, y, col, w.phase === 'warning' ? `HORDE in ${Math.ceil(w.t)}s` : 'HORDE', pulse * 6, 1.6);
     if (this.view.width > 900) for (const s of [-0.45, 0.45]) this.edgeArrow(p.x + Math.cos(w.dir + s) * R, p.y + Math.sin(w.dir + s) * R, col, '', pulse * 4, 1);
+  }
+
+  /**
+   * A dead wave's front: a ragged red line a kilometre wide across its path where it's on screen, and the arrow to it
+   * with how far behind it is when it isn't.
+   */
+  private drawDeadWall(g: Game): void {
+    const w = g.wave;
+    const p = g.player;
+    const c = this.ctx;
+    const a = Math.atan2(p.y - w.fy, p.x - w.fx);
+    const nx = -Math.sin(a), ny = Math.cos(a);
+    const pulse = 0.55 + 0.45 * Math.sin(performance.now() / 120);
+    c.save();
+    c.beginPath();
+    let started = false;
+    for (let k = -30; k <= 30; k++) {
+      const jag = Math.sin(k * 2.7) * 18 + Math.sin(k * 7.1) * 9;
+      const q = this.view.worldToScreen(w.fx + nx * k * 16 + Math.cos(a) * jag, w.fy + ny * k * 16 + Math.sin(a) * jag, 0);
+      if (!q.ok) continue;
+      if (started) c.lineTo(q.x, q.y);
+      else c.moveTo(q.x, q.y);
+      started = true;
+    }
+    c.lineWidth = 10;
+    c.strokeStyle = `rgba(255,23,68,${0.25 * pulse})`;
+    c.stroke();
+    c.lineWidth = 3;
+    c.strokeStyle = `rgba(255,60,60,${0.9 * pulse})`;
+    c.stroke();
+    c.restore();
+    const d = Math.hypot(p.x - w.fx, p.y - w.fy);
+    this.edgeArrow(w.fx, w.fy, pulse > 0.5 ? '#ff1744' : '#ff8a80', `DEAD WAVE ${Math.round(d)} m`, pulse * 6, 1.8);
   }
 
   /** An arrow at the edge of the play area pointing toward a world point. */

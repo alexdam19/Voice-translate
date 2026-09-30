@@ -5,18 +5,28 @@ import { REGION_INFO, threatAt } from '../../shared/mapgen';
 import { ENEMIES, zoneHorde } from '../enemyDefs';
 import type { Game } from '../game';
 import { nearHome } from './spawns';
+import { comm } from './comms';
 
 /**
  * Horde waves, World War Z style. A calm spell, a warning that says where it's coming from, then a surge: for a
  * minute or more, a flood pours in from that side (from the nearest hostile place, and it's that zone's creatures), sprinting,
  * piling against the hull and climbing aboard. Every wave lasts longer, comes thicker and brings heavier things;
  * every third one brings a boss. The longer you survive, the stronger they get.
+ *
+ * From the fourth wave on, some are DEAD WAVES: the whole country emptying toward you, a wall of them a kilometre wide
+ * rolling forward faster than a walk, far more than any guns can stop. You can't fight one. Run: get the wall more
+ * than a kilometre behind you and hold it there, and they lose the scent. Let it catch you and it just keeps coming.
  */
+
+/** How far ahead of a dead wave's front you have to stay, and for how long, to lose it. */
+export const DEAD_ESCAPE = 1100;
+const DEAD_HOLD = 6;
 
 /** Horde units alive at once (phones get fewer). */
 export const MAX_HORDE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 420 : 900;
 const FIRST_CALM = 100;
 const WARNING = 10;
+const DEAD_WARNING = 20;
 
 export const COMPASS = ['EAST', 'SOUTH-EAST', 'SOUTH', 'SOUTH-WEST', 'WEST', 'NORTH-WEST', 'NORTH', 'NORTH-EAST'];
 
@@ -86,9 +96,21 @@ function spawnPoint(g: Game, dir: number, spread: number): { x: number; y: numbe
   };
 }
 
+/** Somewhere in the wall of a dead wave: across its front, a little behind it. */
+function deadPoint(g: Game): { x: number; y: number } {
+  const w = g.wave;
+  const p = g.player;
+  const a = Math.atan2(p.y - w.fy, p.x - w.fx);
+  const side = (Math.random() - 0.5) * 900, back = Math.random() * 90;
+  return {
+    x: Math.max(4, Math.min(MAP_SIZE - 4, w.fx - Math.sin(a) * side - Math.cos(a) * back)),
+    y: Math.max(4, Math.min(MAP_SIZE - 4, w.fy + Math.cos(a) * side - Math.sin(a) * back)),
+  };
+}
+
 function spawnOne(g: Game, kind: string, elite = false): void {
   const w = g.wave;
-  const { x, y } = spawnPoint(g, w.dir, 1.2);
+  const { x, y } = w.dead ? deadPoint(g) : spawnPoint(g, w.dir, 1.2);
   const t = threatAt(x, y);
   const e = g.spawnEnemy(kind, x, y, t, elite || Math.random() < 0.008 * Math.min(10, w.n));
   e.horde = true;
@@ -97,6 +119,8 @@ function spawnOne(g: Game, kind: string, elite = false): void {
   e.maxHp = e.hp = e.hp * (1 + 0.06 * (w.n - 1));
   // Horde runners sprint: they have a long way to come to reach a Titan.
   if ((ENEMIES[kind].size ?? 1) < 8 && !ENEMIES[kind].flying) e.speed *= 1.35 + Math.min(0.25, 0.02 * w.n) + (Math.random() - 0.5) * 0.15;
+  // A dead wave moves together, about as fast as its front: a Titan flat out leaves it behind.
+  if (w.dead && !ENEMIES[kind].flying) e.speed = w.fv * (0.85 + Math.random() * 0.4);
   w.spawned++;
 }
 
@@ -138,6 +162,23 @@ export function updateWaves(g: Game, dt: number): void {
     w.batchT = 0;
     w.elapsed = 0;
     w.bossDone = false;
+    w.dead = w.n >= 4 && (w.n % 5 === 4 || Math.random() < 0.15);
+    w.escT = 0;
+    if (w.dead) {
+      // The wall: several times a normal surge, for longer, rolling in from the edge of sight.
+      w.t = DEAD_WARNING;
+      w.rate *= 4.5;
+      w.dur = Math.max(120, w.dur * 1.4);
+      w.total = Math.round(w.rate * w.dur);
+      w.fv = Math.min(11, 7.5 + 0.2 * w.n);
+      const d = p.stats.length / 2 + 520;
+      w.fx = p.x + Math.cos(w.dir) * d;
+      w.fy = p.y + Math.sin(w.dir) * d;
+      g.hooks.toast(`DEAD WAVE in the ${compassName(w.dir)}: everything in ${zoneHorde(w.zone).name} is coming, thousands of them. You can't fight that. RUN ${compassName(w.dir + Math.PI)} and keep going: get the wall a kilometre behind you and they'll lose the scent.`, '#ff1744');
+      comm(g, 'ops', `Dead wave! The whole valley is moving, a wall of them a kilometre wide, ${compassName(w.dir)} of you. Don't stop to fight. Throttle to the stops and run ${compassName(w.dir + Math.PI)}.`, 'alert');
+      g.hooks.sound('alarm');
+      return;
+    }
     const boss = w.n % 3 === 0;
     g.hooks.toast(`HORDE ${w.n}: the creatures of ${zoneHorde(w.zone).name} ${src.from ? `from ${src.from} ` : ''}in the ${compassName(w.dir)}. About ${w.total} of them over ${Math.round(w.dur)}s${boss ? ', and a BOSS' : ''}. Get ready!`, '#ff5252');
     g.hooks.sound('alarm');
@@ -148,6 +189,34 @@ export function updateWaves(g: Game, dt: number): void {
     w.phase = 'surge';
     w.t = 0;
     g.hooks.sound('roar');
+  }
+  // A dead wave: the wall rolls on toward her; outrun it and it gives up.
+  if (w.dead) {
+    const dx = p.x - w.fx, dy = p.y - w.fy, d = Math.hypot(dx, dy);
+    if (d > 60) {
+      w.fx += (dx / d) * w.fv * dt;
+      w.fy += (dy / d) * w.fv * dt;
+    }
+    w.escT = d > DEAD_ESCAPE ? w.escT + dt : 0;
+    if (w.escT > DEAD_HOLD) {
+      for (const e of g.enemies) {
+        if (!e.horde || e.boss) continue;
+        e.horde = false;
+        e.aggro = false;
+        e.latch = null;
+        // They scatter and die off out there.
+        e.hp = Math.random() < 0.7 ? 0 : e.hp;
+      }
+      const xp = 60 + 20 * w.n;
+      g.gainXp(xp);
+      g.stats.hordes = (g.stats.hordes ?? 0) + 1;
+      g.hooks.toast(`YOU OUTRAN THE DEAD WAVE. It's lost the scent and breaking up behind you. +${xp} XP.`, '#76ff03');
+      g.hooks.sound('levelup');
+      w.dead = false;
+      w.phase = 'calm';
+      w.t = Math.max(45, 90 - w.n * 2);
+      return;
+    }
   }
   // Surge: pour them in for the whole surge time, as fast as the cap allows.
   w.elapsed += dt;
@@ -200,8 +269,9 @@ export function updateWaves(g: Game, dt: number): void {
     if (w.n % 2 === 0) g.packs.push(w.n >= 10 ? 'epic_pack' : w.n >= 6 ? 'rare_pack' : 'pack');
     g.stats.hordes = (g.stats.hordes ?? 0) + 1;
     g.objectiveCounters.hordes = (g.objectiveCounters.hordes ?? 0) + 1;
-    g.hooks.toast(`HORDE ${w.n} SURVIVED! +${xp} XP, +${scrap} scrap${w.n % 2 === 0 ? ', a card pack' : ''}. They'll be stronger next time.`, '#76ff03');
+    g.hooks.toast(w.dead ? `YOU SURVIVED A DEAD WAVE. Nobody does that. +${xp} XP, +${scrap} scrap.` : `HORDE ${w.n} SURVIVED! +${xp} XP, +${scrap} scrap${w.n % 2 === 0 ? ', a card pack' : ''}. They'll be stronger next time.`, '#76ff03');
     g.hooks.sound('levelup');
+    w.dead = false;
     w.phase = 'calm';
     w.t = Math.max(35, 80 - w.n * 3);
   }
@@ -211,6 +281,11 @@ export function updateWaves(g: Game, dt: number): void {
 export function waveStatus(g: Game): { label: string; frac: number; urgent: boolean } | null {
   const w = g.wave;
   if (g.mode !== 'world' || g.player.dead) return null;
+  if (w.dead && w.phase === 'warning') return { label: `☠ DEAD WAVE · ${compassName(w.dir)} · RUN ${compassName(w.dir + Math.PI)} · ${Math.ceil(w.t)}s`, frac: 1 - w.t / DEAD_WARNING, urgent: true };
+  if (w.dead && w.phase === 'surge') {
+    const d = Math.hypot(g.player.x - w.fx, g.player.y - w.fy);
+    return { label: w.escT > 0 ? `☠ DEAD WAVE · ${Math.round(d)} m back · losing them ${Math.ceil(DEAD_HOLD - w.escT)}s` : `☠ DEAD WAVE · RUN · ${Math.round(d)} m behind you`, frac: Math.min(1, d / DEAD_ESCAPE), urgent: true };
+  }
   if (w.phase === 'warning') return { label: `HORDE ${w.n} · ${compassName(w.dir)} · ${Math.ceil(w.t)}s`, frac: 1 - w.t / WARNING, urgent: true };
   if (w.phase === 'surge') {
     const alive = hordeAlive(g);

@@ -12,10 +12,10 @@ import { spawnRival } from '../src/game/systems/spawns';
 import { stepWorld } from '../src/game/systems/step';
 import { updateTesla } from '../src/game/systems/tesla';
 import { onTankDestroyed } from '../src/game/systems/world';
-import { hordeAlive, hordeSize, updateWaves } from '../src/game/systems/waves';
+import { hordeAlive, hordeSize, surgeRate, updateWaves } from '../src/game/systems/waves';
 import { Tank } from '../src/game/tank';
 import { TRACTION } from '../src/shared/map';
-import { build, game, levelTo } from './helpers';
+import { build, game, levelTo, outside } from './helpers';
 
 const run = (g: ReturnType<typeof game>, secs: number): void => {
   for (let i = 0; i < Math.round(secs * 60); i++) stepWorld(g, 1 / 60);
@@ -266,5 +266,38 @@ describe('rival dreadnoughts', () => {
     onTankDestroyed(g, t);
     expect(g.pickups.some((k) => k.kind === 'chest' && k.chest === 'epic_pack')).toBe(true);
     expect(g.pickups.some((k) => k.kind === 'weapon')).toBe(true);
+  });
+});
+
+describe('Dead waves', () => {
+  it('come as a wall you can only outrun', () => {
+    const g = outside(game());
+    const w = g.wave;
+    const p = g.player;
+    w.n = 3;
+    w.phase = 'calm';
+    w.t = 0;
+    updateWaves(g, 0.1);
+    expect(w.n).toBe(4);
+    expect(w.dead).toBe(true);
+    expect(w.phase).toBe('warning');
+    // The wall rolls toward her and pours out far more than a normal surge.
+    w.t = 0;
+    updateWaves(g, 0.1);
+    expect(w.phase).toBe('surge');
+    const d0 = Math.hypot(p.x - w.fx, p.y - w.fy);
+    for (let i = 0; i < 20; i++) updateWaves(g, 0.1);
+    expect(Math.hypot(p.x - w.fx, p.y - w.fy)).toBeLessThan(d0);
+    expect(w.rate).toBeGreaterThan(surgeRate(4, 1, false) * 3);
+    expect(g.enemies.filter((e) => e.horde).length).toBeGreaterThan(10);
+    // Get a kilometre and more ahead of it and hold it there: it gives up.
+    const a = Math.atan2(p.y - w.fy, p.x - w.fx);
+    p.x = w.fx + Math.cos(a) * 1600;
+    p.y = w.fy + Math.sin(a) * 1600;
+    const xp0 = g.commander.xp;
+    for (let i = 0; i < 70 && w.phase === 'surge'; i++) updateWaves(g, 0.1);
+    expect(w.phase).toBe('calm');
+    expect(w.dead).toBe(false);
+    expect(g.commander.xp).toBeGreaterThan(xp0);
   });
 });

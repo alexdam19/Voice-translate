@@ -240,7 +240,11 @@ export class Game {
    * Horde waves (World War Z style): calm, a warning with the direction, then a surge that pours in from there.
    * `n` is the wave number (it only goes up), `total`/`spawned` count this wave's horde.
    */
-  wave = { n: 0, phase: 'calm' as 'calm' | 'warning' | 'surge', t: 100, dir: 0, total: 0, spawned: 0, batchT: 0, zone: 5 as number, rate: 0, dur: 0, elapsed: 0, bossDone: false };
+  wave = {
+    n: 0, phase: 'calm' as 'calm' | 'warning' | 'surge', t: 100, dir: 0, total: 0, spawned: 0, batchT: 0, zone: 5 as number, rate: 0, dur: 0, elapsed: 0, bossDone: false,
+    /** A dead wave: far too many to fight, coming as a wall (its front, moving at `fv` m/s): the only answer is to run. */
+    dead: false, fx: 0, fy: 0, fv: 0, escT: 0,
+  };
   /** Neighbour lookups for the crowd (rebuilt each step). */
   grid = new EnemyGrid();
   private enemyIndex = new Map<number, Enemy>();

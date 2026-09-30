@@ -1,5 +1,6 @@
 import type { Game } from '../game';
 import { mission } from '../campaign';
+import { compassName } from './waves';
 
 /**
  * The satnav. It plans a route from the Titan to where she's headed (the course you plotted, or the mission's next
@@ -175,6 +176,21 @@ export function updateNav(g: Game, dt: number): void {
   } else {
     turn = 'ahead';
     text = `STRAIGHT ON ${fmt(left)}`;
+  }
+  // A dead wave overrides everything: the way out, directly away from the wall.
+  const w = g.wave;
+  if (w.dead && (w.phase === 'warning' || w.phase === 'surge')) {
+    const away = w.phase === 'warning' ? w.dir + Math.PI : Math.atan2(p.y - w.fy, p.x - w.fx);
+    const r = wrap(away - p.rot);
+    const ra = Math.abs(r);
+    turn = ra > 2.3 ? 'around' : ra > 0.95 ? (r > 0 ? 'right' : 'left') : ra > 0.3 ? (r > 0 ? 'bear-right' : 'bear-left') : 'ahead';
+    text = `DEAD WAVE: RUN ${compassName(away)}${turn === 'ahead' ? ' - FULL AHEAD' : turn === 'around' ? ' - TURN AROUND' : ` - ${r > 0 ? 'RIGHT' : 'LEFT'}`}`;
+    n.cue = { turn, text, next: 0, left, rel: r };
+    if (n.cue.text !== (n as { lastDead?: string }).lastDead) {
+      (n as { lastDead?: string }).lastDead = n.cue.text;
+      n.said++;
+    }
+    return;
   }
   // The navigator speaks when the instruction changes (a bend's distance counts down in steps).
   const step = next > 0 ? (next < 250 ? 1 : next < 600 ? 2 : next < 1200 ? 3 : 4) : 0;
