@@ -33,6 +33,7 @@ import { tipFor } from './cabinTips';
 import { agentImage } from './agents';
 import { Cabin3D } from '../render/cabin3d';
 import { Glass } from './cabinGlass';
+import { routeAt } from '../game/systems/nav';
 import { CAMS, camSpot, drawEngineFeed, drawMonitor, monitorRects, type Rect } from './cabinCams';
 import type { FxEvent } from '../game/game';
 
@@ -544,6 +545,9 @@ export class Cabin {
         }
         this.act.sound('ui');
         return;
+      case 'commX':
+        g.comms.current = null;
+        return;
       case 'camsClose':
         this.monOn = false;
         this.act.sound('ui');
@@ -845,7 +849,7 @@ export class Cabin {
       this.glassFx.canvas.style.display = three ? 'block' : 'none';
     }
     const k = this.scaleK;
-    const lights = { search: g.helm.search, deck: g.helm.deckLights, beacon: g.helm.beacons };
+    const lights = { search: g.helm.search, deck: g.helm.deckLights, beacon: g.helm.beacons, ...this.routeAhead(g) };
     if (three && this.v3 && mon) {
       // The security monitor is up: the picture from the camera, just in its screen.
       const f = mon.feed;
@@ -975,6 +979,17 @@ export class Cabin {
       this.message('THE GLASS IS MISTING UP: DEFROSTER ON THE OVERHEAD (DEFR)', '#ffb040');
     }
     if (this.mist < 0.1) this.hinted.mist = false;
+  }
+
+  /** The satnav's route for the next stretch (points every 24 m, drifting forward so the chevrons flow) and its goal. */
+  private routeAhead(g: Game): { route?: { x: number; y: number; a: number }[]; goal?: { x: number; y: number; course: boolean } | null } {
+    const n = g.nav;
+    if (!n) return { route: [], goal: null };
+    const out: { x: number; y: number; a: number }[] = [];
+    const step = 24, flow = (this.time * 18) % step;
+    const end = Math.min(n.cum[n.cum.length - 1], n.at + 3000);
+    for (let d = n.at + flow; d < end; d += step) out.push(routeAt(n, d));
+    return { route: out, goal: { x: n.tx, y: n.ty, course: n.kind === 'course' } };
   }
 
   /** The wipers run when switched on and while the washers spray. */
@@ -1591,6 +1606,17 @@ export class Cabin {
       pxMini(c, `LOOK ${deg > 0 ? 'STBD' : 'PORT'} ${Math.abs(deg)}°`, W / 2, HEAD + 4, '#80ff90', 'center');
     }
     if (this.v3 && this.camDist > 0) pxMini(c, `EXTERNAL CAMERA  ${this.camDist}M  (WHEEL IN TO RETURN TO THE CAB)`, W / 2, HEAD + 12, '#ffd740', 'center');
+    // The satnav's instruction, under the top of the glass.
+    const nv = g.nav;
+    if (nv) {
+      const left = nv.cue.left >= 1000 ? `${(nv.cue.left / 1000).toFixed(1)} KM` : `${Math.round(nv.cue.left)} M`;
+      const t = `NAV  ${nv.cue.text}  -  ${left}`.replace(/[^A-Z0-9%./:+\-<>!?()=#,' ]/g, '');
+      const tw = t.length * 4 + 8;
+      // Top right (the intercom has the top left).
+      c.fillStyle = 'rgba(4,16,20,0.72)';
+      c.fillRect(Math.round(W - 8 - tw), HEAD + 6, tw, 10);
+      pxMini(c, t, W - 12, HEAD + 8, nv.kind === 'course' ? '#b0ff60' : '#60f0ff', 'right', null);
+    }
     // Teletype: the latest messages, word-wrapped, newest at the bottom.
     const maxc = Math.max(20, Math.floor((W - 64) / 4));
     const lines: { t: string; old: boolean }[] = [];
@@ -1984,8 +2010,13 @@ export class Cabin {
     c.fillStyle = 'rgba(0,0,0,0.25)';
     for (let yy = y0 + 3; yy < y0 + 43; yy += 2) c.fillRect(x0 + 3, yy, 40, 1);
     disc(c, x0 + 40, y0 + 6, 1.5, Math.floor(this.time * 5) % 2 ? a.color : '#102030');
-    pxMini(c, `${a.post} · ${a.name}`.slice(0, maxc + 8), x0 + 47, y0 + 4, a.color, 'left', null);
+    pxMini(c, `${a.post} · ${a.name}`.slice(0, maxc + 5), x0 + 47, y0 + 4, a.color, 'left', null);
     shown.forEach((ln, i) => pxMini(c, ln, x0 + 47, y0 + 12 + i * 7, '#d8e8f0', 'left', null));
+    // Close it once read.
+    c.fillStyle = this.hoverId === 'commX' ? '#6a1a14' : '#1a2430';
+    c.fillRect(x0 + w - 11, y0 + 2, 9, 8);
+    pxMini(c, 'x', x0 + w - 7, y0 + 3, '#ffd0c0', 'center', null);
+    this.hit('commX', x0 + w - 13, y0, 13, 12);
   }
 
   /** The explanation plate: what the hovered control does (or the one tapped with INFO on). */

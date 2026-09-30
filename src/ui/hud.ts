@@ -30,6 +30,7 @@ import type { TrackInfo } from '../game/systems/tracking';
 import { itemIcon, moduleIcon, portrait } from '../render/icons';
 import { cardEl } from './cardView';
 import { button, esc, h, hideTip, isTouch, tooltip } from './dom';
+import { Tossable } from './tossable';
 import { agentFace } from './agents';
 import { AGENTS } from '../game/systems/comms';
 import { Joystick } from './joystick';
@@ -114,7 +115,10 @@ export class Hud {
   private gateBtn = h('button', 'gate-btn');
   /** The intercom: the Mega Hangar agent's face and what they're saying. */
   private commBox = h('div', 'comm-box');
+  private commBody = h('div', 'cb-body');
   private commKey = '';
+  /** The boxes you can drag about, fold to the side or close once read. */
+  private toss: Record<'cmd' | 'zone' | 'mission' | 'obj' | 'track' | 'jobs' | 'comm', Tossable>;
   private mission = h('div', 'mission');
   private stormBar = h('div', 'storm-bar');
   private track = h('div', 'tracker');
@@ -188,7 +192,19 @@ export class Hud {
     // First, so every other HUD element sits on top of its touch area.
     this.joy = new Joystick(this.root);
     const tl = h('div', 'hud-tl');
-    tl.append(this.cmd, this.zone, this.mission, this.obj, this.track, this.jobs);
+    this.commBox.appendChild(this.commBody);
+    this.toss = {
+      cmd: new Tossable(this.cmd, 'cmd', 'COMMANDER', { noClose: true }),
+      zone: new Tossable(this.zone, 'zone', 'ZONE'),
+      mission: new Tossable(this.mission, 'mission', 'MISSION'),
+      obj: new Tossable(this.obj, 'goal', 'GOAL'),
+      track: new Tossable(this.track, 'track', 'TRACKING', { noClose: true }),
+      jobs: new Tossable(this.jobs, 'jobs', 'BUILDERS', { noClose: true }),
+      comm: new Tossable(this.commBox, 'comm', 'INTERCOM', { wrap: false, onClose: () => {
+        if (this.game) this.game.comms.current = null;
+      } }),
+    };
+    tl.append(this.toss.cmd.el, this.toss.zone.el, this.toss.mission.el, this.toss.obj.el, this.toss.track.el, this.toss.jobs.el);
     this.mission.addEventListener('click', (e) => {
       e.stopPropagation();
       act.openPanel('map');
@@ -506,9 +522,10 @@ export class Hud {
       if (key !== this.commKey) {
         this.commKey = key;
         const a = AGENTS[cm.agent];
-        setHTML(this.commBox, `<img src="${agentFace(cm.agent)}" alt=""><div><b style="color:${a.color}">${a.post} · ${a.name}</b><small>${cm.kind.toUpperCase()}</small><p>${esc(cm.text)}</p></div>`);
+        setHTML(this.commBody, `<img src="${agentFace(cm.agent)}" alt=""><div><b style="color:${a.color}">${a.post} · ${a.name}</b><small>${cm.kind.toUpperCase()}</small><p>${esc(cm.text)}</p></div>`);
       }
     }
+    this.toss.comm.setContent(cm ? this.commKey : '');
     if (gp) setHTML(this.gateBtn, `<b>MAIN GATE SEALED</b><span>${gp === 'exit' ? 'REQUEST CLEARANCE TO LEAVE' : 'REQUEST CLEARANCE TO ENTER'}</span>`);
     this.root.classList.toggle('in-village', village);
     // The shop and a building's card sit under the HUD: clear the left column while one is up.
@@ -530,6 +547,7 @@ export class Hud {
       if (z.hazard && !p.stats.protects.has(z.hazard)) warn += `<div class="need bad">${esc(z.need)}</div>`;
     }
     setHTML(this.zone, `<span class="zn">${esc(zoneName)}</span> <span class="tier t${tier}">THREAT ${TIER_NAMES[tier]}</span>${warn}`);
+    this.toss.zone.setContent(`${zoneName}|${tier}|${warn}`);
     // Objective
     if (g.mode === 'world' && g.objective < OBJECTIVES.length) {
       const o = OBJECTIVES[g.objective];
@@ -540,6 +558,7 @@ export class Hud {
         setHTML(this.obj, `<div class="ot">GOAL ${g.objective + 1}/${OBJECTIVES.length}</div><div class="on">${esc(o.title)}</div><div class="oh">${esc((isTouch() && o.touch) || o.hint)}</div><div class="or">Reward: ${rw}</div>`);
       }
       this.obj.style.display = 'block';
+      this.toss.obj.setContent(okey);
     } else this.obj.style.display = 'none';
     this.updateTracker(g);
     this.updateJobs(g);
@@ -560,6 +579,7 @@ export class Hud {
       const eta = dist > 0 ? Math.ceil(dist / Math.max(1, p.stats.topSpeed) / 60) : 0;
       setHTML(this.mission, `<div class="mt">MISSION ${ms.step}/${ms.of}${dist > 0 ? ` · ${dist > 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`}${eta ? ` · ~${eta} min` : ''}` : ''}</div><div class="mn">${esc(ms.title)}</div><div class="mh">${esc(ms.text)}</div>`);
       this.mission.style.display = 'block';
+      this.toss.mission.setContent(`${ms.title}|${ms.step}`);
     } else this.mission.style.display = 'none';
     // Storms.
     const w = g.weather;

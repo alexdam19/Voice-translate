@@ -393,6 +393,100 @@ export class Overlay {
     c.restore();
   }
 
+  /**
+   * The satnav's route on the ground: a broad glowing band from the Titan to where she's going, a bright dashed line
+   * down its middle flowing toward the goal, chevrons pointing the way, and a pulsing ring on the goal.
+   */
+  private drawRoute(g: Game): void {
+    const n = g.nav;
+    if (!n || g.player.dead) return;
+    const v = this.view;
+    const c = this.ctx;
+    const pts: { x: number; y: number }[] = [];
+    // From her place on it to the end (the first few hundred points is kilometres of road).
+    const here = { x: g.player.x, y: g.player.y };
+    const q0 = n.pts[n.seg], q1 = n.pts[n.seg + 1] ?? q0;
+    const t = n.cum[n.seg + 1] !== undefined ? Math.max(0, Math.min(1, (n.at - n.cum[n.seg]) / Math.max(1e-6, n.cum[n.seg + 1] - n.cum[n.seg]))) : 0;
+    pts.push(n.off > 30 ? here : { x: q0.x + (q1.x - q0.x) * t, y: q0.y + (q1.y - q0.y) * t });
+    for (let i = n.seg + 1; i < Math.min(n.pts.length, n.seg + 400); i++) pts.push(n.pts[i]);
+    const sp = pts.map((p) => v.worldToScreen(p.x, p.y, 0));
+    if (sp.length < 2) return;
+    const col = n.kind === 'course' ? '118,255,3' : '24,255,255';
+    const path = (): void => {
+      c.beginPath();
+      let started = false;
+      for (const p of sp) {
+        if (!p.ok) continue;
+        if (started) c.lineTo(p.x, p.y);
+        else c.moveTo(p.x, p.y);
+        started = true;
+      }
+    };
+    const wpx = Math.max(6, Math.min(40, (g.player.stats.width * 0.35 * 34) / v.cam.zoom));
+    c.save();
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+    path();
+    c.strokeStyle = `rgba(${col},0.10)`;
+    c.lineWidth = wpx * 1.6;
+    c.stroke();
+    c.strokeStyle = `rgba(${col},0.22)`;
+    c.lineWidth = wpx * 0.7;
+    c.stroke();
+    // The dashes flow toward the goal.
+    c.setLineDash([14, 12]);
+    c.lineDashOffset = -((performance.now() / 22) % 26);
+    c.strokeStyle = `rgba(${col},0.9)`;
+    c.lineWidth = 2.5;
+    c.stroke();
+    c.setLineDash([]);
+    // Chevrons along it, every so many pixels.
+    let acc = 0;
+    const gap = 70;
+    const phase = (performance.now() / 18) % gap;
+    for (let i = 1; i < sp.length; i++) {
+      const a = sp[i - 1], b = sp[i];
+      if (!a.ok || !b.ok) continue;
+      const seg = Math.hypot(b.x - a.x, b.y - a.y);
+      if (seg < 0.01) continue;
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      for (let d = gap - ((acc + gap - phase) % gap); d < seg; d += gap) {
+        const x = a.x + ((b.x - a.x) * d) / seg, y = a.y + ((b.y - a.y) * d) / seg;
+        if (x < -20 || y < -20 || x > v.width + 20 || y > v.height + 20) continue;
+        c.save();
+        c.translate(x, y);
+        c.rotate(ang);
+        c.beginPath();
+        c.moveTo(-5, -8);
+        c.lineTo(4, 0);
+        c.lineTo(-5, 8);
+        c.lineWidth = 4;
+        c.strokeStyle = 'rgba(0,0,0,0.55)';
+        c.stroke();
+        c.lineWidth = 2.2;
+        c.strokeStyle = `rgba(${col},1)`;
+        c.stroke();
+        c.restore();
+      }
+      acc += seg;
+    }
+    // The goal: a pulsing ring.
+    const e = sp[sp.length - 1];
+    if (e.ok && sp.length - 1 + n.seg >= n.pts.length - 1) {
+      const r = 10 + 6 * Math.sin(performance.now() / 200);
+      c.strokeStyle = `rgba(${col},0.9)`;
+      c.lineWidth = 3;
+      c.beginPath();
+      c.arc(e.x, e.y, r, 0, Math.PI * 2);
+      c.stroke();
+      c.beginPath();
+      c.arc(e.x, e.y, r * 2, 0, Math.PI * 2);
+      c.strokeStyle = `rgba(${col},0.35)`;
+      c.stroke();
+    }
+    c.restore();
+  }
+
   draw(g: Game, hoverId: number): void {
     const c = this.ctx;
     const v = this.view;
@@ -401,6 +495,7 @@ export class Overlay {
     c.imageSmoothingEnabled = false;
     const scale = 34 / v.cam.zoom;
     const onScreen = (p: { x: number; y: number; ok: boolean }): boolean => p.ok && p.x > -60 && p.y > -60 && p.x < v.width + 60 && p.y < v.height + 60;
+    if (g.mode === 'world') this.drawRoute(g);
     if (g.mode === 'world' && g.player.fortress && !g.player.dead) this.drawDrivePath(g);
     // Enemies
     for (const e of g.enemies) {

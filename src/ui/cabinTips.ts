@@ -92,6 +92,8 @@ export function tipFor(id: string, g: Game): { title: string; body: string } | n
       return { title: `SMOKE DISCHARGERS${hm.smokeT > 0 ? ` (${Math.ceil(hm.smokeT)} s)` : ''}`, body: `A cloud round the hull for ${SMOKE_T} s: hits land a third softer inside it, and anything not already on the hull or part of a horde loses track of her. Reload ${SMOKE_CD} s.${hm.smokeCd > 0 && hm.smokeT <= 0 ? ` (${Math.ceil(hm.smokeCd)} s)` : ''}` };
     case 'cams':
       return { title: 'SECURITY CAMERAS', body: 'Flips the monitor up over the glass: ten cameras round the ship (bow, stern, both flanks, the deck both ways, the mast, two crawlers and the engine room) and a map of the hull to click between them. Anything near shows on the map as a red blip, anything on the hull blinks. Blinks red here when something has climbed aboard.' };
+    case 'commX':
+      return { title: 'CLOSE THE INTERCOM', body: 'Done reading: the next message (if any) comes on.' };
     case 'camsClose':
       return { title: 'CLOSE THE MONITOR', body: 'Back to the windscreen.' };
     case 'sw_wipe':

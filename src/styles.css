@@ -1395,6 +1395,8 @@ html.touch .joy { display: block; }
 .sc-energy canvas { --w: 40px; }
 .sc-drive canvas { --w: 96px; }
 .sc-supply canvas { --w: 104px; }
+.sc-nav canvas { --w: 120px; }
+.sc-nav { border-color: #20d6c766; }
 .sc-hull { border-color: #59c13566; }
 .sc-ship { background: radial-gradient(ellipse at center, #1a1638, #0a0816); }
 .sc-mid { flex: 1; min-width: 0; display: flex; align-items: flex-end; justify-content: center; gap: 8px; }
@@ -1412,6 +1414,11 @@ html.touch .joy { display: block; }
 .hud.in-village .ship-console { display: none; }
 .timestop-tint.aim { background: radial-gradient(transparent 40%, rgba(108, 40, 200, 0.3)); mix-blend-mode: normal; }
 .timestop-tint.aim::after { content: 'AIMING · TIME SLOWED'; position: absolute; top: 34%; left: 50%; transform: translateX(-50%); font-family: var(--px); font-size: 14px; color: #b388ff; text-shadow: 2px 2px 0 #000; letter-spacing: 2px; }
+@media (max-width: 1640px) {
+  .sc-drive, .sc-cards .next-card { display: none; }
+  .sc-cards .hand-slot, .sc-cards .hand-slot .mcard { width: 74px; height: 101px; }
+  .sc-cards .hand-row, .sc-cards .hand-wrap { gap: 6px; }
+}
 @media (max-width: 1100px) {
   .sc-supply, .sc-cards .next-card { display: none; }
   .sc-cards .hand-slot, .sc-cards .hand-slot .mcard { width: 66px; height: 90px; }
@@ -1700,3 +1707,25 @@ html.touch .joy { display: block; }
 .cabin canvas.cab3d { z-index: 0; }
 .cabin canvas.cabglass { z-index: 1; }
 .cabin > canvas:last-child { position: relative; z-index: 2; }
+
+/* ---------------- Boxes you can move, fold away or close ---------------- */
+.toss { position: relative; pointer-events: auto; }
+.toss-bar { position: absolute; top: -9px; right: 6px; display: flex; gap: 1px; align-items: center; padding: 0 2px; background: #1a1234; border: 1px solid #403353; opacity: 0; transition: opacity 0.12s; z-index: 3; }
+.toss:hover > .toss-bar, .touch .toss > .toss-bar, .toss.dragging > .toss-bar { opacity: 1; }
+.toss-grip { cursor: grab; color: #8a7fb0; font-size: 10px; line-height: 14px; padding: 0 3px; user-select: none; letter-spacing: -2px; }
+.toss-btn { font: 12px/14px var(--px); background: none; border: 0; color: #c9bff0; cursor: pointer; padding: 0 4px; }
+.toss-btn:hover { color: #fff; }
+.toss-btn.x:hover { color: #ff6b6b; }
+.toss.floating { position: fixed; z-index: 30; max-width: 360px; }
+.toss.dragging { opacity: 0.88; cursor: grabbing; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); transition: none; }
+.toss.tossed, .toss.toss-closed { display: none !important; }
+.comm-box.toss { pointer-events: auto; }
+.comm-box .cb-body { display: flex; gap: 10px; align-items: flex-start; }
+.comm-box.floating { transform: none; animation: none; bottom: auto; }
+.toss-dock { position: fixed; top: 32%; display: flex; flex-direction: column; gap: 4px; z-index: 50; }
+.toss-dock.L { left: 0; }
+.toss-dock.R { right: 0; }
+.toss-tab { writing-mode: vertical-rl; font: 9px var(--px); letter-spacing: 1px; color: #d8c8ff; background: #1a1234; border: 1px solid #6c4bd8; padding: 10px 3px; cursor: pointer; box-shadow: 0 0 8px rgba(108, 75, 216, 0.35); }
+.toss-tab.L { border-left: 0; transform: rotate(180deg); }
+.toss-tab.R { border-right: 0; }
+.toss-tab:hover { color: #fff; background: #2a1e50; }

@@ -35,6 +35,9 @@ export interface CabView {
   search?: boolean;
   deck?: boolean;
   beacon?: boolean;
+  /** The satnav's route ahead (world points every few metres) and where it ends: chevrons on the ground, a beam there. */
+  route?: { x: number; y: number; a: number }[];
+  goal?: { x: number; y: number; course: boolean } | null;
 }
 
 const SKY_VS = `
@@ -112,6 +115,9 @@ export class Cabin3D {
   private beam: THREE.Mesh;
   private searchAim = { yaw: 0, pitch: 0.08 };
   private floods: THREE.PointLight[] = [];
+  /** The satnav's chevrons along the ground and the pillar of light over where it ends. */
+  private chevrons: THREE.InstancedMesh;
+  private pillar: THREE.Mesh;
   private world: World3D | null = null;
   private creatures = new Creatures3D();
   private compound = new Compound3D();
@@ -202,6 +208,32 @@ export class Cabin3D {
       this.beam.frustumCulled = false;
       this.beam.visible = false;
       this.scene.add(this.beam);
+    }
+    // The satnav on the ground: flat glowing chevrons pointing the way, and a pillar of light over the goal.
+    {
+      const sh = new THREE.Shape();
+      sh.moveTo(-3, -3);
+      sh.lineTo(1, 0);
+      sh.lineTo(-3, 3);
+      sh.lineTo(-4.4, 3);
+      sh.lineTo(-0.6, 0);
+      sh.lineTo(-4.4, -3);
+      sh.closePath();
+      const cg = new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);
+      this.chevrons = new THREE.InstancedMesh(cg, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }), 160);
+      this.chevrons.frustumCulled = false;
+      this.chevrons.count = 0;
+      this.chevrons.setColorAt(0, new THREE.Color());
+      this.scene.add(this.chevrons);
+      const pg = new THREE.CylinderGeometry(5, 9, 600, 20, 8, true).translate(0, 300, 0);
+      const pos = pg.attributes.position as THREE.BufferAttribute;
+      const col = new Float32Array(pos.count * 4);
+      for (let i = 0; i < pos.count; i++) col.set([0.4, 1, 1, Math.pow(1 - pos.getY(i) / 600, 2.2)], i * 4);
+      pg.setAttribute('color', new THREE.BufferAttribute(col, 4));
+      this.pillar = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false }));
+      this.pillar.visible = false;
+      this.pillar.frustumCulled = false;
+      this.scene.add(this.pillar);
     }
     this.scene.add(this.creatures.root, this.compound.root);
     // Tracers and shells: short glowing rods along their flight.
@@ -434,6 +466,36 @@ export class Cabin3D {
       (gl.material as THREE.SpriteMaterial).opacity = flash * 0.95;
     });
     ship.beacons.mat.color.set(v.beacon ? (Math.cos(v.time * 7) > 0.3 ? '#ffc040' : '#c07010') : '#5a3a10');
+    // The satnav: chevrons flowing along the route ahead, fading in off the bow and out in the distance.
+    {
+      const r = v.route ?? [];
+      const m4c = new THREE.Matrix4();
+      const q = new THREE.Quaternion();
+      const up = new THREE.Vector3(0, 1, 0);
+      const cc = new THREE.Color();
+      const tint = v.goal?.course ? new THREE.Color('#76ff03') : new THREE.Color('#18ffff');
+      let nc = 0;
+      for (let i = 0; i < r.length && nc < 160; i++) {
+        const pt = r[i];
+        const fade = Math.min(1, i / 4) * Math.min(1, (r.length - i) / 10);
+        if (fade <= 0.02) continue;
+        q.setFromAxisAngle(up, -pt.a);
+        m4c.compose(new THREE.Vector3(pt.x - this.ox, groundLevel(pt.x, pt.y) + 1.4, pt.y - this.oz), q, new THREE.Vector3(2.4, 1, 2.4));
+        this.chevrons.setMatrixAt(nc, m4c);
+        this.chevrons.setColorAt(nc, cc.copy(tint).multiplyScalar(fade * 1.1));
+        nc++;
+      }
+      this.chevrons.count = nc;
+      this.chevrons.instanceMatrix.needsUpdate = true;
+      if (this.chevrons.instanceColor) this.chevrons.instanceColor.needsUpdate = true;
+      const gl = v.goal;
+      this.pillar.visible = !!gl && Math.hypot(gl.x - ex, gl.y - ey) < 6000;
+      if (gl && this.pillar.visible) {
+        this.pillar.position.set(gl.x - this.ox, groundLevel(gl.x, gl.y), gl.y - this.oz);
+        (this.pillar.material as THREE.MeshBasicMaterial).color.set(gl.course ? '#b0ff60' : '#ffffff');
+        (this.pillar.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(v.time * 2) * 0.06;
+      }
+    }
     // Headlamps.
     const on = g.helm.lights;
     this.heads.forEach((s, i) => {

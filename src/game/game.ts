@@ -1,5 +1,6 @@
 import { newCompound, type CompoundState } from './systems/compound';
 import { newComms, type Comms } from './systems/comms';
+import type { Nav } from './systems/nav';
 import { newTelemetry, type Telemetry } from './telemetry';
 import { CHUNK, MAX_BASE_CREW } from '../shared/constants';
 import { Fog } from '../shared/fog';
@@ -252,6 +253,8 @@ export class Game {
   compound: CompoundState = newCompound();
   /** The intercom to the Mega Hangar (news, objectives, briefings). */
   comms: Comms = newComms();
+  /** The satnav: the route to where she's headed and the next instruction (see systems/nav). */
+  nav: Nav | null = null;
   /** The flight recorder (cabin trend screens). */
   telemetry: Telemetry = newTelemetry();
   /** Life aboard: fatigue, hunger. */

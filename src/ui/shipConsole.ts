@@ -4,6 +4,11 @@ import { crawlersUp, FUEL_MAX, SYSTEMS, sysMult, toroidOut, WATER_MAX, damageSta
 import { titanTop, topPalette } from '../render/px/titanTop';
 import { engineDef } from '../game/systems/engine';
 import { h } from './dom';
+import { faceCanvas, type FaceSpec } from '../render/px/faces';
+import { championDef, ROLES } from '../game/crew';
+import { RARITIES } from '../shared/rarity';
+import { AGENTS } from '../game/systems/comms';
+import type { Turn } from '../game/systems/nav';
 import { pxMini, pxText as text } from './pixfont';
 
 /**
@@ -65,6 +70,10 @@ export class ShipConsole {
   private energy: Section;
   private drive: Section;
   private supply: Section;
+  /** The navigator: a face that reads out the satnav (talking when it speaks, eyes toward the turn, hurt with the hull). */
+  private nav: Section;
+  private navSaid = -1;
+  private talkT = 0;
   private hpWas = -1;
   private flash = 0;
   private flashSide = 0;
@@ -86,9 +95,10 @@ export class ShipConsole {
     this.energy = sec('sc-energy', 40, 40, 'ENERGY');
     this.drive = sec('sc-drive', 96, 40, 'DRIVE');
     this.supply = sec('sc-supply', 104, 40, 'SUPPLY');
+    this.nav = sec('sc-nav', 120, 40, 'NAV');
     const mid = h('div', 'sc-mid');
     mid.append(this.energy.el, this.cards);
-    this.root.append(this.hull.el, this.ship.el, mid, this.drive.el, this.supply.el);
+    this.root.append(this.hull.el, this.ship.el, this.nav.el, mid, this.drive.el, this.supply.el);
   }
 
   /** Where a hit came from, relative to the ship (-1 port, 1 starboard): that side of the silhouette flashes. */
@@ -108,6 +118,112 @@ export class ShipConsole {
     this.drawEnergy(g);
     this.drawDrive(g);
     this.drawSupply(g);
+    this.drawNav(g, dt);
+  }
+
+  /** Whose face reads out the satnav: the first officer, or Hangar Ops on the radio if there's no crew. */
+  private navigator(g: Game): { spec: FaceSpec; name: string } {
+    const crew = g.mainCrew();
+    const c = crew.find((k) => k.officer === 0) ?? crew[0];
+    if (c) {
+      const ch = championDef(c);
+      return { spec: { seed: c.face, role: c.role, roleColor: ROLES[c.role].color, rarityColor: RARITIES[c.rarity].color, hair: ch?.hair, accent: ch?.accent ?? (c.exclusive ? '#e040fb' : undefined) }, name: c.name.split(' ')[0].toUpperCase() };
+    }
+    const a = AGENTS.ops;
+    return { spec: { seed: a.seed, role: 'driver', roleColor: a.color, rarityColor: '#ffd740' }, name: 'OPS' };
+  }
+
+  private drawNav(g: Game, dt: number): void {
+    const n = g.nav;
+    if (n && n.said !== this.navSaid) {
+      this.navSaid = n.said;
+      this.talkT = 1.6;
+    }
+    this.talkT = Math.max(0, this.talkT - dt);
+    const p = g.player;
+    const hp = p.hp / Math.max(1, p.stats.maxHp);
+    const blink = this.t % 4.2 < 0.12;
+    const mouth = this.talkT > 0 ? [0, 0.6, 1, 0.3][Math.floor(this.t * 10) % 4] : 0;
+    const look = n && Math.abs(n.cue.rel) > 0.3 ? Math.sign(n.cue.rel) : 0;
+    const hurt = hp < 0.75 ? Math.round(Math.min(1, (0.75 - hp) / 0.6) * 5) / 5 : 0;
+    const who = this.navigator(g);
+    const key = `${n?.cue.text ?? ''}|${Math.round((n?.cue.left ?? 0) / 100)}|${mouth}|${look}|${blink}|${hurt.toFixed(1)}|${who.spec.seed}|${Math.floor(this.t * 3) % 2}`;
+    if (key === this.nav.key) return;
+    this.nav.key = key;
+    const x = this.nav.x;
+    x.clearRect(0, 0, 120, 40);
+    // The face, in a little frame.
+    x.fillStyle = '#0a0814';
+    x.fillRect(1, 1, 38, 38);
+    const face = faceCanvas(who.spec, 36, { mouth, look, blink, hurt, grin: n?.cue.turn === 'arrive' }, false);
+    x.imageSmoothingEnabled = false;
+    x.drawImage(face, 2, 2, 36, 36);
+    x.strokeStyle = PAL.trim;
+    x.strokeRect(0.5, 0.5, 39, 39);
+    if (this.talkT > 0) {
+      x.fillStyle = Math.floor(this.t * 6) % 2 ? PAL.amber : '#5a4a10';
+      x.fillRect(34, 3, 3, 3);
+    }
+    pxMini(x, who.name.slice(0, 9), 44, 2, PAL.dim, 'left', null);
+    if (!n) {
+      pxMini(x, 'NO COURSE', 44, 16, PAL.text, 'left', null);
+      pxMini(x, 'CLICK THE MAP', 44, 24, PAL.dim, 'left', null);
+      return;
+    }
+    // The arrow: which way to go.
+    this.arrow(x, 52, 20, n.cue.turn, n.cue.rel);
+    // The instruction, two short lines, and the distance to the end.
+    const words = n.cue.text.split(' ');
+    const lines: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      if ((cur + ' ' + w).trim().length > 14) {
+        lines.push(cur);
+        cur = w;
+      } else cur = (cur + ' ' + w).trim();
+    }
+    if (cur) lines.push(cur);
+    lines.slice(0, 3).forEach((ln, i) => pxMini(x, ln, 63, 9 + i * 7, i === 0 ? PAL.white : PAL.text, 'left', null));
+    const left = n.cue.left;
+    pxMini(x, left >= 1000 ? `${(left / 1000).toFixed(1)} KM` : `${Math.round(left)} M`, 118, 33, n.kind === 'course' ? '#9cdb43' : PAL.cyan, 'right', null);
+    if (n.road) pxMini(x, 'ROAD', 44, 33, PAL.dim, 'left', null);
+  }
+
+  /** A satnav arrow in a 16 px box: straight, bearing, turning, round, or the chequered flag. */
+  private arrow(x: CanvasRenderingContext2D, cx: number, cy: number, turn: Turn, rel: number): void {
+    x.fillStyle = '#0a0814';
+    x.fillRect(cx - 8, cy - 9, 17, 18);
+    if (turn === 'arrive') {
+      for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+        x.fillStyle = (i + j) % 2 ? '#fef3c0' : '#141024';
+        x.fillRect(cx - 5 + i * 3, cy - 6 + j * 3, 3, 3);
+      }
+      x.fillStyle = PAL.dim;
+      x.fillRect(cx - 6, cy - 6, 1, 14);
+      return;
+    }
+    const a = turn === 'around' ? Math.PI : turn === 'ahead' ? 0 : Math.max(-1.6, Math.min(1.6, rel));
+    x.save();
+    x.translate(cx + 0.5, cy + 0.5);
+    x.strokeStyle = PAL.cyan;
+    x.fillStyle = PAL.cyan;
+    x.lineWidth = 2;
+    x.beginPath();
+    x.moveTo(0, 7);
+    x.lineTo(0, 1);
+    // The bend toward the new way (screen up is ahead).
+    const ex = Math.sin(a) * 6, ey = 1 - Math.cos(a) * 6;
+    x.lineTo(ex, ey);
+    x.stroke();
+    x.translate(ex, ey);
+    x.rotate(a);
+    x.beginPath();
+    x.moveTo(0, -3);
+    x.lineTo(-3, 1);
+    x.lineTo(3, 1);
+    x.closePath();
+    x.fill();
+    x.restore();
   }
 
   private drawHull(g: Game): void {

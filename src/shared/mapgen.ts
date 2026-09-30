@@ -260,7 +260,20 @@ export interface WorldGen {
   /** The region a point is in, if any (majors first). */
   regionAt(x: number, y: number): Region | null;
   roadsNear(x0: number, y0: number, x1: number, y1: number): Seg[];
+  /** The way along the roads between two points (null where there are no roads to use). */
+  roadRoute?(ax: number, ay: number, bx: number, by: number): { x: number; y: number }[] | null;
 }
+
+/** The road network as a graph: a node at each point of every road, joined along it and where roads meet. */
+interface RoadGraph {
+  xs: number[];
+  ys: number[];
+  adj: number[][];
+  len: number[][];
+  grid: Map<number, number[]>;
+}
+const RG_CELL = 400;
+const rgCell = (x: number, y: number): number => Math.floor(y / RG_CELL) * 100000 + Math.floor(x / RG_CELL);
 
 class SegIndex {
   readonly segs: Seg[] = [];
@@ -419,6 +432,144 @@ export class OpenWorld implements WorldGen {
 
   roadsNear(x0: number, y0: number, x1: number, y1: number): Seg[] {
     return this.roads.near(x0, y0, x1, y1);
+  }
+
+  private graph: RoadGraph | null = null;
+
+  private roadGraph(): RoadGraph {
+    if (this.graph) return this.graph;
+    const xs: number[] = [], ys: number[] = [], adj: number[][] = [], len: number[][] = [];
+    const grid = new Map<number, number[]>();
+    const idx = new Map<string, number>();
+    const node = (x: number, y: number): number => {
+      const k = `${Math.round(x * 2)},${Math.round(y * 2)}`;
+      let i = idx.get(k);
+      if (i === undefined) {
+        i = xs.length;
+        idx.set(k, i);
+        xs.push(x);
+        ys.push(y);
+        adj.push([]);
+        len.push([]);
+        const c = rgCell(x, y);
+        let a = grid.get(c);
+        if (!a) grid.set(c, (a = []));
+        a.push(i);
+      }
+      return i;
+    };
+    const link = (a: number, b: number): void => {
+      if (a === b || adj[a].includes(b)) return;
+      const d = Math.hypot(xs[a] - xs[b], ys[a] - ys[b]);
+      adj[a].push(b);
+      len[a].push(d);
+      adj[b].push(a);
+      len[b].push(d);
+    };
+    for (const sg of this.roads.segs) link(node(sg.ax, sg.ay), node(sg.bx, sg.by));
+    const g: RoadGraph = { xs, ys, adj, len, grid };
+    // Where a road ends near another (the spokes meeting the rim road, the apron road): join them.
+    const n0 = xs.length;
+    for (let i = 0; i < n0; i++) {
+      if (adj[i].length !== 1) continue;
+      // Its own road's nearby points don't count.
+      const own = new Set<number>([i]);
+      let front = [i];
+      for (let k = 0; k < 24 && front.length; k++) {
+        const next: number[] = [];
+        for (const f of front) for (const j of adj[f]) if (!own.has(j)) {
+          own.add(j);
+          next.push(j);
+        }
+        front = next;
+      }
+      const j = this.nearestRoadNode(g, xs[i], ys[i], 900, own);
+      if (j >= 0) link(i, j);
+    }
+    this.graph = g;
+    return g;
+  }
+
+  private nearestRoadNode(g: RoadGraph, x: number, y: number, reach: number, skip?: Set<number>): number {
+    let best = -1, bd = reach * reach;
+    const c0x = Math.floor((x - reach) / RG_CELL), c1x = Math.floor((x + reach) / RG_CELL);
+    const c0y = Math.floor((y - reach) / RG_CELL), c1y = Math.floor((y + reach) / RG_CELL);
+    for (let cy = c0y; cy <= c1y; cy++) {
+      for (let cx = c0x; cx <= c1x; cx++) {
+        for (const i of g.grid.get(cy * 100000 + cx) ?? []) {
+          if (skip?.has(i)) continue;
+          const d = (g.xs[i] - x) ** 2 + (g.ys[i] - y) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = i;
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  roadRoute(ax: number, ay: number, bx: number, by: number): { x: number; y: number }[] | null {
+    const g = this.roadGraph();
+    const a = this.nearestRoadNode(g, ax, ay, 4000), b = this.nearestRoadNode(g, bx, by, 4000);
+    if (a < 0 || b < 0 || a === b) return null;
+    // A* over the graph, straight-line distance to go.
+    const n = g.xs.length;
+    const dist = new Float64Array(n).fill(Infinity);
+    const prev = new Int32Array(n).fill(-1);
+    const heap: [number, number][] = [];
+    const push = (f: number, i: number): void => {
+      heap.push([f, i]);
+      let k = heap.length - 1;
+      while (k > 0) {
+        const p = (k - 1) >> 1;
+        if (heap[p][0] <= heap[k][0]) break;
+        [heap[p], heap[k]] = [heap[k], heap[p]];
+        k = p;
+      }
+    };
+    const pop = (): [number, number] => {
+      const top = heap[0];
+      const last = heap.pop()!;
+      if (heap.length) {
+        heap[0] = last;
+        let k = 0;
+        for (;;) {
+          const l = k * 2 + 1, r = l + 1;
+          let m = k;
+          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+          if (m === k) break;
+          [heap[m], heap[k]] = [heap[k], heap[m]];
+          k = m;
+        }
+      }
+      return top;
+    };
+    const hx = g.xs[b], hy = g.ys[b];
+    dist[a] = 0;
+    push(Math.hypot(g.xs[a] - hx, g.ys[a] - hy), a);
+    let found = false;
+    for (let steps = 0; heap.length && steps < 200000; steps++) {
+      const [f, i] = pop();
+      if (i === b) {
+        found = true;
+        break;
+      }
+      if (f - Math.hypot(g.xs[i] - hx, g.ys[i] - hy) > dist[i] + 1e-6) continue;
+      for (let k = 0; k < g.adj[i].length; k++) {
+        const j = g.adj[i][k], d = dist[i] + g.len[i][k];
+        if (d < dist[j]) {
+          dist[j] = d;
+          prev[j] = i;
+          push(d + Math.hypot(g.xs[j] - hx, g.ys[j] - hy), j);
+        }
+      }
+    }
+    if (!found) return null;
+    const out: { x: number; y: number }[] = [];
+    for (let i = b; i >= 0; i = prev[i]) out.push({ x: g.xs[i], y: g.ys[i] });
+    return out.reverse();
   }
 
   /* ---------------- sectors: features ---------------- */

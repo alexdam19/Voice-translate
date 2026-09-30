@@ -423,7 +423,20 @@ export class Minimap {
     }
     const p = g.player;
     arrow(ctx, ...P(p.x, p.y), p.rot, 1.3);
-    if (p.goal) {
+    // The satnav's route (a plotted course in green, the mission in cyan), along the roads it takes.
+    const n = g.nav;
+    if (n) {
+      ctx.setLineDash([4, 3]);
+      ctx.lineDashOffset = -((performance.now() / 60) % 7);
+      ctx.strokeStyle = n.kind === 'course' ? '#76ff03' : '#18ffff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(...P(p.x, p.y));
+      for (let i = n.seg + 1; i < n.pts.length; i++) ctx.lineTo(...P(n.pts[i].x, n.pts[i].y));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1;
+    } else if (p.goal) {
       const [gx, gy] = P(p.goal.x, p.goal.y);
       ctx.setLineDash([4, 4]);
       ctx.strokeStyle = '#76ff03';
