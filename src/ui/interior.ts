@@ -16,6 +16,7 @@ import { discAt, drawCorridor, drawRoom, glowAt, IA, type Slots } from '../rende
 import { SHIP_ART, shipView } from '../render/px/shipArt';
 import { drawService } from '../render/px/deckArt';
 import { hash2 } from '../render/px/pixels';
+import { WEAPONS } from '../shared/weapons';
 import { esc, h } from './dom';
 import { pxMini } from './pixfont';
 
@@ -38,43 +39,38 @@ export interface InteriorActions {
 
 interface Placed {
   m: ModuleInst;
-  /** Cells from the bow where the room starts in the cutaway, and its length. */
-  at: number;
-  len: number;
+  /** Its span across the cutaway (px): the stern end, the bow end. */
+  xa: number;
+  xb: number;
 }
 
 const { CELL, DH, ROOF_H, SKY, KEEL } = IA;
 
 /**
- * The side-view sprite (bow on its left) and how it maps onto the cutaway: its superstructure band (rows 0-66)
- * sits above the roof, its hull band (66-120) is the decks (stretched: the cutaway draws decks taller than life),
- * and its running gear (120-162) is the keel. SIDE_BOW is the sprite column where the hull proper begins at the bow.
+ * The cutaway's outline: the Titan's own side (bow to the right). A long hull, its armoured glacis raking back from
+ * the nose over the lower decks and the stern sloping away under the engine decks; the three decks of the
+ * superstructure stepping in above the main deck, the bridge's windows raked back on the top one; open deck with
+ * rails on every ledge. Per deck (1-7): where its bow and stern walls are at its ceiling and its floor, as fractions of
+ * the length from the bow.
  */
-const SIDE = { w: 538, h: 162, roof: 66, keel: 120, bow: 10 } as const;
-const edges = new WeakMap<HTMLCanvasElement, Int16Array>();
+const SHAPE: [number, number, number, number][] = [
+  [0, 0, 0, 0],
+  [0.36, 0.33, 0.655, 0.66],
+  [0.33, 0.3, 0.7, 0.7],
+  [0.3, 0.27, 0.755, 0.76],
+  [0.17, 0.12, 0.855, 0.87],
+  [0.12, 0.06, 0.87, 0.9],
+  [0.06, 0.025, 0.9, 0.935],
+  [0.025, 0.045, 0.935, 0.955],
+];
+/** The ship's length across the cutaway (px), and the room either side of her. */
+const LEN = 940, MARGIN = 40;
+/** The lift shafts (TITAN_LIFTS, bow to stern): where each runs (fraction from the bow) and the highest deck it reaches. */
+const SHAFTS = [{ f: 0.205, top: 4 }, { f: 0.49, top: 1 }, { f: 0.695, top: 3 }];
 
-/** The top edge of the side sprite in each column (its silhouette), cached. */
-function sideTops(img: HTMLCanvasElement): Int16Array {
-  let e = edges.get(img);
-  if (e) return e;
-  const t = document.createElement('canvas');
-  t.width = img.width;
-  t.height = img.height;
-  const x = t.getContext('2d')!;
-  x.drawImage(img, 0, 0);
-  const d = x.getImageData(0, 0, t.width, t.height).data;
-  e = new Int16Array(t.width).fill(SIDE.keel);
-  for (let i = 0; i < t.width; i++) {
-    for (let j = 0; j < t.height; j++) {
-      if (d[(j * t.width + i) * 4 + 3] > 60) {
-        e[i] = j;
-        break;
-      }
-    }
-  }
-  edges.set(img, e);
-  return e;
-}
+/** The side-view sprite (bow on its left): its running gear (rows 120-162) goes under the cutaway. */
+const SIDE = { w: 538, h: 162, keel: 120 } as const;
+
 /** The high-res pose for what someone's doing where they are. */
 function poseHD(pr: Person): PoseHD {
   switch (pr.act) {
@@ -125,6 +121,14 @@ export class Interior {
   private layoutFor = -1;
   /** The deck's own spaces drawn this frame (for their name plates). */
   private services: { deck: number; xa: number; xb: number; name: string }[] = [];
+  /** The cutaway x of her bow; the deck's own spaces between the rooms, per deck; where walking people go, per deck. */
+  private xBow = 0;
+  /** The hover card, the crew as last drawn (for it), and a deck picked from the list, lit up for a moment. */
+  private tip: HTMLDivElement;
+  private ab: Aboard | null = null;
+  private lit = { deck: -1, t: 0 };
+  private spare: [number, number][][] = [];
+  private walk: [number, number][][] = [];
 
   constructor(parent: HTMLElement, private act: InteriorActions) {
     this.root = h('div', 'interior');
@@ -158,8 +162,25 @@ export class Interior {
     banner.src = SHIP_ART.side;
     banner.alt = 'Your Titan, side on';
     banner.style.transform = 'scaleX(-1)';
+    banner.title = 'The whole ship (click to see all of her)';
+    banner.style.cursor = 'pointer';
+    banner.addEventListener('click', () => {
+      this.zoom = 1;
+      this.panX = this.panY = 0;
+      this.act.sound('ui');
+    });
+    // Pick a deck in the list to go to it.
+    this.secDecks.addEventListener('click', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-deck]');
+      if (el) this.focusDeck(Number(el.dataset.deck));
+    });
+    this.tip = h('div', 'int-tip');
     this.panel.append(head, banner, this.secDecks, this.secRoom, this.secOrders, this.secDraft);
-    this.root.append(this.cv, this.panel);
+    this.root.append(this.cv, this.panel, this.tip);
+    this.cv.addEventListener('pointerleave', () => {
+      this.hover = 0;
+      this.tip.style.display = 'none';
+    });
     parent.appendChild(this.root);
     this.cv.addEventListener('pointerdown', (e) => this.down(e));
     this.cv.addEventListener('pointermove', (e) => this.move(e));
@@ -222,71 +243,199 @@ export class Interior {
     this.panY = hh <= a.h ? 0 : Math.max(-(hh - a.h) / 2, Math.min((hh - a.h) / 2, this.panY));
   }
 
+  /* ---- The ship's shape ---- */
+
+  /** The cutaway x a fraction `f` of her length from the bow. */
+  private fx(f: number): number {
+    return this.xBow - f * LEN;
+  }
+
+  /** Where a deck's bow (0) or stern (1) wall is at height `y` (its walls rake between its ceiling and floor). */
+  private wall(deck: number, end: 0 | 1, y: number): number {
+    const s = SHAPE[deck];
+    const k = Math.max(0, Math.min(1, (y - this.deckTop(deck)) / DH));
+    return this.fx(end === 0 ? s[0] + (s[1] - s[0]) * k : s[2] + (s[3] - s[2]) * k);
+  }
+
+  /** The stretch of a deck its rooms are laid along: [stern x, bow x], between its walls at half height. */
+  private span(deck: number): [number, number] {
+    const y = this.deckTop(deck) + DH / 2;
+    return [this.wall(deck, 1, y), this.wall(deck, 0, y)];
+  }
+
+  /** Lift shaft `i` (bow to stern): [x0, x1]. */
+  private shaft(i: number): [number, number] {
+    const xb = Math.round(this.fx(SHAFTS[i].f));
+    return [xb - 2 * CELL, xb];
+  }
+
+  private reaches(i: number, deck: number): boolean {
+    return deck >= SHAFTS[i].top;
+  }
+
+  /** The top of the hull at `x`: the roof of the highest deck there (where the roof's guns and soldiers stand). */
+  private roofAt(x: number): number {
+    for (let d = 1; d <= 7; d++) {
+      const y = this.deckTop(d);
+      if (x >= this.wall(d, 1, y) - 0.5 && x <= this.wall(d, 0, y) + 0.5) return y;
+    }
+    return this.deckTop(7) + DH;
+  }
+
+  /** Her open decks: the top of the bridge deck and every ledge where the deck above steps in, as [x0, x1, y], bow first. */
+  private ledges(): [number, number, number][] {
+    const out: [number, number, number][] = [];
+    for (let d = 1; d <= 7; d++) {
+      const y = this.deckTop(d);
+      const xs = this.wall(d, 1, y), xf = this.wall(d, 0, y);
+      if (d === 1) {
+        out.push([xs, xf, y]);
+        continue;
+      }
+      const us = this.wall(d - 1, 1, y), uf = this.wall(d - 1, 0, y);
+      if (xf - uf > 3) out.push([uf, xf, y]);
+      if (us - xs > 3) out.push([xs, us, y]);
+    }
+    return out.sort((u, v) => v[1] - u[1]);
+  }
+
+  /** Where something `cy` cells from the bow on the roof is: along her open decks, bow to stern (never on a slope). */
+  private roofX(cy: number, rows: number): number {
+    const segs = this.ledges();
+    const total = segs.reduce((sum, [a, b]) => sum + b - a, 0);
+    let u = Math.max(0, Math.min(1, cy / rows)) * total;
+    for (const [a, b] of segs) {
+      if (u <= b - a) return b - u;
+      u -= b - a;
+    }
+    return segs[segs.length - 1]?.[0] ?? this.fx(0.5);
+  }
+
+  /** Where someone walking a deck `cy` cells from the bow is drawn (following the rooms as they're laid out). */
+  private walkX(deck: number, cy: number): number {
+    const k = this.walk[deck];
+    if (!k || k.length < 2) return this.fx(0.5);
+    if (cy <= k[0][0]) return k[0][1];
+    for (let i = 1; i < k.length; i++) {
+      if (cy <= k[i][0]) {
+        const [c0, x0] = k[i - 1], [c1, x1] = k[i];
+        return x0 + ((cy - c0) / (c1 - c0 || 1)) * (x1 - x0);
+      }
+    }
+    return k[k.length - 1][1];
+  }
+
+  /** Her outline: up the bow deck by deck (ledges where the superstructure steps in), over the top, down the stern. */
+  private hullPath(): Path2D {
+    const path = new Path2D();
+    const bot = (d: number): number => this.deckTop(d) + DH;
+    path.moveTo(this.wall(7, 0, bot(7)), bot(7));
+    for (let d = 7; d >= 1; d--) {
+      path.lineTo(this.wall(d, 0, bot(d)), bot(d));
+      path.lineTo(this.wall(d, 0, this.deckTop(d)), this.deckTop(d));
+    }
+    for (let d = 1; d <= 7; d++) {
+      path.lineTo(this.wall(d, 1, this.deckTop(d)), this.deckTop(d));
+      path.lineTo(this.wall(d, 1, bot(d)), bot(d));
+    }
+    path.closePath();
+    return path;
+  }
+
   /* ---------------------------------------------------------------- */
   /* Layout                                                            */
   /* ---------------------------------------------------------------- */
 
-  /** Lays the rooms out along each deck, bow to stern, keeping the lift shafts clear. */
+  /**
+   * Lays the rooms out along each deck in the order they're built, bow to stern: they flow along the deck between her
+   * walls, round the lift shafts that reach it, each as wide as its size allows (a Fallout-Shelter row of rooms
+   * rather than a scale plan). What's left of a stretch is the deck's own space.
+   */
   private layout(g: Game): void {
     const p = g.player;
-    this.dio.width = (p.rows + 12) * CELL;
+    this.dio.width = LEN + MARGIN * 2;
     this.dio.height = SKY + ROOF_H + 7 * DH + KEEL;
+    this.xBow = this.dio.width - MARGIN;
     this.placed.clear();
     this.roomsByDeck = [];
-    // The decks run bow to stern in four stretches between the lift shafts. Rooms sit in the stretch they're
-    // built in, in order, and widen to fill it (a Fallout-Shelter row of rooms rather than a scale plan).
-    const shafts = TITAN_LIFTS.map((l) => [l.cy, l.cy + 2]).sort((u, v) => u[0] - v[0]);
-    const stretches: [number, number][] = [];
-    let from = 0;
-    for (const [s0, s1] of shafts) {
-      stretches.push([from, s0]);
-      from = s1;
-    }
-    stretches.push([from, p.rows]);
+    this.spare = [];
+    this.walk = [];
+    const lifts = [...TITAN_LIFTS].sort((u, v) => u.cy - v.cy);
     for (let deck = 0; deck <= 7; deck++) {
       const mods = p.modules.filter((m) => m.deck === deck).sort((u, v) => u.cy - v.cy || u.cx - v.cx);
       const list: Placed[] = [];
       if (deck === ROOF) {
-        for (const m of mods) list.push({ m, at: m.cy, len: MODULES[m.key].h });
-      } else {
-        for (const [a, b] of stretches) {
-          const here = mods.filter((m) => {
-            const mid = m.cy + MODULES[m.key].h / 2;
-            return mid >= a && (mid < b || (b === p.rows && mid <= b));
-          });
-          if (!here.length) continue;
-          const total = here.reduce((sum, m) => sum + MODULES[m.key].h, 0);
-          const k = Math.min(4, (b - a) / total);
-          let at = a + ((b - a) - total * k) / 2;
-          for (const m of here) {
-            const len = MODULES[m.key].h * k;
-            list.push({ m, at, len });
-            at += len;
-          }
+        for (const m of mods) {
+          // The main battery's turret sits on top of the citadel, its gun out over the bow.
+          if (m.key === 'main_gun') list.push({ m, xa: this.fx(0.5), xb: this.fx(0.4) });
+          else list.push({ m, xa: this.roofX(m.cy + MODULES[m.key].h, p.rows), xb: this.roofX(m.cy, p.rows) });
         }
+      } else {
+        const [s0, s1] = this.span(deck);
+        // The stretches between the shafts, bow first, as [x0, x1].
+        const cuts = SHAFTS.map((_, i) => i).filter((i) => this.reaches(i, deck)).map((i) => this.shaft(i)).sort((u, v) => v[0] - u[0]);
+        const segs: [number, number][] = [];
+        let hi = s1;
+        for (const [a, b] of cuts) {
+          if (hi - b > 4) segs.push([b, hi]);
+          hi = a;
+        }
+        if (hi - s0 > 4) segs.push([s0, hi]);
+        const want = mods.map((m) => MODULES[m.key].h * CELL);
+        const room = segs.reduce((sum, [a, b]) => sum + b - a, 0);
+        const total = want.reduce((sum, w) => sum + w, 0) || 1;
+        // Which stretch each room goes in, at a given scale (none if they don't all fit).
+        const pack = (k: number): number[][] | null => {
+          const out: number[][] = segs.map(() => []);
+          let i = 0, x = segs[0]?.[1] ?? 0;
+          for (let r = 0; r < want.length; r++) {
+            const w = want[r] * k;
+            while (i < segs.length && x - w < segs[i][0] - 0.5) {
+              i++;
+              x = segs[i]?.[1] ?? 0;
+            }
+            if (i >= segs.length) return null;
+            out[i].push(r);
+            x -= w;
+          }
+          return out;
+        };
+        let k = Math.min(3, room / total);
+        let fit = pack(k);
+        for (let tries = 0; !fit && tries < 60; tries++) fit = pack((k *= 0.95));
+        const spare: [number, number][] = [];
+        segs.forEach(([a, b], si) => {
+          const rs = fit?.[si] ?? [];
+          const used = rs.reduce((sum, r) => sum + want[r] * k, 0);
+          // A sliver left over goes to the rooms; more is the deck's own space, astern of them.
+          const kk = rs.length && b - a - used < 40 ? (b - a) / used : 1;
+          let x = b;
+          for (const r of rs) {
+            const w = want[r] * k * kk;
+            list.push({ m: mods[r], xa: x - w, xb: x });
+            x -= w;
+          }
+          if (x - a >= 24) spare.push([a, x]);
+        });
+        this.spare[deck] = spare;
+        // Walking the deck: from the cells people are at to the cutaway, through the rooms' and the shafts' places.
+        const knots: [number, number][] = [[0, s1], [p.rows, s0]];
+        for (const pl of list) knots.push([pl.m.cy + MODULES[pl.m.key].h / 2, (pl.xa + pl.xb) / 2]);
+        lifts.forEach((l, i) => {
+          if (!this.reaches(i, deck)) return;
+          const [a, b] = this.shaft(i);
+          knots.push([l.cy + 1, (a + b) / 2]);
+        });
+        knots.sort((u, v) => u[0] - v[0]);
+        const mono: [number, number][] = [];
+        for (const kn of knots) if (!mono.length || (kn[0] > mono[mono.length - 1][0] && kn[1] < mono[mono.length - 1][1])) mono.push(kn);
+        this.walk[deck] = mono;
       }
       for (const pl of list) this.placed.set(pl.m.id, pl);
       this.roomsByDeck[deck] = list;
     }
     this.layoutFor = p.version;
     this.clampPan();
-  }
-
-  /** Stretches of a deck between the lifts with no rooms in them (cells from the bow). */
-  private emptyStretches(deck: number, rows: number): [number, number][] {
-    const shafts = TITAN_LIFTS.map((l) => [l.cy, l.cy + 2]).sort((u, v) => u[0] - v[0]);
-    const out: [number, number][] = [];
-    let from = 0;
-    for (const [s0, s1] of [...shafts, [rows, rows]]) {
-      if (!(this.roomsByDeck[deck] ?? []).some((pl) => pl.at < s0 && pl.at + pl.len > from)) out.push([from, s0]);
-      from = s1;
-    }
-    return out;
-  }
-
-  /** Cutaway x of a point `cy` cells from the bow (the bow is on the right). */
-  private X(cy: number, rows: number): number {
-    return (rows + 6 - cy) * CELL;
   }
 
   private deckTop(deck: number): number {
@@ -306,16 +455,15 @@ export class Interior {
   }
 
   private roomAt(dx: number, dy: number): number {
-    const g = this.game;
-    if (!g) return 0;
-    const rows = g.player.rows;
-    for (let deck = 0; deck <= 7; deck++) {
-      const top = this.deckTop(deck), bh = deck === ROOF ? ROOF_H : DH;
-      if (dy < top || dy >= top + bh) continue;
-      for (const pl of this.roomsByDeck[deck] ?? []) {
-        const x0 = this.X(pl.at + pl.len, rows), x1 = this.X(pl.at, rows);
-        if (dx >= x0 && dx < x1) return pl.m.id;
-      }
+    if (!this.game) return 0;
+    for (const pl of this.roomsByDeck[ROOF] ?? []) {
+      const base = this.roofAt((pl.xa + pl.xb) / 2);
+      if (dx >= pl.xa && dx < pl.xb && dy >= base - 34 && dy < base) return pl.m.id;
+    }
+    for (let deck = 1; deck <= 7; deck++) {
+      const top = this.deckTop(deck);
+      if (dy < top || dy >= top + DH) continue;
+      for (const pl of this.roomsByDeck[deck] ?? []) if (dx >= pl.xa && dx < pl.xb) return pl.m.id;
     }
     return 0;
   }
@@ -339,6 +487,48 @@ export class Interior {
     const [x, y] = this.toDio(e);
     this.hover = this.roomAt(x, y);
     this.cv.style.cursor = this.hover ? 'pointer' : this.zoom > 1 ? 'grab' : 'default';
+    this.showTip(e.clientX, e.clientY);
+  }
+
+  /** The hover card for the room under the pointer: what it is, its crew, what they're doing, any work on it. */
+  private showTip(cx: number, cy: number): void {
+    const g = this.game;
+    const m = this.hover && g ? g.player.moduleById(this.hover) : undefined;
+    if (!g || !m) {
+      this.tip.style.display = 'none';
+      return;
+    }
+    const d = MODULES[m.key];
+    const here = this.ab ? this.ab.people.filter((q) => q.mod === m.id && !moving(q)) : [];
+    const acts: Record<string, number> = {};
+    for (const q of here) acts[q.act] = (acts[q.act] ?? 0) + 1;
+    const doing = Object.entries(acts).sort((u, v) => v[1] - u[1]).slice(0, 3).map(([a, n]) => `${n} ${ACT_NAME[a] ?? a}`).join(', ');
+    const need = g.player.crewNeeded(m);
+    const job = g.builds.find((b) => b.modId === m.id);
+    const where = m.deck === ROOF ? 'Roof' : `${TITAN_DECK_INFO[m.deck].level} ${TITAN_DECK_INFO[m.deck].name}`;
+    this.tip.innerHTML = `<b style="color:${CAT[d.cat] ?? '#b0bec5'}">${esc(d.name.toUpperCase())} L${m.lvl}</b><small>${esc(where)}</small>`
+      + (need ? `<div><span>Staff</span>${m.crew} / ${need}</div>` : '')
+      + `<div><span>Inside</span>${here.length ? esc(doing) : 'nobody right now'}</div>`
+      + (m.weapon ? `<div><span>Gun</span>${esc(WEAPONS[m.weapon.key]?.name ?? m.weapon.key)} · ${esc(String(m.weapon.rarity))}</div>` : '')
+      + (job ? `<div><span>Work</span>${job.order ? 'crew upgrading' : 'upgrading'} ${Math.round((job.t / job.total) * 100)}%</div>` : '')
+      + '<em>Click for its orders</em>';
+    this.tip.style.display = 'block';
+    const w = this.tip.offsetWidth, hh = this.tip.offsetHeight;
+    this.tip.style.left = `${Math.min(window.innerWidth - w - 8, cx + 16)}px`;
+    this.tip.style.top = `${Math.min(window.innerHeight - hh - 8, cy + 14)}px`;
+  }
+
+  /** Zooms in on a deck and lights it up for a moment. */
+  private focusDeck(deck: number): void {
+    if (!this.game || !this.dio.width) return;
+    const yc = deck === ROOF ? this.deckTop(1) - 20 : this.deckTop(deck) + DH / 2;
+    const [a, b] = deck === ROOF ? [this.fx(0.95), this.fx(0.05)] : this.span(deck);
+    this.zoom = 2;
+    this.panX = (this.dio.width / 2 - (a + b) / 2) * this.zoom;
+    this.panY = (this.dio.height / 2 - yc) * this.zoom;
+    this.clampPan();
+    this.lit = { deck, t: 1.8 };
+    this.act.sound('ui');
   }
 
   private up(e: PointerEvent): void {
@@ -401,7 +591,9 @@ export class Interior {
   render(g: Game, ab: Aboard, dt: number): void {
     if (!this.isOpen) return;
     this.game = g;
+    this.ab = ab;
     this.time += dt;
+    this.lit.t = Math.max(0, this.lit.t - dt);
     const t0 = this.time;
     if (this.layoutFor !== g.player.version || !this.dio.width) this.layout(g);
     this.paint(g, ab);
@@ -430,53 +622,36 @@ export class Interior {
   private paint(g: Game, ab: Aboard): void {
     const c = this.dx;
     const p = g.player;
-    const rows = p.rows;
     const W = this.dio.width, H = this.dio.height;
-    const X = (cy: number): number => this.X(cy, rows);
     const t = this.time;
     c.clearRect(0, 0, W, H);
     c.imageSmoothingEnabled = false;
-    const hullL = X(rows + 0.5), hullR = X(-0.3);
-    const roofY = SKY + ROOF_H;
-    const bottom = roofY + 7 * DH;
+    const bottom = this.deckTop(7) + DH;
     this.slots.clear();
     this.services = [];
-    // The ship's real side outline: the decks are clipped to it (the sloped bow cuts the forward rooms).
-    const side = shipView('side', 'main');
-    const shell = side ? this.shellMap(hullL, hullR, roofY, bottom) : null;
-    if (side && shell) {
-      this.drawShell(c, side, shell, roofY, bottom, 'back');
-      const tops = sideTops(side);
-      const path = new Path2D();
-      path.moveTo(hullL, bottom);
-      for (let x = hullL; x <= hullR; x += 2) {
-        const xs = Math.max(0, Math.min(SIDE.w - 1, Math.round((shell.xBow - x) / shell.kx)));
-        const ts = tops[xs];
-        const y = ts <= SIDE.roof ? roofY - 2 : roofY + ((ts - SIDE.roof) / (SIDE.keel - SIDE.roof)) * (bottom - roofY);
-        path.lineTo(x, Math.min(bottom, y));
-      }
-      path.lineTo(hullR, bottom);
-      path.closePath();
-      c.save();
-      c.clip(path);
-    }
+    const hull = this.hullPath();
+    // The running gear under her, the dark of her insides, then every deck clipped to her outline.
+    this.runningGear(c, g, bottom);
+    c.fillStyle = '#0a0c11';
+    c.fill(hull);
+    c.save();
+    c.clip(hull);
 
-    /* ---- Decks: the Spine, then the rooms ---- */
+    /* ---- Decks: the Spine, the deck's own spaces, the rooms ---- */
     for (let deck = 1; deck <= 7; deck++) {
       const y0 = this.deckTop(deck);
       const info = TITAN_DECK_INFO[deck];
       const open = p.deckOpen(deck);
-      drawCorridor(c, hullL, y0, hullR - hullL, DH, info.color, t, open);
-      // Stretches with none of your rooms in them are still the ship: the deck's own spaces (mothballed on a
-      // sealed deck).
-      for (const [a, b] of this.emptyStretches(deck, rows)) {
-        const xa = Math.round(X(b)) + 1, xb = Math.round(X(a)) - 1;
-        if (xb - xa < 24) continue;
-        const name = drawService(c, deck, xa, y0, xb - xa, DH, t, deck * 5 + Math.round(a), info.color, open);
+      const xl = Math.floor(Math.min(this.wall(deck, 1, y0), this.wall(deck, 1, y0 + DH))) - 6;
+      const xr = Math.ceil(Math.max(this.wall(deck, 0, y0), this.wall(deck, 0, y0 + DH))) + 6;
+      drawCorridor(c, xl, y0, xr - xl, DH, info.color, t, open);
+      for (const [a, b] of this.spare[deck] ?? []) {
+        const xa = Math.round(a) + 1, xb = Math.round(b) - 1;
+        const name = drawService(c, deck, xa, y0, xb - xa, DH, t, deck * 5 + Math.round(a / CELL), info.color, open);
         if (open) this.services.push({ deck, xa, xb, name });
       }
       if (open) for (const pl of this.roomsByDeck[deck] ?? []) {
-        const xa = Math.round(X(pl.at + pl.len)) + 1, xb = Math.round(X(pl.at)) - 1;
+        const xa = Math.round(pl.xa) + 1, xb = Math.round(pl.xb) - 1;
         if (xb - xa < 6) continue;
         const d = MODULES[pl.m.key];
         const job = g.builds.find((b) => b.modId === pl.m.id);
@@ -490,16 +665,17 @@ export class Interior {
         c.fillRect(xa - 2, y0, 1, DH);
         c.fillRect(xb + 1, y0, 1, DH);
       }
-      // The deck slab under it, with the deck's colour on the stern bulkhead.
+      // The deck slab under it, and the deck's colour on its stern bulkhead.
       c.fillStyle = '#10141a';
-      c.fillRect(hullL, y0 + DH - 1, hullR - hullL, 2);
+      c.fillRect(xl, y0 + DH - 1, xr - xl, 2);
       c.fillStyle = info.color;
-      c.fillRect(hullL - 4, y0 + 3, 3, DH - 8);
+      c.fillRect(Math.round(this.wall(deck, 1, y0 + DH / 2)) + 5, y0 + 5, 3, DH - 12);
       // Fire and flooding, by compartment (bow, midships, stern).
+      const [sa, sb] = this.span(deck);
       for (let sec = 0; sec < 3; sec++) {
         const i = compIndex(deck, sec);
         const f = g.titan.fire[i] ?? 0, fl = g.titan.flood[i] ?? 0;
-        const xa = X((sec + 1) * (rows / 3)), xb = X(sec * (rows / 3));
+        const xa = sb - ((sec + 1) * (sb - sa)) / 3, xb = sb - (sec * (sb - sa)) / 3;
         if (fl > 0.02) {
           const wh = Math.round(fl * (DH - 4));
           c.fillStyle = 'rgba(40,120,200,0.5)';
@@ -520,22 +696,23 @@ export class Interior {
         }
       }
     }
-    // Lift shafts through every deck, with the cars riding.
-    for (const l of TITAN_LIFTS) {
-      const xa = Math.round(X(l.cy + 2)), xb = Math.round(X(l.cy));
+    // The lift shafts down through the decks they reach, the cars riding.
+    SHAFTS.forEach((sh, i) => {
+      const [xa, xb] = this.shaft(i);
+      const top = this.deckTop(sh.top);
       c.fillStyle = '#07090c';
-      c.fillRect(xa, roofY - 2, xb - xa, bottom - roofY + 2);
+      c.fillRect(xa, top, xb - xa, bottom - top);
       c.fillStyle = '#2a303a';
-      c.fillRect(xa, roofY - 2, 2, bottom - roofY + 2);
-      c.fillRect(xb - 2, roofY - 2, 2, bottom - roofY + 2);
+      c.fillRect(xa, top, 2, bottom - top);
+      c.fillRect(xb - 2, top, 2, bottom - top);
       c.fillStyle = '#3a4250';
-      c.fillRect(Math.round((xa + xb) / 2), roofY - 2, 1, bottom - roofY + 2);
-      for (let deck = 1; deck <= 7; deck++) {
+      c.fillRect(Math.round((xa + xb) / 2), top, 1, bottom - top);
+      for (let deck = sh.top; deck <= 7; deck++) {
         c.fillStyle = '#e0b020';
         c.fillRect(xa + 2, this.deckTop(deck) + DH - 3, xb - xa - 4, 1);
       }
-      const ph = (Math.sin(t * 0.35 + l.cy) + 1) / 2;
-      const cy = Math.round(roofY + ph * (6 * DH));
+      const ph = (Math.sin(t * 0.35 + i * 3.1) + 1) / 2;
+      const cy = Math.round(top + ph * (bottom - top - DH));
       c.fillStyle = '#0b0d11';
       c.fillRect(xa + 2, cy + 1, xb - xa - 4, DH - 2);
       c.fillStyle = '#5a6270';
@@ -545,30 +722,31 @@ export class Interior {
       c.fillStyle = '#e0b020';
       c.fillRect(xa + 3, cy + 2, xb - xa - 6, 1);
       glowAt(c, (xa + xb) / 2, cy + 6, 12, '#ffe0a0', 0.3);
-    }
+    });
     // Sealed decks say so.
     for (let deck = 1; deck <= 7; deck++) {
       if (p.deckOpen(deck)) continue;
       const y0 = this.deckTop(deck);
+      const [sa, sb] = this.span(deck);
       const msg = `SEALED: OPENS WITH THE TITAN MK ${['I', 'II', 'III', 'IV', 'V', 'VI'][(DECK_OPEN_CC[deck] ?? 1) - 1]} REFIT`;
       const tw = msg.length * 4 + 8;
       c.fillStyle = '#0b0d11';
-      c.fillRect(Math.round((hullL + hullR) / 2 - tw / 2), y0 + DH / 2 - 6, tw, 13);
-      pxMini(c, msg, (hullL + hullR) / 2, y0 + DH / 2 - 2, '#8a8e96', 'center');
+      c.fillRect(Math.round((sa + sb) / 2 - tw / 2), y0 + DH / 2 - 6, tw, 13);
+      pxMini(c, msg, (sa + sb) / 2, y0 + DH / 2 - 2, '#8a8e96', 'center');
     }
+    c.restore();
 
-    if (side && shell) {
-      c.restore();
-      this.drawShell(c, side, shell, roofY, bottom, 'front');
-      for (const pl of this.roomsByDeck[ROOF] ?? []) this.roofGun(c, g, pl, roofY - 6);
-    } else this.exterior(c, g, hullL, hullR, roofY, bottom);
+    /* ---- Her armour round the cut, the open decks, the guns on the roof ---- */
+    this.drawHull(c, g, hull, bottom);
 
-    /* ---- The crew ---- */
+    /* ---- The crew, then the roof's guns in front of their crews ---- */
     this.drawCrew(c, g, ab);
+    for (const pl of this.roomsByDeck[ROOF] ?? []) this.roofGun(c, g, pl, this.roofAt((pl.xa + pl.xb) / 2) - 4);
 
     // The deck's own spaces are named too (dimmer than your rooms).
     for (const sv of this.services) {
       const y = this.deckTop(sv.deck) + 7;
+      if (sv.xb - sv.xa < sv.name.length * 4 + 8) continue;
       c.fillStyle = 'rgba(8,10,14,0.6)';
       c.fillRect(sv.xa + 2, y, sv.name.length * 4 + 3, 8);
       pxMini(c, sv.name, sv.xa + 4, y + 1, '#9aa8b8', 'left', null);
@@ -577,7 +755,7 @@ export class Interior {
     for (let deck = 1; deck <= 7; deck++) {
       if (!p.deckOpen(deck)) continue;
       for (const pl of this.roomsByDeck[deck] ?? []) {
-        const xa = Math.round(X(pl.at + pl.len)) + 1, xb = Math.round(X(pl.at)) - 1;
+        const xa = Math.round(pl.xa) + 1, xb = Math.round(pl.xb) - 1;
         const name = `${MODULES[pl.m.key].name.toUpperCase()} ${pl.m.lvl}`;
         const max = Math.floor((xb - xa - 6) / 4);
         if (max < 4) continue;
@@ -587,60 +765,176 @@ export class Interior {
         pxMini(c, label, xa + 4, this.deckTop(deck) + 8, '#d8e4f0', 'left', null);
       }
     }
+    if (this.lit.t > 0 && this.lit.deck >= 0) {
+      const d = this.lit.deck;
+      const on = Math.floor(this.lit.t * 6) % 2 === 0;
+      c.strokeStyle = on ? TITAN_DECK_INFO[d].color : 'rgba(255,255,255,0.5)';
+      c.lineWidth = 2;
+      if (d === ROOF) for (const [a, b, y] of this.ledges()) c.strokeRect(Math.round(a) + 1, y - 44, Math.round(b - a) - 2, 42);
+      else {
+        const [a, b] = this.span(d);
+        c.strokeRect(Math.round(a) + 1, this.deckTop(d) + 1, Math.round(b - a) - 2, DH - 2);
+      }
+    }
     for (const id of [this.hover, this.selected]) {
       const pl = id ? this.placed.get(id) : undefined;
       if (!pl) continue;
-      const y0 = this.deckTop(pl.m.deck), bh = pl.m.deck === ROOF ? ROOF_H : DH;
+      const roof = pl.m.deck === ROOF;
+      const y0 = roof ? this.roofAt((pl.xa + pl.xb) / 2) - 34 : this.deckTop(pl.m.deck), bh = roof ? 30 : DH;
       c.strokeStyle = id === this.selected ? '#ffd740' : 'rgba(255,255,255,0.7)';
       c.lineWidth = 1;
-      c.strokeRect(Math.round(X(pl.at + pl.len)) + 0.5, y0 + 0.5, Math.round(X(pl.at) - X(pl.at + pl.len)) - 1, bh - 1);
+      c.strokeRect(Math.round(pl.xa) + 0.5, y0 + 0.5, Math.round(pl.xb - pl.xa) - 1, bh - 1);
     }
-  }
-
-  /** Where the side sprite goes: flipped (bow right), its hull starting at the bow end of the decks. */
-  private shellMap(hullL: number, hullR: number, roofY: number, bottom: number): { xBow: number; kx: number; kTop: number; kKeel: number } {
-    const xStern = hullL - 16;
-    const xBow = hullR + ((hullR - xStern) / (SIDE.w - SIDE.bow)) * SIDE.bow;
-    const kx = (xBow - xStern) / SIDE.w;
-    return { xBow, kx, kTop: roofY / SIDE.roof, kKeel: KEEL / (SIDE.h - SIDE.keel) + bottom * 0 };
   }
 
   /**
-   * The hull from the side sprite. 'back' lays the whole ship down (the decks then cover its middle); 'front' puts
-   * back what must sit over the decks' edges: the armour rim along the cut, the running gear with its belts moving,
-   * the toroids on this side glowing, the stern exhausts.
+   * Her hull round the cut: the heavy armour rim along her outline (thickest on the glacis), open deck on every ledge
+   * where the superstructure steps in (plating, a neon strip, rails), the bridge's raked windows and the ports on the
+   * decks below it, headlights and the grille on the nose, the exhausts at the stern, a mast with its beacon.
    */
-  private drawShell(c: CanvasRenderingContext2D, img: HTMLCanvasElement, s: { xBow: number; kx: number; kTop: number; kKeel: number }, roofY: number, bottom: number, layer: 'back' | 'front'): void {
-    const g = this.game!;
+  private drawHull(c: CanvasRenderingContext2D, g: Game, hull: Path2D, bottom: number): void {
     const p = g.player;
     const t = this.time;
+    const top = (d: number): number => this.deckTop(d), bot = (d: number): number => this.deckTop(d) + DH;
+    const R = (x: number, y: number, w: number, h: number, col: string): void => {
+      c.fillStyle = col;
+      c.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
+    };
+    const line = (x0: number, y0: number, x1: number, y1: number, w: number, col: string): void => {
+      c.strokeStyle = col;
+      c.lineWidth = w;
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.lineTo(x1, y1);
+      c.stroke();
+    };
     c.save();
-    c.imageSmoothingEnabled = false;
-    c.translate(Math.round(s.xBow), 0);
-    c.scale(-s.kx, 1);
-    if (layer === 'back') {
-      // Superstructure above the roof, hull through the decks, running gear below.
-      c.drawImage(img, 0, 0, SIDE.w, SIDE.roof, 0, 0, SIDE.w, roofY);
-      c.drawImage(img, 0, SIDE.roof, SIDE.w, SIDE.keel - SIDE.roof, 0, roofY, SIDE.w, bottom - roofY);
-      c.drawImage(img, 0, SIDE.keel, SIDE.w, SIDE.h - SIDE.keel, 0, bottom, SIDE.w, KEEL);
-      c.restore();
-      return;
+    c.lineJoin = 'miter';
+    c.lineCap = 'butt';
+    // The glacis: extra armour on the hull decks' bow walls, with plate seams across it.
+    for (let d = 4; d <= 7; d++) {
+      const xa = this.wall(d, 0, top(d)), xb = this.wall(d, 0, bot(d));
+      line(xa + 3, top(d), xb + 3, bot(d), 10, '#06080c');
+      line(xa + 3, top(d), xb + 3, bot(d), 7, '#343b47');
+      line(xa + 6, top(d), xb + 6, bot(d), 1, '#5a6578');
+      for (let k = 0.25; k < 1; k += 0.25) {
+        const x = xa + (xb - xa) * k, y = top(d) + DH * k;
+        line(x - 1, y, x + 7, y, 1, '#1a1e26');
+      }
     }
-    // In front: the running gear again (over anything that spilled down), and the superstructure's lower lip.
-    c.drawImage(img, 0, SIDE.keel, SIDE.w, SIDE.h - SIDE.keel, 0, bottom, SIDE.w, KEEL);
+    // The rim all round.
+    for (const [w, col] of [[8, '#06080c'], [5, '#2c323d'], [2, '#4a5466']] as [number, string][]) {
+      c.lineWidth = w;
+      c.strokeStyle = col;
+      c.stroke(hull);
+    }
     c.restore();
-    // Tread belts running (links sliding along the bottom run), faster with speed.
+    // Open deck on every ledge: plating, a neon strip that runs, rails.
+    for (const [a, b, y] of this.ledges()) {
+      R(a, y - 4, b - a, 4, '#313946');
+      R(a, y - 4, b - a, 1, '#8fa3c2');
+      for (let x = a + 3; x < b - 8; x += 14) R(x, y - 2, 8, 1, Math.floor(t * 4 - x * 0.05) % 9 ? '#3ab4ff' : '#1a4a6a');
+      // Rails.
+      R(a + 1, y - 10, b - a - 2, 1, '#5a6474');
+      for (let x = a + 2; x < b - 1; x += 7) R(x, y - 10, 1, 6, '#48505e');
+    }
+    // The bridge's raked windows across the top deck's bow wall; ports on the decks below it.
+    {
+      const d = 1;
+      const x0 = this.wall(d, 0, top(d) + 9), x1 = this.wall(d, 0, top(d) + 27);
+      line(x0 + 1, top(d) + 9, x1 + 1, top(d) + 27, 5, '#0e1a22');
+      line(x0 + 1, top(d) + 9, x1 + 1, top(d) + 27, 3, '#5ad0f0');
+      for (let k = 1; k < 3; k++) {
+        const y = top(d) + 9 + k * 6;
+        R(this.wall(d, 0, y) - 2, y, 5, 1, '#0e1a22');
+      }
+      glowAt(c, (x0 + x1) / 2 + 6, top(d) + 18, 22, '#60d0ff', 0.35);
+    }
+    for (const d of [2, 3]) {
+      const y = top(d) + DH / 2 - 3;
+      const x = this.wall(d, 0, y);
+      R(x - 2, y, 4, 5, '#0e1a22');
+      R(x - 1, y + 1, 2, 3, '#ffd080');
+      const xs = this.wall(d, 1, y);
+      R(xs - 2, y, 4, 5, '#0e1a22');
+      R(xs - 1, y + 1, 2, 3, '#ffd080');
+    }
+    // Headlights and the grille low on the nose; running lights.
+    {
+      const y = top(6) + 16;
+      const x = this.wall(6, 0, y) + 5;
+      for (const dy of [0, 8]) {
+        R(x, y + dy, 4, 3, '#fff6d8');
+        glowAt(c, x + 3, y + dy + 1, 14, '#fff3c4', 0.75);
+      }
+      const gy = top(7) + 10;
+      const gx = this.wall(7, 0, gy) - 2;
+      R(gx - 4, gy, 12, 18, '#06080c');
+      for (let k = 0; k < 5; k++) R(gx - 3 + k * 2, gy + 1, 1, 16, '#48505e');
+      const bl = Math.floor(t * 2) % 2 === 0;
+      R(this.wall(4, 0, top(4) + 4) + 2, top(4) + 4, 2, 2, bl ? '#40ff80' : '#104020');
+      R(this.wall(4, 1, top(4) + 4) - 4, top(4) + 4, 2, 2, bl ? '#ff3a30' : '#401010');
+    }
+    // Exhausts out of the stern, glowing when she's working.
+    const hot = Math.abs(p.speed) > 1 || g.helm.overdrive;
+    for (const d of [4, 5, 6]) {
+      const y = top(d) + DH / 2;
+      const x = this.wall(d, 1, y);
+      R(x - 9, y - 3, 8, 6, '#06080c');
+      R(x - 8, y - 2, 7, 4, '#3a3230');
+      discAt(c, x - 9, y, 2.5, g.helm.overdrive ? (Math.sin(t * 30 + d) > 0 ? '#ffd060' : '#ff7a00') : hot ? '#ff8a30' : '#3a2010');
+      if (hot) glowAt(c, x - 11, y, g.helm.overdrive ? 22 : 12, '#ff9100', g.helm.overdrive ? 0.9 : 0.5);
+    }
+    // A mast at the back of the bridge deck, its beacon, and an aerial by the bridge.
+    {
+      const y = top(1) - 4;
+      const x = this.wall(1, 1, top(1)) + 26;
+      R(x, y - 30, 1, 30, '#8a95a6');
+      R(x - 5, y - 22, 11, 1, '#8a95a6');
+      R(x - 3, y - 14, 7, 1, '#8a95a6');
+      if (Math.floor(t * 1.5) % 2 === 0) {
+        R(x, y - 31, 1, 1, '#ff3a30');
+        glowAt(c, x, y - 31, 7, '#ff3a30', 0.8);
+      }
+      const ax = this.wall(1, 0, top(1)) - 14;
+      R(ax, y - 18, 1, 18, '#6a7488');
+      R(ax - 1, y - 19, 3, 1, '#9aa4b8');
+    }
+    void bottom;
+  }
+
+  /**
+   * The running gear under her, from the side sprite (its three bogies, the road wheels, the skirts): the belts running
+   * with her speed and the near-side toroids spinning in their neon rings. Plain treads until the sprite has loaded.
+   */
+  private runningGear(c: CanvasRenderingContext2D, g: Game, bottom: number): void {
+    const p = g.player;
+    const t = this.time;
+    const img = shipView('side', 'main');
+    const x0 = this.fx(0), kx = LEN / SIDE.w;
+    if (img) {
+      c.save();
+      c.imageSmoothingEnabled = false;
+      c.translate(Math.round(x0), 0);
+      c.scale(-kx, 1);
+      c.drawImage(img, 0, SIDE.keel - 3, SIDE.w, SIDE.h - SIDE.keel + 3, 0, bottom - 3, SIDE.w, KEEL + 3);
+      c.restore();
+    } else {
+      c.fillStyle = '#07090d';
+      c.fillRect(Math.round(this.fx(0.95)), bottom, Math.round(0.9 * LEN), KEEL - 10);
+    }
+    // Belts running (links sliding along the bottom run), faster with speed.
     const run = t * p.speed * 2.2;
     const yb = bottom + Math.round(((146 - SIDE.keel) / (SIDE.h - SIDE.keel)) * KEEL);
-    const x0 = s.xBow - 520 * s.kx, x1 = s.xBow - 170 * s.kx;
-    for (let x = x0 + (((run % 6) + 6) % 6); x < x1; x += 6) {
+    const xa = x0 - 520 * kx, xb = x0 - 170 * kx;
+    for (let x = xa + (((run % 6) + 6) % 6); x < xb; x += 6) {
       c.fillStyle = '#4a5466';
       c.fillRect(Math.round(x), yb, 3, 1);
     }
     // The near-side toroids (fore and aft), ringed in neon, spinning with their push.
     const hm = g.helm;
     for (const [i, xs] of [[0, 34], [2, 500]] as [number, number][]) {
-      const x = s.xBow - xs * s.kx, y = bottom - 10;
+      const x = x0 - xs * kx, y = bottom - 10;
       const on = hm.toroids[i] && g.titan.toroids[i] > 0.1;
       const k = on ? 0.35 + 0.65 * p.spool : 0;
       discAt(c, x, y, 13, '#0b0d14');
@@ -654,134 +948,6 @@ export class Interior {
       }
       if (on) glowAt(c, x, y, 18 + 16 * k, '#18ffff', 0.35 + 0.4 * k);
     }
-    // Stern exhausts.
-    const hot = Math.abs(p.speed) > 1 || hm.overdrive;
-    if (hot) {
-      const sx = s.xBow - (SIDE.w - 4) * s.kx;
-      for (let q = 0; q < 3; q++) glowAt(c, sx, roofY + 20 + q * 34, hm.overdrive ? 22 : 12, hm.overdrive ? '#ffb040' : '#ff7a1a', hm.overdrive ? 0.9 : 0.5);
-    }
-    // The armour rim along the cut: a dark lip with a neon trim, the Starnet way.
-    c.fillStyle = '#07080d';
-    c.fillRect(Math.round(s.xBow - (SIDE.w - 14) * s.kx), roofY - 3, Math.round((SIDE.w - 24) * s.kx), 3);
-    c.fillStyle = '#b388ff';
-    for (let x = Math.round(s.xBow - (SIDE.w - 14) * s.kx); x < s.xBow - 24 * s.kx; x += 12) c.fillRect(x, roofY - 2, 6, 1);
-  }
-
-  /** The Titan's hull around the cutaway, from the side: superstructure and guns on top, the prow, the stern, the treads. */
-  private exterior(c: CanvasRenderingContext2D, g: Game, hullL: number, hullR: number, roofY: number, bottom: number): void {
-    const p = g.player;
-    const rows = p.rows;
-    const X = (cy: number): number => this.X(cy, rows);
-    const t = this.time;
-    const pal = { d0: '#07090d', d1: '#11151c', d2: '#1a1f28', d3: '#252b36', d4: '#313946', d5: '#3e4757', d6: '#4f5a6d', d7: '#687790', hi: '#8fa3c2', glow: '#3ab4ff' };
-    const R2 = (x: number, y: number, w: number, h: number, col: string): void => {
-      c.fillStyle = col;
-      c.fillRect(Math.round(x), Math.round(y), Math.max(1, Math.round(w)), Math.max(1, Math.round(h)));
-    };
-    const poly = (pts: [number, number][], col: string): void => {
-      c.fillStyle = col;
-      c.beginPath();
-      pts.forEach(([a, b], i) => (i ? c.lineTo(a, b) : c.moveTo(a, b)));
-      c.closePath();
-      c.fill();
-    };
-    // Frame around the decks.
-    R2(hullL - 6, roofY - 4, 6, bottom - roofY + 8, pal.d3);
-    R2(hullR, roofY - 4, 3, bottom - roofY + 8, pal.d3);
-    for (let y = roofY; y < bottom; y += 10) {
-      R2(hullL - 5, y, 1, 1, pal.d7);
-      R2(hullR + 1, y, 1, 1, pal.d7);
-    }
-    // The roof deck line with its blue strip.
-    R2(hullL - 6, roofY - 6, hullR - hullL + 9, 6, pal.d4);
-    R2(hullL - 6, roofY - 6, hullR - hullL + 9, 1, pal.hi);
-    for (let x = hullL; x < hullR - 8; x += 14) R2(x, roofY - 3, 8, 1, Math.floor(t * 4 - x * 0.05) % 9 ? pal.glow : '#1a4a6a');
-
-    /* ---- Superstructure: the citadel down the Spine, the command block ---- */
-    const cy0 = roofY - 6;
-    const cx0 = X(30), cx1 = X(7);
-    poly([[cx0, cy0], [cx0 + 6, cy0 - 16], [cx1 - 12, cy0 - 16], [cx1, cy0]], pal.d5);
-    R2(cx0 + 6, cy0 - 16, cx1 - cx0 - 18, 1, pal.d7);
-    R2(cx0 + 8, cy0 - 11, cx1 - cx0 - 24, 3, '#123040');
-    for (let x = cx0 + 10; x < cx1 - 16; x += 7) R2(x, cy0 - 10, 3, 1, (Math.floor(x) % 3) ? '#ffb13a' : '#7fe0ff');
-    for (let x = cx0 + 12; x < cx1 - 14; x += 22) R2(x, cy0 - 6, 1, 6, pal.d2);
-    // "07".
-    pxMini(c, '07', cx0 + 30, cy0 - 7, '#d6dee8', 'left', null, 1);
-    const tx0 = X(25), tx1 = X(21);
-    poly([[tx0, cy0 - 16], [tx0 + 3, cy0 - 38], [tx1 - 8, cy0 - 38], [tx1, cy0 - 30], [tx1, cy0 - 16]], pal.d6);
-    R2(tx0 + 3, cy0 - 38, tx1 - tx0 - 11, 1, pal.hi);
-    R2(tx0 + 5, cy0 - 30, tx1 - tx0 - 8, 4, '#123040');
-    for (let x = tx0 + 6; x < tx1 - 3; x += 4) R2(x, cy0 - 29, 2, 2, '#9ff0ff');
-    glowAt(c, (tx0 + tx1) / 2, cy0 - 28, 20, '#60d0ff', 0.25);
-    // Masts and the beacon.
-    R2(tx0 + 8, cy0 - 52, 1, 14, '#8a95a6');
-    R2(tx0 + 14, cy0 - 47, 1, 9, '#8a95a6');
-    R2(tx0 + 5, cy0 - 44, 7, 1, '#8a95a6');
-    if (Math.floor(t * 1.5) % 2 === 0) {
-      R2(tx0 + 8, cy0 - 53, 1, 1, '#ff3a30');
-      glowAt(c, tx0 + 8, cy0 - 53, 6, '#ff3a30', 0.8);
-    }
-    // Guns and nests on the roof, in profile.
-    for (const pl of this.roomsByDeck[ROOF] ?? []) this.roofGun(c, g, pl, cy0);
-
-    /* ---- The prow (right): stacked armour facets, headlights, the grille ---- */
-    const pr = hullR + 3;
-    const top = roofY - 6, bot = bottom + 18;
-    const hgt = bot - top;
-    poly([[pr, top], [pr + 26, top + hgt * 0.18], [pr + 44, top + hgt * 0.55], [pr + 40, top + hgt * 0.8], [pr + 22, bot], [pr, bot]], pal.d4);
-    poly([[pr, top], [pr + 26, top + hgt * 0.18], [pr + 22, top + hgt * 0.4], [pr, top + hgt * 0.34]], pal.d6);
-    poly([[pr + 26, top + hgt * 0.18], [pr + 44, top + hgt * 0.55], [pr + 30, top + hgt * 0.6], [pr + 22, top + hgt * 0.4]], pal.d5);
-    poly([[pr, top + hgt * 0.34], [pr + 22, top + hgt * 0.4], [pr + 30, top + hgt * 0.6], [pr, top + hgt * 0.62]], pal.d5);
-    poly([[pr + 30, top + hgt * 0.6], [pr + 44, top + hgt * 0.55], [pr + 40, top + hgt * 0.8], [pr + 28, top + hgt * 0.78]], pal.d3);
-    for (const [a, b] of [[pr + 8, top + hgt * 0.22], [pr + 30, top + hgt * 0.3], [pr + 12, top + hgt * 0.48], [pr + 34, top + hgt * 0.5]]) R2(a, b, 6, 2, pal.glow);
-    // Grille and headlights low on the nose.
-    R2(pr + 6, top + hgt * 0.66, 18, 12, pal.d0);
-    for (let x = pr + 7; x < pr + 23; x += 2) R2(x, top + hgt * 0.66 + 1, 1, 10, pal.d5);
-    R2(pr + 6, top + hgt * 0.66 - 2, 18, 1, pal.glow);
-    for (const hy of [top + hgt * 0.64, top + hgt * 0.72]) {
-      R2(pr + 30, hy, 3, 2, '#fff6d8');
-      glowAt(c, pr + 32, hy + 1, 10, '#fff3c4', 0.7);
-    }
-    /* ---- The stern (left): engine block with glowing exhausts, tail lights, the number ---- */
-    const sx = hullL - 6;
-    poly([[sx, top], [sx - 22, top + 6], [sx - 26, bot - 14], [sx - 14, bot], [sx, bot]], pal.d4);
-    R2(sx - 20, top + 10, 18, 1, pal.d7);
-    const hot = Math.abs(p.speed) > 1 || g.helm.overdrive;
-    for (let k = 0; k < 4; k++) {
-      const ey = top + 18 + k * ((bot - top - 34) / 3);
-      discAt(c, sx - 16, ey, 5, pal.d0);
-      discAt(c, sx - 16, ey, 3.5, g.helm.overdrive ? (Math.sin(t * 30 + k) > 0 ? '#ffd060' : '#ff7a00') : hot ? '#ff8a30' : '#3a2010');
-      if (hot) glowAt(c, sx - 16, ey, g.helm.overdrive ? 20 : 12, '#ff9100', g.helm.overdrive ? 0.9 : 0.5);
-    }
-    R2(sx - 24, top + 4, 3, 5, '#ff3a30');
-    R2(sx - 24, bot - 18, 3, 5, '#ff3a30');
-    pxMini(c, '07', sx - 12, bot - 16, '#d6dee8', 'center', null, 1);
-
-    /* ---- The treads: skirts with the light strip, road wheels, the belt running ---- */
-    const ky = bottom + 1;
-    R2(hullL - 6, ky, hullR - hullL + 9, 8, pal.d4);
-    R2(hullL - 6, ky, hullR - hullL + 9, 1, pal.d7);
-    for (let x = hullL; x < hullR; x += 18) R2(x + 2, ky + 4, 10, 1, pal.glow);
-    const belt = ky + 9;
-    const bh = KEEL - 14;
-    R2(hullL - 10, belt, hullR - hullL + 22, bh, pal.d0);
-    const run = t * p.speed * 3;
-    for (let x = hullL - 10 + (((run % 5) + 5) % 5); x < hullR + 12; x += 5) {
-      R2(x, belt, 3, 2, '#2c313a');
-      R2(x, belt + bh - 2, 3, 2, '#2c313a');
-    }
-    const wheels = Math.floor((hullR - hullL + 10) / 16);
-    for (let k = 0; k < wheels; k++) {
-      const wx = hullL - 4 + k * 16 + 8, wy = belt + bh / 2;
-      const crawler = Math.min(3, Math.floor(((wx - hullL) / (hullR - hullL)) * 4));
-      const hp = g.titan.crawlers[3 - crawler] ?? 1;
-      discAt(c, wx, wy, 7, '#0b0d11');
-      discAt(c, wx, wy, 6, hp < 0.1 ? '#3a1a10' : pal.d5);
-      discAt(c, wx, wy, 3, pal.d2);
-      const an = run * 0.4 + k;
-      for (let s2 = 0; s2 < 3; s2++) R2(wx + Math.cos(an + s2 * 2.1) * 4.5, wy + Math.sin(an + s2 * 2.1) * 4.5, 1, 1, pal.d7);
-      if (hp < 0.35 && Math.sin(t * 5 + k) > 0.7) glowAt(c, wx, wy - 4, 8, '#ff6d00', 0.5);
-    }
   }
 
   /** A roof gun or nest from the side. */
@@ -789,10 +955,10 @@ export class Interior {
     const p = g.player;
     const m = pl.m;
     const d = MODULES[m.key];
-    const xa = this.X(pl.at + pl.len, p.rows), xb = this.X(pl.at, p.rows);
+    const xa = pl.xa, xb = pl.xb;
     const cx = (xa + xb) / 2;
     if (d.hardpoint || m.key === 'pad' || m.key === 'main_gun') {
-      const big = m.key === 'main_gun' ? 1.7 : d.hardpoint === 'heavy' ? 1.35 : d.hardpoint === 'medium' ? 1.05 : 0.8;
+      const big = m.key === 'main_gun' ? 2.4 : d.hardpoint === 'heavy' ? 1.35 : d.hardpoint === 'medium' ? 1.05 : 0.8;
       const tw = Math.round(14 * big), th = Math.round(7 * big);
       c.fillStyle = '#0b0d11';
       c.fillRect(Math.round(cx - tw / 2) - 1, base - th - 1, tw + 2, th + 1);
@@ -880,8 +1046,8 @@ export class Interior {
     };
     for (const [id, list] of byRoom) {
       const pl = this.placed.get(id)!;
-      const xa = Math.round(this.X(pl.at + pl.len, rows)) + 2, xb = Math.round(this.X(pl.at, rows)) - 2;
-      const floor = pl.m.deck === ROOF ? SKY + ROOF_H - 6 : this.deckTop(pl.m.deck) + DH - 3;
+      const xa = Math.round(pl.xa) + 2, xb = Math.round(pl.xb) - 2;
+      const floor = pl.m.deck === ROOF ? this.roofAt((pl.xa + pl.xb) / 2) - 4 : this.deckTop(pl.m.deck) + DH - 3;
       const sl = this.slots.get(id);
       const sleepers = list.filter((q) => q.act === 'sleep');
       const eaters = list.filter((q) => q.act === 'eat');
@@ -904,7 +1070,7 @@ export class Interior {
       const hidden = rest.length - shown.length + Math.max(0, sleepers.length - (sl?.beds.length ?? 0)) + Math.max(0, eaters.length - (sl?.seats.length ?? 0));
       if (hidden > 0) {
         const lab = `+${hidden}`;
-        const y0 = pl.m.deck === ROOF ? SKY + 2 : this.deckTop(pl.m.deck) + 17;
+        const y0 = pl.m.deck === ROOF ? floor - 44 : this.deckTop(pl.m.deck) + 17;
         c.fillStyle = 'rgba(8,10,14,0.85)';
         c.fillRect(xb - lab.length * 4 - 4, y0, lab.length * 4 + 3, 8);
         pxMini(c, lab, xb - 2, y0 + 1, '#ffd740', 'right', null);
@@ -912,8 +1078,9 @@ export class Interior {
     }
     for (const pr of loose) {
       if (pr.deck !== ROOF && !p.deckOpen(pr.deck)) continue;
-      const floor = pr.deck === ROOF ? SKY + ROOF_H - 6 : this.deckTop(pr.deck) + DH - 3;
-      draw(pr, this.X(pr.y, rows), floor, moving(pr) ? 'walk' : poseHD(pr));
+      const x = pr.deck === ROOF ? this.roofX(pr.y, rows) : this.walkX(pr.deck, pr.y);
+      const floor = pr.deck === ROOF ? this.roofAt(x) - 4 : this.deckTop(pr.deck) + DH - 3;
+      draw(pr, x, floor, moving(pr) ? 'walk' : poseHD(pr));
     }
     // Off-duty hands in the deck's own spaces: one or two each, pottering about and pausing at things.
     const OFF = ['#5a7a9a', '#7a8a5a', '#8a6a5a', '#6a6a8a', '#9a8a6a', '#5a8a8a'];
@@ -974,7 +1141,7 @@ export class Interior {
     let decks = `<div class="int-t">DECKS <small>${cs.aboard} aboard · ${cs.reserves} reserve</small></div>`;
     for (let deck = 0; deck <= 7; deck++) {
       const info = TITAN_DECK_INFO[deck];
-      decks += `<div class="int-deck"><i style="background:${info.color}"></i><span>${esc(info.level)} ${esc(info.name)}</span><b>${per[deck]}</b></div>`;
+      decks += `<div class="int-deck" data-deck="${deck}" title="Go to this deck"><i style="background:${info.color}"></i><span>${esc(info.level)} ${esc(info.name)}</span><b>${per[deck]}</b></div>`;
     }
     this.secDecks.innerHTML = decks;
 

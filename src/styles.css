@@ -1735,3 +1735,12 @@ html.touch .joy { display: block; }
 .jobs .rw.robot small { color: #ffb040; }
 .jobs .rw.robot .bar div { background: #ffb040; }
 .jobs .rw.robot[data-robot] { cursor: pointer; }
+/* The interior's hover card over a room. */
+.int-tip { position: fixed; z-index: 16; display: none; pointer-events: none; min-width: 170px; max-width: 260px; padding: 6px 8px; background: rgba(8, 10, 16, 0.94); border: 1px solid #3a4658; box-shadow: 0 0 0 1px #07090c, 0 6px 16px rgba(0, 0, 0, 0.6); font-size: 11px; color: #cfd8e0; }
+.int-tip b { display: block; font-family: var(--px); font-size: 12px; letter-spacing: 1px; }
+.int-tip small { display: block; color: #6f8494; margin-bottom: 4px; }
+.int-tip div { display: flex; justify-content: space-between; gap: 10px; }
+.int-tip div span { color: #8fa6ba; }
+.int-tip em { display: block; margin-top: 4px; color: #ffd740; font-style: normal; font-size: 10px; }
+.int-deck[data-deck] { cursor: pointer; padding: 1px 2px; }
+.int-deck[data-deck]:hover { background: rgba(120, 160, 200, 0.12); color: #fff; }
