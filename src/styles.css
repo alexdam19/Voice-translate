@@ -256,7 +256,7 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 .crew-card { background: #181a26; border: 2px solid var(--rc, #555); padding: 8px; font-size: 13px; }
 .crew-card.injured { filter: grayscale(0.6); }
 .cc-top { display: flex; gap: 8px; }
-.cc-top .pt { width: 56px; height: 56px; border: 2px solid #000; }
+.cc-top .pt { width: 80px; height: 80px; border: 2px solid #000; image-rendering: auto; border-radius: 3px; }
 .cc-id { flex: 1; }
 .cc-id b { font-size: 15px; color: #fff; }
 .cc-id .role { font-size: 12px; }
@@ -423,7 +423,7 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 /* level-up perk cards */
 .perk-box { display: none; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 240px; background: rgba(20, 18, 8, 0.94); border: 2px solid #ffd740; padding: 8px; box-shadow: 0 0 18px rgba(255, 215, 64, 0.35); animation: drop 0.3s ease-out; }
 .pk-head { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-bottom: 6px; }
-.pk-head img { width: 40px; height: 40px; border: 2px solid #000; }
+.pk-head img { width: 56px; height: 56px; border: 2px solid #000; image-rendering: auto; border-radius: 3px; }
 .pk-head b { font-family: var(--px); color: #ffd740; font-size: 14px; }
 .pk-card { border: 2px solid; background: #181a26; padding: 6px 8px; margin-top: 5px; cursor: pointer; font-size: 13px; transition: transform 0.1s; }
 .pk-card:hover { transform: translateX(4px); background: #242838; }
@@ -1362,7 +1362,7 @@ html.touch .joy { display: block; }
 .hg-cm { display: flex; gap: 7px; padding: 6px; cursor: pointer; border: 2px solid #263238; border-left: 5px solid var(--rc); background: #10161b; }
 .hg-cm:hover { border-color: #546e7a; border-left-color: var(--rc); }
 .hg-cm.on { background: #1b2a33; border-color: #ffd740; border-left-color: var(--rc); box-shadow: 0 0 12px rgba(255, 215, 64, 0.35); }
-.hc-pt { width: 44px; height: 44px; image-rendering: pixelated; flex: none; border: 2px solid #0b0f13; }
+.hc-pt { width: 76px; height: 76px; image-rendering: auto; flex: none; border: 2px solid #0b0f13; border-radius: 3px; }
 .hc-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .hc-n { font-size: 13px; color: #fff; font-weight: 600; }
 .hc-r { font-size: 11px; }
