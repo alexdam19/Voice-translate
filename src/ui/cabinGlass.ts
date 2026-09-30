@@ -17,7 +17,7 @@ export interface GlassState {
   weather: 'rain' | 'snow' | 'sand' | 'ash' | 'none';
   /** The sun on the glass (CSS px), if in view. */
   sun: { x: number; y: number } | null;
-  /** Wiper angle (radians, 0 = parked flat to the right) and whether it's running. */
+  /** Wiper angle from its pivot at the foot of the glass (radians, -PI/2 straight up) and whether it's running. */
   wiper: number;
   wiping: boolean;
   /** Hull 0..1 (cracks below a third). */
@@ -28,6 +28,14 @@ export interface GlassState {
   speed: number;
   /** Outside the cab (orbit camera): no glass. */
   outside: boolean;
+  /** The security monitor is up: its screen, not the windscreen (static 0..1 while it switches cameras). */
+  crt?: { static: number; rect: { x: number; y: number; w: number; h: number } } | null;
+  /** Washer running (0..1); how dirty the glass is (0..1) and how misted or frosted over (0..1). */
+  wash?: number;
+  grime?: number;
+  mist?: number;
+  /** The cab lights are on: the glass reflects the cab more. */
+  cabLights?: boolean;
 }
 
 interface Drop {
@@ -156,13 +164,108 @@ export class Glass {
     return c;
   }
 
+  /** The security monitor's screen: a CRT's scanlines, grain and roll, the tube's vignette, static on switching. */
+  private drawCRT(s: GlassState, c: { static: number; rect: { x: number; y: number; w: number; h: number } }): void {
+    const x = this.x, k = this.dpr;
+    const R = { x: c.rect.x * k, y: c.rect.y * k, w: c.rect.w * k, h: c.rect.h * k };
+    x.save();
+    x.beginPath();
+    x.roundRect(R.x, R.y, R.w, R.h, 14 * k);
+    x.clip();
+    // A green-grey phosphor cast.
+    x.fillStyle = 'rgba(40,90,60,0.12)';
+    x.fillRect(R.x, R.y, R.w, R.h);
+    // Scanlines.
+    x.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let y = R.y; y < R.y + R.h; y += 3 * k) x.fillRect(R.x, y, R.w, 1.2 * k);
+    // Grain.
+    const n = Math.round((R.w * R.h) / (900 * k * k));
+    for (let i = 0; i < n; i++) {
+      const px = R.x + hash2(i, Math.floor(s.time * 30), 97) * R.w, py = R.y + hash2(i, Math.floor(s.time * 30), 99) * R.h;
+      x.fillStyle = hash2(i, 5, Math.floor(s.time * 30)) > 0.5 ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.18)';
+      x.fillRect(px, py, 1.4 * k, 1.4 * k);
+    }
+    // A slow rolling bar.
+    const by = R.y + ((s.time * 0.25) % 1) * R.h;
+    const bg = x.createLinearGradient(0, by - 30 * k, 0, by + 30 * k);
+    bg.addColorStop(0, 'rgba(255,255,255,0)');
+    bg.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+    bg.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = bg;
+    x.fillRect(R.x, by - 30 * k, R.w, 60 * k);
+    // Static while it switches.
+    if (c.static > 0) {
+      const m = Math.round((R.w * R.h) / (60 * k * k) * c.static);
+      for (let i = 0; i < m; i++) {
+        const v = Math.floor(hash2(i, Math.floor(s.time * 60), 101) * 255);
+        x.fillStyle = `rgba(${v},${v},${v},${0.8 * c.static})`;
+        x.fillRect(R.x + hash2(i, 7, Math.floor(s.time * 60)) * R.w, R.y + hash2(i, 9, Math.floor(s.time * 60)) * R.h, 2 * k, 2 * k);
+      }
+    }
+    // The tube's vignette and curve.
+    const vg = x.createRadialGradient(R.x + R.w / 2, R.y + R.h / 2, Math.min(R.w, R.h) * 0.35, R.x + R.w / 2, R.y + R.h / 2, Math.max(R.w, R.h) * 0.72);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.65)');
+    x.fillStyle = vg;
+    x.fillRect(R.x, R.y, R.w, R.h);
+    // Glare on the glass of the tube.
+    const gl = x.createLinearGradient(R.x, R.y, R.x + R.w * 0.6, R.y + R.h * 0.6);
+    gl.addColorStop(0, 'rgba(255,255,255,0.08)');
+    gl.addColorStop(0.4, 'rgba(255,255,255,0)');
+    x.fillStyle = gl;
+    x.fillRect(R.x, R.y, R.w, R.h);
+    x.restore();
+  }
+
   draw(s: GlassState, dt: number): void {
     const x = this.x;
     const W = this.canvas.width, H = this.canvas.height, k = this.dpr;
     x.setTransform(1, 0, 0, 1, 0, 0);
     x.clearRect(0, 0, W, H);
+    if (s.crt) {
+      this.drawCRT(s, s.crt);
+      return;
+    }
     if (s.outside) return;
+    x.globalAlpha = Math.min(1, 0.25 + (s.grime ?? 0.4) * 0.9);
     x.drawImage(this.baseFor(s.zone), 0, 0);
+    x.globalAlpha = 1;
+    if ((s.mist ?? 0) > 0.02) {
+      // Mist (or frost) over the glass, thickest round the frame, a clearer patch where the vents blow.
+      const m = s.mist!;
+      const g = x.createRadialGradient(W / 2, H * 0.62, Math.min(W, H) * 0.12, W / 2, H * 0.62, Math.max(W, H) * 0.72);
+      g.addColorStop(0, `rgba(214,222,228,${m * 0.3})`);
+      g.addColorStop(0.6, `rgba(214,222,228,${m * 0.62})`);
+      g.addColorStop(1, `rgba(222,230,236,${m * 0.85})`);
+      x.fillStyle = g;
+      x.fillRect(0, 0, W, H);
+    }
+    if (s.cabLights) {
+      // Lit from inside: the dash and the cab's lamps reflected, the view a touch washed out.
+      const cg = x.createLinearGradient(0, H, 0, 0);
+      cg.addColorStop(0, 'rgba(255,190,110,0.16)');
+      cg.addColorStop(0.5, 'rgba(255,190,110,0.06)');
+      cg.addColorStop(1, 'rgba(255,190,110,0.03)');
+      x.fillStyle = cg;
+      x.fillRect(0, 0, W, H);
+    }
+    if ((s.wash ?? 0) > 0) {
+      // Washer fluid: jets up the glass, then a sheet running down.
+      const wv = s.wash!;
+      x.fillStyle = `rgba(200,225,255,${0.18 * wv})`;
+      x.fillRect(0, 0, W, H);
+      x.strokeStyle = `rgba(220,240,255,${0.5 * wv})`;
+      x.lineWidth = 1.5 * k;
+      for (let i = 0; i < 40; i++) {
+        const px = hash2(i, 1, 95) * W, ph = (s.time * 1.6 + hash2(i, 2, 95)) % 1;
+        const py = H * (1 - ph);
+        x.beginPath();
+        x.moveTo(px, py);
+        x.lineTo(px + 2 * k, py + 30 * k);
+        x.stroke();
+      }
+      if (wv > 0.5) this.drops.length = 0;
+    }
     // Reflections: two soft bright bands across the panes, and the dash's glow at the bottom.
     x.save();
     x.globalCompositeOperation = 'screen';
@@ -218,7 +321,7 @@ export class Glass {
       const want = Math.round(wet * 260);
       while (this.drops.length < want) this.drops.push({ x: Math.random() * W, y: Math.random() * H, r: (1 + Math.random() * 3.2) * k, vy: 0, life: 4 + Math.random() * 10 });
       const side = Math.max(-1, Math.min(1, s.speed / 40));
-      const wa = Math.PI + s.wiper;
+      const wa = s.wiper;
       for (const d of this.drops) {
         d.life -= dt * (wet > 0.05 ? 1 : 4);
         // Big drops run; at speed the wind drags them back and aside.

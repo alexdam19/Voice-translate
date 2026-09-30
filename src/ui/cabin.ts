@@ -33,6 +33,7 @@ import { tipFor } from './cabinTips';
 import { agentImage } from './agents';
 import { Cabin3D } from '../render/cabin3d';
 import { Glass } from './cabinGlass';
+import { CAMS, camSpot, drawEngineFeed, drawMonitor, monitorRects, type Rect } from './cabinCams';
 import type { FxEvent } from '../game/game';
 
 /**
@@ -243,6 +244,25 @@ export class Cabin {
   private pitchR = 0.1;
   camDist = 0;
   private fxList: FxEvent[] = [];
+  /**
+   * The security monitor that flips up over the glass (how far up it is), the camera on it, the static while it
+   * switches, and how far each camera has been panned.
+   */
+  private monOn = false;
+  private monT = 0;
+  private camIdx = 0;
+  private camStatic = 0;
+  private camPan = CAMS.map(() => ({ yaw: 0, pitch: 0 }));
+  /** The windscreen: wipers, the washer's spray, the defroster, how dirty and how misted the glass is, cab lamps. */
+  private wipers = false;
+  private washT = 0;
+  private defrost = false;
+  private grime = 0.2;
+  private mist = 0;
+  private cabLights = false;
+  /** The armoured shutters (0 up .. 1 down over the glass). */
+  private shutT = 0;
+  private hinted = { rain: false, mist: false };
 
   constructor(parent: HTMLElement, private act: CabinActions) {
     this.root = h('div', 'cabin');
@@ -386,7 +406,9 @@ export class Cabin {
     }
     if (k.id === 'throttle' || k.id === 'steer' || k.id === 'brake' || k.id === 'glass') {
       this.cv.setPointerCapture(e.pointerId);
-      this.drag = { id: k.id, pid: e.pointerId, x0: px, y0: py, v0: this.look, p0: this.pitch, p3: this.pitchR, moved: false };
+      const pan = this.camPan[this.camIdx];
+      const mon = this.monT >= 1 && k.id === 'glass';
+      this.drag = { id: k.id, pid: e.pointerId, x0: px, y0: py, v0: mon ? pan.yaw : this.look, p0: this.pitch, p3: mon ? pan.pitch : this.pitchR, moved: false };
       if (k.id !== 'glass') this.dragTo(px, py);
       if (k.id === 'throttle') this.act.sound('ui');
       return;
@@ -454,6 +476,13 @@ export class Cabin {
       // Drag to look round (sideways) and up or down.
       if (Math.abs(px - d.x0) + Math.abs(py - d.y0) > 4) d.moved = true;
       if (!d.moved || this.glass !== 'view') return;
+      if (this.monT >= 1) {
+        // On the monitor: pan the camera on its mount.
+        const pan = this.camPan[this.camIdx];
+        pan.yaw = Math.max(-1.1, Math.min(1.1, d.v0 - ((px - d.x0) / this.VW) * 1.6));
+        pan.pitch = Math.max(-0.5, Math.min(0.7, d.p3 + ((py - d.y0) / (this.winB - HEAD)) * 1.0));
+        return;
+      }
       this.look = d.v0 - ((px - d.x0) / this.VW) * 2.2;
       this.look = Math.atan2(Math.sin(this.look), Math.cos(this.look));
       const wh = this.winB - HEAD;
@@ -507,6 +536,49 @@ export class Cabin {
         this.pages[i] = PAGES[k];
         break;
       }
+      case 'cams':
+        this.monOn = !this.monOn;
+        if (this.monOn) {
+          this.glass = 'view';
+          this.camStatic = 0.5;
+        }
+        this.act.sound('ui');
+        return;
+      case 'camsClose':
+        this.monOn = false;
+        this.act.sound('ui');
+        return;
+      case 'sw_wipe':
+        this.wipers = !this.wipers;
+        this.message(this.wipers ? 'WIPERS ON' : 'WIPERS OFF', '#b0bec5');
+        break;
+      case 'sw_wash':
+        this.washT = 2.6;
+        this.message('WASHERS: SPRAY AND WIPE', '#80d8ff');
+        break;
+      case 'sw_defr':
+        this.defrost = !this.defrost;
+        this.message(this.defrost ? 'DEFROSTER ON: HOT AIR ON THE GLASS' : 'DEFROSTER OFF', '#ffb040');
+        break;
+      case 'sw_shut':
+        hm.shutters = !hm.shutters;
+        this.message(hm.shutters ? 'ARMOUR SHUTTERS DOWN: THE BRIDGE IS SEALED' : 'SHUTTERS UP', hm.shutters ? '#ffab40' : '#b0bec5');
+        break;
+      case 'sw_srch':
+        hm.search = !hm.search;
+        this.message(hm.search ? 'SEARCHLIGHT ON: IT FOLLOWS YOUR EYES' : 'SEARCHLIGHT OFF', hm.search ? '#fff59d' : '#b0bec5');
+        break;
+      case 'sw_deck':
+        hm.deckLights = !hm.deckLights;
+        this.message(hm.deckLights ? 'DECK FLOODS ON' : 'DECK FLOODS OFF', hm.deckLights ? '#fff59d' : '#b0bec5');
+        break;
+      case 'sw_bcn':
+        hm.beacons = !hm.beacons;
+        this.message(hm.beacons ? 'BEACONS TURNING: CLEAR THE ROAD' : 'BEACONS OFF', hm.beacons ? '#ffb030' : '#b0bec5');
+        break;
+      case 'sw_cab':
+        this.cabLights = !this.cabLights;
+        break;
       case 'lights':
         hm.lights = !hm.lights;
         this.act.toast(hm.lights ? 'FLOODLIGHTS ON: +12% sight range, a trickle of fuel.' : 'Floodlights off.', hm.lights ? '#fff59d' : '#b0bec5');
@@ -657,6 +729,15 @@ export class Cabin {
         this.act.sound('alarm');
         return;
       default:
+        if (/^cam\d+$/.test(id)) {
+          const i = Number(id.slice(3));
+          if (i !== this.camIdx) {
+            this.camIdx = i;
+            this.camStatic = 0.45;
+          }
+          this.act.sound('ui');
+          return;
+        }
         if (id.startsWith('dc:')) {
           const [, kind, key] = id.split(':');
           const why = dispatchTeam(g, kind as TeamKind, key);
@@ -753,14 +834,42 @@ export class Cabin {
     c.rect(VX, HEAD, VW, B - HEAD);
     c.clip();
     const three = this.glass === 'view' && !!this.v3;
+    if (this.glass !== 'view') this.monOn = false;
+    this.monT = Math.max(0, Math.min(1, this.monT + (this.monOn ? dt : -dt) * 4));
+    this.camStatic = Math.max(0, this.camStatic - dt);
+    this.shutT = Math.max(0, Math.min(1, this.shutT + (g.helm.shutters ? dt : -dt) * 1.4));
+    this.glassWeather(g, dt);
+    const mon = three && this.monT >= 1 ? monitorRects(VX + 6, HEAD + 4, VW - 12, B - HEAD - 8, 1) : null;
     if (this.v3) {
-      this.v3.canvas.style.display = three ? 'block' : 'none';
+      this.v3.canvas.style.display = three && !(mon && CAMS[this.camIdx].kind !== '3d') ? 'block' : 'none';
       this.glassFx.canvas.style.display = three ? 'block' : 'none';
     }
-    if (three && this.v3) {
+    const k = this.scaleK;
+    const lights = { search: g.helm.search, deck: g.helm.deckLights, beacon: g.helm.beacons };
+    if (three && this.v3 && mon) {
+      // The security monitor is up: the picture from the camera, just in its screen.
+      const f = mon.feed;
+      c.fillStyle = '#0b0c0d';
+      c.fillRect(VX, HEAD, VW, B - HEAD);
+      const cd = CAMS[this.camIdx];
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1) * (this.v3.struggling ? 0.7 : 1);
+      this.v3.setPlayer(p, p.klass);
+      if (cd.kind === '3d') {
+        Object.assign(this.v3.canvas.style, { left: `${f.x * k}px`, top: `${f.y * k}px`, width: `${f.w * k}px`, height: `${f.h * k}px` });
+        this.v3.resize(f.w * k, f.h * k, dpr);
+        const sp = camSpot(g, cd), pan = this.camPan[this.camIdx];
+        this.v3.render(g, { yaw: this.look, pitch: this.pitchR, dist: 0, time: this.time, dt, spot: { ...sp, yaw: sp.yaw + pan.yaw, pitch: sp.pitch + pan.pitch }, ...lights }, this.fxList);
+      }
+      this.fxList.length = 0;
+      Object.assign(this.glassFx.canvas.style, { left: `${VX * k}px`, top: `${HEAD * k}px` });
+      this.glassFx.resize(VW * k, (B - HEAD) * k, Math.min(1.5, window.devicePixelRatio || 1));
+      this.glassFx.draw({
+        time: this.time, zone: 'verdant', storm: 0, weather: 'none', sun: null, wiper: 0, wiping: false, hull: 1, hit: 0, speed: 0, outside: false,
+        crt: { static: Math.min(1, this.camStatic * 2.5), rect: { x: (f.x - VX) * k, y: (f.y - HEAD) * k, w: f.w * k, h: f.h * k } },
+      }, dt);
+    } else if (three && this.v3) {
       // The 3D view under a hole in the cab's picture, the glass over it.
       c.clearRect(VX, HEAD, VW, B - HEAD);
-      const k = this.scaleK;
       const css = { left: `${VX * k}px`, top: `${HEAD * k}px`, width: `${VW * k}px`, height: `${(B - HEAD) * k}px` };
       Object.assign(this.v3.canvas.style, css);
       Object.assign(this.glassFx.canvas.style, { left: css.left, top: css.top });
@@ -771,19 +880,20 @@ export class Cabin {
       // At speed the cab rattles (more over rough ground).
       const v = Math.abs(p.speed);
       const rough = v > 3 && this.camDist === 0 ? Math.min(0.004, (v / 40) * (1.4 - Math.min(1, p.trac)) * 0.0025) : 0;
-      this.v3.render(g, { yaw: this.look, pitch: this.pitchR + Math.sin(this.time * 31) * rough, dist: this.camDist, time: this.time, dt }, this.fxList);
+      this.v3.render(g, { yaw: this.look, pitch: this.pitchR + Math.sin(this.time * 31) * rough, dist: this.camDist, time: this.time, dt, ...lights }, this.fxList);
       this.fxList.length = 0;
       const sunP = this.v3.project(this.v3.eye.x - 0.55 * 5000, this.v3.eye.y - 0.66 * 5000, this.v3.eye.h + 0.5 * 5000);
       const storm = g.weather.phase === 'active' ? 1 : 0;
       const zk = ZONES[g.map.zoneAt(p.x, p.y)]?.key ?? 'verdant';
-      const wiping = storm > 0;
       this.glassFx.draw({
         time: this.time, zone: zk, storm, weather: zk === 'frost' ? 'snow' : zk === 'dunes' || zk === 'pass' ? 'sand' : zk === 'ash' || zk === 'scorched' ? 'ash' : 'rain',
-        sun: sunP && sunP.x > -200 && sunP.y > -200 && sunP.x < VW * k + 200 && sunP.y < (B - HEAD) * k + 200 ? { x: sunP.x, y: sunP.y } : null,
-        wiper: wiping ? -Math.PI / 2 + Math.sin(this.time * 3.2) * 1.1 + Math.PI / 2 : 0, wiping, hull: p.hp / Math.max(1, p.stats.maxHp),
+        sun: sunP && sunP.x > -200 && sunP.y > -200 && sunP.x < VW * k + 200 && sunP.y < (B - HEAD) * k + 200 && this.shutT < 0.5 ? { x: sunP.x, y: sunP.y } : null,
+        wiper: this.wiperAngle(), wiping: this.wiping, hull: p.hp / Math.max(1, p.stats.maxHp),
         hit: this.hitT / 0.35, speed: p.speed, outside: this.camDist > 0,
+        wash: Math.min(1, this.washT), grime: this.grime, mist: this.mist, cabLights: this.cabLights,
       }, dt);
       c.translate(VX, 0);
+      if (this.camDist === 0) this.drawShutters();
       this.drawGlassHud(g);
       c.translate(-VX, 0);
       if (this.aimOn) this.drawReticle(g);
@@ -799,6 +909,7 @@ export class Cabin {
       this.drawNose(g);
       this.drawExhaust(g);
       this.drawFlashes(g);
+      this.drawShutters();
       this.drawGlassHud(g);
       c.translate(-VX, 0);
       if (this.aimOn) this.drawReticle(g);
@@ -808,10 +919,25 @@ export class Cabin {
     c.restore();
     this.drawFrame(g);
     this.drawComm(g);
-    if (this.glass === 'view' && this.camDist === 0) {
+    if (this.glass === 'view' && this.camDist === 0 && !mon) {
       c.save();
       c.translate(VX, 0);
       this.cabDetails(g, dt);
+      c.restore();
+    }
+    // The monitor in front of it all (flipping up, or up with its picture).
+    if (this.glass === 'view' && this.monT > 0) {
+      c.save();
+      c.beginPath();
+      c.rect(VX, HEAD, VW, B - HEAD);
+      c.clip();
+      const hitFn = (id: string, x: number, y: number, w: number, hh: number): void => void this.hit(id, x, y, w, hh);
+      const kind = CAMS[this.camIdx].kind;
+      const feed = !mon ? false : kind === 'engine' ? (r: Rect): void => drawEngineFeed(c, g, r.x, r.y, r.w, r.h, this.time) : (r: Rect): void => {
+        c.clearRect(r.x, r.y, r.w, r.h);
+        this.motionBoxes(g, r);
+      };
+      drawMonitor(c, g, VX + 6, HEAD + 4, VW - 12, B - HEAD - 8, this.camIdx, this.time, this.monT, feed, hitFn);
       c.restore();
     }
     this.drawWings(g);
@@ -820,6 +946,106 @@ export class Cabin {
     if (this.hitT > 0) {
       c.fillStyle = `rgba(255,20,0,${(this.hitT / 0.35) * 0.22})`;
       c.fillRect(0, 0, this.W, this.H);
+    }
+  }
+
+  /**
+   * The windscreen's own weather: dirt builds up with the miles (faster in sand and ash) and the washers take it off;
+   * the glass mists or frosts over in the cold and the wet unless the defroster's on. The teletype says so once.
+   */
+  private glassWeather(g: Game, dt: number): void {
+    const p = g.player;
+    const zk = ZONES[g.map.zoneAt(p.x, p.y)]?.key ?? 'verdant';
+    const storm = g.weather.phase === 'active';
+    const dusty = zk === 'dunes' || zk === 'pass' || zk === 'ash' || zk === 'scorched';
+    this.grime = Math.min(1, this.grime + dt * (Math.abs(p.speed) / 30) * (dusty ? 1 / 160 : 1 / 480) * (storm ? 2 : 1));
+    if (this.washT > 0) {
+      this.washT = Math.max(0, this.washT - dt);
+      this.grime = Math.max(0, this.grime - dt * 0.45);
+    }
+    const cold = zk === 'frost' || zk === 'wraith' || (storm && zk !== 'dunes' && zk !== 'scorched');
+    this.mist = Math.max(0, Math.min(1, this.mist + dt * (this.defrost ? -0.35 : cold ? 1 / 45 : -1 / 90)));
+    if (storm && !this.wipers && !this.hinted.rain && this.glass === 'view') {
+      this.hinted.rain = true;
+      this.message('WEATHER ON THE GLASS: WIPERS ARE ON THE OVERHEAD (WIPE)', '#80d8ff');
+    }
+    if (!storm) this.hinted.rain = false;
+    if (this.mist > 0.35 && !this.defrost && !this.hinted.mist && this.glass === 'view') {
+      this.hinted.mist = true;
+      this.message('THE GLASS IS MISTING UP: DEFROSTER ON THE OVERHEAD (DEFR)', '#ffb040');
+    }
+    if (this.mist < 0.1) this.hinted.mist = false;
+  }
+
+  /** The wipers run when switched on and while the washers spray. */
+  private get wiping(): boolean {
+    return this.wipers || this.washT > 0;
+  }
+
+  /** The wiper arm's angle from its pivot at the foot of the middle pane (-PI/2 straight up; parked, it lies flat). */
+  private wiperAngle(): number {
+    return this.wiping ? -Math.PI / 2 + Math.sin(this.time * 3.2) * 1.1 : -0.12;
+  }
+
+  /** The armoured shutters coming down over the glass: steel slats with slits, and a vision slot. */
+  private drawShutters(): void {
+    if (this.shutT <= 0) return;
+    const c = this.x;
+    const W = this.VW, top = HEAD, full = this.winB - HEAD;
+    const down = Math.round(full * this.shutT);
+    const slot = Math.round(full * 0.34);
+    for (let y = top + down - 13; y > top - 13; y -= 13) {
+      const y0 = Math.max(top, y), hh = Math.min(11, y + 11 - y0);
+      if (hh <= 0) continue;
+      // Leave the vision slot open once they're all the way down.
+      if (this.shutT >= 1 && y0 - top <= slot + 4 && y0 - top + hh >= slot - 4) {
+        plate(c, 0, y0, Math.round(W * 0.2), hh, '#3a3832', this.noise);
+        plate(c, Math.round(W * 0.8), y0, W - Math.round(W * 0.8), hh, '#3a3832', this.noise);
+        continue;
+      }
+      plate(c, 0, y0, W, hh, '#3a3832', this.noise);
+      c.fillStyle = '#5a564c';
+      c.fillRect(0, y0, W, 1);
+      c.fillStyle = '#1a1916';
+      c.fillRect(0, y0 + hh - 1, W, 1);
+      for (let x = 10; x < W - 6; x += 40) rivet(c, x, y0 + Math.floor(hh / 2));
+    }
+    if (this.shutT >= 1) {
+      c.fillStyle = '#141311';
+      c.fillRect(Math.round(W * 0.2) - 2, top + slot - 6, 2, 12);
+      c.fillRect(Math.round(W * 0.8), top + slot - 6, 2, 12);
+      pxMini(c, 'SHUTTERS DOWN - USE THE CAMERAS', W / 2, top + down - 9, '#ffb030', 'center');
+    }
+  }
+
+  /** Motion boxes on the camera feed: anything alive in the picture, red if it's aboard. */
+  private motionBoxes(g: Game, f: Rect): void {
+    const v = this.v3;
+    if (!v) return;
+    const c = this.x;
+    const k = this.scaleK;
+    const H = g.player.deckY(0);
+    const base = groundLevel(g.player.x, g.player.y);
+    let n = 0, aboard = false;
+    for (const e of g.enemies) {
+      if (e.hp <= 0 || e.burrowed) continue;
+      if (Math.abs(e.x - v.eye.x) > 450 || Math.abs(e.y - v.eye.y) > 450) continue;
+      const size = Math.max(1.6, ENEMIES[e.kind]?.size ?? e.r * 2);
+      const z = (e.latch ? base + H : groundLevel(e.x, e.y)) + size * 0.5;
+      const q = v.project(e.x, e.y, z);
+      if (!q) continue;
+      const sx = f.x + q.x / k, sy = f.y + q.y / k;
+      if (sx < f.x + 2 || sy < f.y + 2 || sx >= f.x + f.w - 2 || sy >= f.y + f.h - 2) continue;
+      const hp = Math.max(5, (size * v.cam.projectionMatrix.elements[5] * ((f.h * k) / 2)) / Math.max(1, q.d) / k);
+      bracket(c, sx, sy, Math.min(60, hp * 0.6 + 3), e.latch ? '#ff3020' : '#ffb040');
+      if (e.latch) aboard = true;
+      if (++n >= 24) break;
+    }
+    if (n && Math.floor(this.time * 2.5) % 2 === 0) {
+      const t = aboard ? 'INTRUDER ON THE HULL' : `MOTION  ${n}`;
+      c.fillStyle = 'rgba(0,0,0,0.6)';
+      c.fillRect(Math.round(f.x + f.w / 2 - t.length * 2 - 3), f.y + 16, t.length * 4 + 5, 9);
+      pxMini(c, t, f.x + f.w / 2, f.y + 18, aboard ? '#ff4030' : '#ffb040', 'center', null);
     }
   }
 
@@ -1380,7 +1606,8 @@ export class Cabin {
       if (cur) lines.push({ t: cur, old: m.t < 1 });
     }
     const room = Math.max(1, Math.min(6, Math.floor(((this.winB - HEAD) * 0.35) / 8)));
-    let y = this.winB - 10 - (Math.min(room, lines.length) - 1) * 8;
+    // Above the row of look buttons along the foot of the glass.
+    let y = this.winB - 30 - (Math.min(room, lines.length) - 1) * 8;
     for (const ln of lines.slice(-room)) {
       const lw = ln.t.length * 4 + 4;
       c.fillStyle = 'rgba(8,10,8,0.6)';
@@ -1803,15 +2030,18 @@ export class Cabin {
   private drawFrame(g: Game): void {
     const c = this.x;
     const W = this.W, B = this.winB, VX = this.VX, VW = this.VW;
-    // Pillars between the three panes (only over the view out).
-    if (this.glass === 'view') {
-      for (const px of [Math.round(VX + VW * 0.26), Math.round(VX + VW * 0.74)]) {
-        plate(c, px - 3, HEAD, 7, B - HEAD, '#34322e', this.noise);
+    // Slim pillars between the three panes (only over the view out, and not over the monitor).
+    if (this.glass === 'view' && this.monT < 1) {
+      for (const px of [Math.round(VX + VW * 0.22), Math.round(VX + VW * 0.78)]) {
+        plate(c, px - 2, HEAD, 5, B - HEAD, '#34322e', this.noise);
         c.fillStyle = '#56534c';
-        c.fillRect(px - 3, HEAD, 1, B - HEAD);
+        c.fillRect(px - 2, HEAD, 1, B - HEAD);
         c.fillStyle = '#1a1916';
-        c.fillRect(px + 3, HEAD, 1, B - HEAD);
-        for (let y = HEAD + 6; y < B - 4; y += 12) rivet(c, px, y);
+        c.fillRect(px + 2, HEAD, 1, B - HEAD);
+        for (let y = HEAD + 8; y < B - 4; y += 16) {
+          c.fillStyle = '#6a665c';
+          c.fillRect(px, y, 1, 1);
+        }
       }
       // Glass: faint reflections (the 3D view's glass draws its own).
       c.fillStyle = this.v3 ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.05)';
@@ -1848,8 +2078,8 @@ export class Cabin {
     }
     this.overhead(g, 16);
     this.modesRow(g, 30);
-    // Look buttons at the bottom corners of the glass.
-    if (this.glass === 'view') {
+    // Look buttons at the bottom corners of the glass, and the cameras.
+    if (this.glass === 'view' && this.monT <= 0) {
       button(c, VX + 8, B - 22, 14, 10, '<', '#2a2a30', this.press.lookL > 0, '#c0c8ff');
       this.hit('lookL', VX + 6, B - 24, 18, 14);
       button(c, VX + VW - 22, B - 22, 14, 10, '>', '#2a2a30', this.press.lookR > 0, '#c0c8ff');
@@ -1861,6 +2091,10 @@ export class Cabin {
       if (this.v3) {
         button(c, VX + 26, B - 22, 34, 10, this.camDist ? 'CAB' : 'CHASE', '#2a2a30', this.press.camOut > 0, '#ffd740');
         this.hit('camOut', VX + 24, B - 24, 38, 14);
+        // The security cameras: blinks red while anything is on the hull.
+        const aboard = g.enemies.some((e) => e.latch && e.hp > 0);
+        button(c, VX + VW - 62, B - 22, 36, 10, 'CAMS', aboard && Math.floor(this.time * 3) % 2 ? '#6a1a14' : '#1a3020', this.press.cams > 0, aboard ? '#ffb0a0' : '#8aff9a');
+        this.hit('cams', VX + VW - 64, B - 24, 40, 14);
       }
     }
   }
@@ -2262,6 +2496,19 @@ export class Cabin {
       c.fillRect(x + 2, y + 3, 5, 1);
       pxMini(c, lab, x + 4, y + 8, '#8a8272', 'center', null);
     });
+    // Toggle switches either side of the breakers: the glass on the left, the lights (and shutters) on the right.
+    const left: [string, string, boolean][] = [['sw_wipe', 'WIPE', this.wiping], ['sw_wash', 'WASH', this.washT > 0], ['sw_defr', 'DEFR', this.defrost], ['sw_shut', 'SHUT', hm.shutters]];
+    const right: [string, string, boolean][] = [['sw_srch', 'SRCH', hm.search], ['sw_deck', 'DECK', hm.deckLights], ['sw_bcn', 'BCN', hm.beacons], ['sw_cab', 'CAB', this.cabLights]];
+    const dialsX = W > 250 ? W - 124 : W;
+    const bank = (list: [string, string, boolean][], a: number, b: number): void => {
+      const n = Math.min(list.length, Math.floor((b - a) / 27));
+      const x0 = Math.round((a + b) / 2 - (n * 27) / 2);
+      for (let i = 0; i < n; i++) this.toggle(x0 + i * 27, y, ...list[i]);
+    };
+    if (W > 330) {
+      bank(left, 96, bx0 - 3);
+      bank(right, bx0 + 90, dialsX - 3);
+    } else bank([...left, ...right], 96, dialsX - 3);
     // Four small dials: oxygen, cabin temperature, outside temperature, hull.
     const p = g.player;
     const dials: [string, number, string][] = [
@@ -2276,6 +2523,29 @@ export class Cabin {
       pxMini(c, val, dx + 11, y + 8, '#ffb030', 'right', null);
       dial(c, dx + 20, y + 6, 6, v, '', { ticks: 4, red: lab === 'HUL' ? 0 : 0.25 });
     });
+  }
+
+  /** A toggle switch on the overhead: its lever up and its label lit when on. */
+  private toggle(x: number, y: number, id: string, label: string, on: boolean): void {
+    const c = this.x;
+    c.fillStyle = '#121210';
+    c.fillRect(x, y - 1, 7, 10);
+    c.fillStyle = '#2c2a26';
+    c.fillRect(x + 1, y, 5, 8);
+    c.fillStyle = '#5a564c';
+    c.fillRect(x + 1, y + 3, 5, 2);
+    c.fillStyle = on ? '#e8e0d0' : '#a8a090';
+    if (on) {
+      c.fillRect(x + 3, y, 1, 4);
+      c.fillRect(x + 2, y - 1, 3, 2);
+    } else {
+      c.fillRect(x + 3, y + 4, 1, 4);
+      c.fillRect(x + 2, y + 7, 3, 2);
+    }
+    c.fillStyle = on ? '#7aff5a' : '#1e2a1a';
+    c.fillRect(x + 9, y - 1, 2, 2);
+    pxMini(c, label, x + 9, y + 3, on ? '#f0e8d0' : '#8a8272', 'left', null);
+    this.hit(id, x - 1, y - 2, 26, 13);
   }
 
   /** The cab around the glass: sun visors, the wiper (it runs in a storm), the lucky charm swinging from the roof. */
@@ -2297,8 +2567,7 @@ export class Cabin {
     }
     // The wiper on the middle pane: parked, or sweeping through the storm.
     const px = Math.round(W * 0.5), py = B - 2;
-    const storm = g.weather.phase === 'active';
-    const a = storm ? -Math.PI / 2 + Math.sin(this.time * 3.2) * 1.1 : -0.12;
+    const a = this.wiperAngle();
     const len = Math.round(Math.min(W * 0.2, (B - HEAD) * 0.6));
     c.fillStyle = '#141414';
     for (let d = 0; d < len; d++) c.fillRect(Math.round(px + Math.cos(a) * d), Math.round(py + Math.sin(a) * d), d > len * 0.25 ? 2 : 1, 1);

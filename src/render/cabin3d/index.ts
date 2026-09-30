@@ -29,6 +29,12 @@ export interface CabView {
   dist: number;
   time: number;
   dt: number;
+  /** A camera fixed to the ship instead of the cab (the security cameras): ship-local place, height, turn, tilt. */
+  spot?: { lx: number; lz: number; h: number; yaw: number; pitch: number; fov: number } | null;
+  /** Switches in the cab: the roof searchlight (it follows your eyes), the deck floods, the amber beacons. */
+  search?: boolean;
+  deck?: boolean;
+  beacon?: boolean;
 }
 
 const SKY_VS = `
@@ -101,6 +107,11 @@ export class Cabin3D {
   private sun = new THREE.DirectionalLight('#ffffff', 2.4);
   private hemi = new THREE.HemisphereLight('#bcd4ff', '#4a4030', 0.9);
   private heads: THREE.SpotLight[] = [];
+  /** The roof searchlight, its beam in the air, where it last pointed (ship-relative), and the deck floods. */
+  private searchLight = new THREE.SpotLight('#fff4dc', 0, 1100, 0.15, 0.35, 1.2);
+  private beam: THREE.Mesh;
+  private searchAim = { yaw: 0, pitch: 0.08 };
+  private floods: THREE.PointLight[] = [];
   private world: World3D | null = null;
   private creatures = new Creatures3D();
   private compound = new Compound3D();
@@ -121,6 +132,9 @@ export class Cabin3D {
   private lastT = 0;
   private stackT = 0;
   private fogBase = 0.0015;
+  /** Sky light for reflections and ambient (rebuilt from the sky when the zone changes). */
+  private pmrem: THREE.PMREMGenerator | null = null;
+  private envRT: THREE.WebGLRenderTarget | null = null;
   /** The camera's world position (game x, y and height). */
   eye = { x: 0, y: 0, h: 0 };
 
@@ -167,6 +181,27 @@ export class Cabin3D {
       s.castShadow = false;
       this.heads.push(s);
       this.scene.add(s, s.target);
+    }
+    this.scene.add(this.searchLight, this.searchLight.target);
+    for (let i = 0; i < 2; i++) {
+      const f = new THREE.PointLight('#ffe2b0', 0, 150, 1.5);
+      this.floods.push(f);
+      this.scene.add(f);
+    }
+    // The searchlight's beam: a long cone of lit haze, brightest at the lamp.
+    {
+      const cg = new THREE.ConeGeometry(1, 1, 28, 6, true).translate(0, -0.5, 0).rotateZ(Math.PI / 2);
+      const pos = cg.attributes.position as THREE.BufferAttribute;
+      const col = new Float32Array(pos.count * 4);
+      for (let i = 0; i < pos.count; i++) {
+        const t = Math.max(0, Math.min(1, pos.getX(i)));
+        col.set([1, 0.96, 0.86, Math.pow(1 - t, 1.6)], i * 4);
+      }
+      cg.setAttribute('color', new THREE.BufferAttribute(col, 4));
+      this.beam = new THREE.Mesh(cg, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false }));
+      this.beam.frustumCulled = false;
+      this.beam.visible = false;
+      this.scene.add(this.beam);
     }
     this.scene.add(this.creatures.root, this.compound.root);
     // Tracers and shells: short glowing rods along their flight.
@@ -278,7 +313,14 @@ export class Cabin3D {
     const base = groundLevel(p.x, p.y);
     // Camera.
     let ex: number, ey: number, eh: number, yaw: number, pitch: number;
-    if (v.dist <= 0) {
+    if (v.spot) {
+      const c = p.toWorld(v.spot.lx, v.spot.lz);
+      ex = c.x;
+      ey = c.y;
+      eh = base + v.spot.h;
+      yaw = p.rot + v.spot.yaw;
+      pitch = v.spot.pitch;
+    } else if (v.dist <= 0) {
       const c = p.toWorld(L / 2 - 3.2, 0);
       ex = c.x;
       ey = c.y;
@@ -304,8 +346,14 @@ export class Cabin3D {
     this.ox = Math.round(ex / 64) * 64;
     this.oz = Math.round(ey / 64) * 64;
     this.cam.position.set(ex - this.ox, eh, ey - this.oz);
+    // A security camera sees wider; the cab's own view is about ninety degrees across.
+    const fov = v.spot ? v.spot.fov : (2 * Math.atan(Math.tan((45 * Math.PI) / 180) / this.cam.aspect) * 180) / Math.PI;
+    if (Math.abs(this.cam.fov - fov) > 0.01) {
+      this.cam.fov = fov;
+      this.cam.updateProjectionMatrix();
+    }
     if (dbg) this.cam.lookAt(dbg.tx - this.ox, dbg.th, dbg.ty - this.oz);
-    else if (v.dist <= 0) {
+    else if (v.dist <= 0 || v.spot) {
       const look = new THREE.Vector3(Math.cos(yaw) * Math.cos(pitch), -Math.sin(pitch), Math.sin(yaw) * Math.cos(pitch));
       this.cam.lookAt(this.cam.position.clone().add(look));
     } else this.cam.lookAt(p.x - this.ox, base + H * 0.6, p.y - this.oz);
@@ -330,7 +378,7 @@ export class Cabin3D {
       sm.group.visible = true;
     };
     place(p, ship, true);
-    ship.cab.visible = v.dist > 0;
+    ship.cab.visible = v.dist > 0 || !!v.spot;
     for (const t of g.tanks) {
       if (t.dead && !t.fortress) continue;
       if (Math.hypot(t.x - ex, t.y - ey) > 2400) continue;
@@ -343,6 +391,49 @@ export class Cabin3D {
         this.ships.delete(id);
       }
     }
+    // The searchlight follows your eyes (a security camera leaves it where it was); deck floods; beacons turning.
+    ship.group.updateMatrixWorld(true);
+    if (!v.spot) {
+      // Its mount won't point it down at your own deck: over the bow it can dip, anywhere else it clears the hull.
+      const ya = Math.abs(Math.atan2(Math.sin(v.yaw), Math.cos(v.yaw)));
+      this.searchAim.yaw = v.yaw;
+      this.searchAim.pitch = v.dist > 0 ? 0.1 : Math.max(-0.25, Math.min(ya < 0.7 ? 0.45 : 0.02, v.pitch));
+    }
+    ship.search.yoke.rotation.y = -this.searchAim.yaw;
+    ship.search.drum.rotation.z = -this.searchAim.pitch;
+    ship.search.glass.color.set(v.search ? '#fff8e8' : '#4a4a40');
+    if (v.search) {
+      ship.group.updateMatrixWorld(true);
+      const lp = new THREE.Vector3();
+      ship.search.lens.getWorldPosition(lp);
+      const sy = p.rot + this.searchAim.yaw, sp = this.searchAim.pitch;
+      const dir = new THREE.Vector3(Math.cos(sy) * Math.cos(sp), -Math.sin(sp), Math.sin(sy) * Math.cos(sp));
+      // A little forward of the lens (the drum's own face would catch it).
+      lp.addScaledVector(dir, 0.6);
+      this.searchLight.position.copy(lp);
+      this.searchLight.target.position.copy(lp).addScaledVector(dir, 200);
+      this.searchLight.intensity = 1200;
+      this.beam.visible = true;
+      this.beam.position.copy(lp);
+      this.beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+      this.beam.scale.set(420, 420 * Math.tan(0.15), 420 * Math.tan(0.15));
+      (this.beam.material as THREE.MeshBasicMaterial).opacity = 0.05 + storm * 0.1;
+    } else {
+      this.searchLight.intensity = 0;
+      this.beam.visible = false;
+    }
+    this.floods.forEach((f, i) => {
+      const w = p.toWorld(i ? -L * 0.3 : L * 0.12, 0);
+      f.position.set(w.x - this.ox, base + H + 10, w.y - this.oz);
+      f.intensity = v.deck ? 250 : 0;
+    });
+    ship.lampMat.color.set(v.deck ? '#fff2cc' : '#6a6048');
+    ship.beacons.glows.forEach((gl, i) => {
+      gl.visible = !!v.beacon;
+      const flash = Math.pow(Math.max(0, Math.cos(v.time * 7 + i * 1.7)), 6);
+      (gl.material as THREE.SpriteMaterial).opacity = flash * 0.95;
+    });
+    ship.beacons.mat.color.set(v.beacon ? (Math.cos(v.time * 7) > 0.3 ? '#ffc040' : '#c07010') : '#5a3a10');
     // Headlamps.
     const on = g.helm.lights;
     this.heads.forEach((s, i) => {
@@ -396,6 +487,24 @@ export class Cabin3D {
         arch, x: a.x, y: a.y, z, rot: a.rot, len, t: a.anim, gait: 1, body: new THREE.Color(a.kind === 'marine' || a.kind === 'heavy' ? '#56603f' : '#4a6a8a'),
         eye: new THREE.Color('#40c0ff').multiplyScalar(2), flash: false, look: '',
       }, this.ox, this.oz);
+    }
+    // People on your deck: the nests' soldiers (aiming when there's anything near), deckhands walking their beats.
+    {
+      const threat = g.enemies.some((e) => e.hp > 0 && Math.hypot(e.x - p.x, e.y - p.y) < 400);
+      for (const [i, pt] of ship.posts.entries()) {
+        const w = p.toWorld(pt.lx, pt.lz);
+        this.creatures.add({ arch: 'humanoid', x: w.x, y: w.y, z: base + H + 0.2, rot: p.rot + pt.face, len: 1.85, t: v.time + i, gait: 0, body: new THREE.Color('#56603f'), eye: new THREE.Color('#000000'), flash: false, look: '' }, this.ox, this.oz);
+        void threat;
+      }
+      ship.beats.forEach((b, i) => {
+        const len = Math.hypot(b.bx - b.ax, b.bz - b.az) || 1;
+        const ph = ((v.time * 1.4) / len + i * 0.37) % 2;
+        const k = ph < 1 ? ph : 2 - ph;
+        const lx = b.ax + (b.bx - b.ax) * k, lz = b.az + (b.bz - b.az) * k;
+        const w = p.toWorld(lx, lz);
+        const dir = Math.atan2(b.bz - b.az, b.bx - b.ax) + (ph < 1 ? 0 : Math.PI);
+        this.creatures.add({ arch: 'humanoid', x: w.x, y: w.y, z: base + H + 0.2, rot: p.rot + dir, len: 1.8, t: v.time * 1.3 + i, gait: 0.6, body: new THREE.Color(['#4a5a6a', '#8a6a3a', '#5a4a6a'][i % 3]), eye: new THREE.Color('#000000'), flash: false, look: '' }, this.ox, this.oz);
+      });
     }
     // The base's garrison and residents.
     for (const r of g.compound.people) {
@@ -533,6 +642,21 @@ export class Cabin3D {
       this.hemi.intensity = 1.1;
       (this.rim.material as THREE.MeshBasicMaterial).color.copy(lin('#3a3430').lerp(lin(fog), 0.55));
       (this.skirt.material as THREE.MeshStandardMaterial).color.copy(lin(ground).lerp(lin(sky), 0.25));
+      // Image-based light from this sky: metal reflects it, everything picks up its tint in the shadows.
+      try {
+        if (!this.pmrem) this.pmrem = new THREE.PMREMGenerator(this.r);
+        const envScene = new THREE.Scene();
+        const skyCopy = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), (this.sky.material as THREE.ShaderMaterial).clone());
+        (skyCopy.material as THREE.ShaderMaterial).uniforms = this.skyU;
+        envScene.add(skyCopy);
+        const rt = this.pmrem.fromScene(envScene, 0, 0.1, 1000);
+        this.envRT?.dispose();
+        this.envRT = rt;
+        this.scene.environment = rt.texture;
+        this.scene.environmentIntensity = 0.55;
+      } catch {
+        this.scene.environment = null;
+      }
     }
     void time;
   }

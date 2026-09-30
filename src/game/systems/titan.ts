@@ -198,7 +198,9 @@ export function titanHit(g: Game, t: Tank, dmg: number, at?: { x: number; y: num
   // The systems behind that armour.
   const behind: SysKey[] = z === 'bow' ? ['sensors', 'steering'] : z === 'stern' ? ['propulsion', 'power'] : z === 'roof' ? ['weapons', 'sensors'] : ['life', 'power', 'weapons'];
   const hit = behind[Math.floor(Math.random() * behind.length)];
-  hurtSystem(g, hit, k * 1.1 * (1.4 - s.zones[z]));
+  // With the bridge's armour shutters down, the bow's hits reach the sensors and optics half as hard.
+  const shut = hit === 'sensors' && z === 'bow' && g.helm.shutters ? 0.5 : 1;
+  hurtSystem(g, hit, k * 1.1 * (1.4 - s.zones[z]) * shut);
   // Big hits start fires.
   if (k > 0.012 && Math.random() < Math.min(0.55, k * 9)) {
     const deck = z === 'roof' ? 1 : 1 + Math.floor(Math.random() * 7);
@@ -462,7 +464,7 @@ export function fuelBurn(g: Game): number {
   if (hm.preheat && hm.lever === 0 && !p.anchored) drive += 0.06;
   // The Salamander drinks the ground's heat on lava and ash.
   if (ds.def.lavaFuel && onHotGround(g)) return -1.5;
-  return (drive * (ds.od ? ds.od.fuel : 1) + (hm.pumps ? 0.12 : 0) + (hm.lights ? 0.02 : 0)) * g.statMods.fuel;
+  return (drive * (ds.od ? ds.od.fuel : 1) + (hm.pumps ? 0.12 : 0) + (hm.lights ? 0.02 : 0) + (hm.search ? 0.01 : 0) + (hm.deckLights ? 0.01 : 0)) * g.statMods.fuel;
 }
 
 /** Is the Titan standing on lava or ash? */

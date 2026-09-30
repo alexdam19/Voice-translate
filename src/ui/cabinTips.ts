@@ -4,6 +4,7 @@ import { CRUDE_MAX, drillRate, fuelDrill, fuelRefinery, oilHere, refineRate } fr
 import { HALON_CD, HALON_WATER, HORN_CD, HORN_RANGE, SAND_CD, SAND_T, SMOKE_CD, SMOKE_T } from '../game/systems/helm';
 import { TOROIDS } from '../game/systems/titan';
 import { oilWord } from '../shared/oil';
+import { CAMS } from './cabinCams';
 
 /**
  * What every control in the cab does, exactly, and what it's doing right now: shown on a plate at the top of the
@@ -36,6 +37,10 @@ export function tipFor(id: string, g: Game): { title: string; body: string } | n
   if (id.startsWith('tor')) {
     const i = Number(id.slice(3));
     return { title: `${TOROIDS[i].name.toUpperCase()}: ${hm.toroids[i] ? 'LIT' : 'SHUT DOWN'}`, body: `One of four ring thrusters: together they add a third of her speed and half her steering. Shut one down to save its slice of the fuel; a lopsided set pulls the hull round. Health ${pct(g.titan.toroids[i])}.` };
+  }
+  if (/^cam\d+$/.test(id)) {
+    const c = CAMS[Number(id.slice(3))];
+    return c ? { title: `CAMERA ${c.id}: ${c.name}`, body: c.kind === 'engine' ? 'The engine room: the machine working, the firebox, the crew on the catwalks.' : 'Switch the monitor to this camera. Drag the picture to pan it on its mount. Anything moving is boxed (red: it is on the hull).' } : null;
   }
   if (id.startsWith('scr')) return { title: 'ANALYTICS SCREEN', body: 'Click to turn it to the next page: ship status, trends, systems, tactical, navigation, crew, engine room and the fuel plant.' };
   switch (id) {
@@ -85,6 +90,26 @@ export function tipFor(id: string, g: Game): { title: string; body: string } | n
       return { title: `DOZER PLOUGH: ${hm.plow ? 'DOWN' : 'UP'}`, body: 'Lowers the bow plough: +60% force against everything she hits (fewer creatures get a grip to climb aboard), for 10% top speed.' };
     case 'smoke':
       return { title: `SMOKE DISCHARGERS${hm.smokeT > 0 ? ` (${Math.ceil(hm.smokeT)} s)` : ''}`, body: `A cloud round the hull for ${SMOKE_T} s: hits land a third softer inside it, and anything not already on the hull or part of a horde loses track of her. Reload ${SMOKE_CD} s.${hm.smokeCd > 0 && hm.smokeT <= 0 ? ` (${Math.ceil(hm.smokeCd)} s)` : ''}` };
+    case 'cams':
+      return { title: 'SECURITY CAMERAS', body: 'Flips the monitor up over the glass: ten cameras round the ship (bow, stern, both flanks, the deck both ways, the mast, two crawlers and the engine room) and a map of the hull to click between them. Anything near shows on the map as a red blip, anything on the hull blinks. Blinks red here when something has climbed aboard.' };
+    case 'camsClose':
+      return { title: 'CLOSE THE MONITOR', body: 'Back to the windscreen.' };
+    case 'sw_wipe':
+      return { title: 'WIPERS', body: 'Sweep the rain off the middle pane. They run on their own while the washers spray.' };
+    case 'sw_wash':
+      return { title: 'WASHERS', body: 'A spray of fluid and a few sweeps of the wipers: takes the dust and grime off the glass (it builds up with the miles, fastest in sand and ash).' };
+    case 'sw_defr':
+      return { title: 'DEFROSTER', body: 'Hot air on the glass: clears the mist and frost that creep over it in the cold and the wet.' };
+    case 'sw_shut':
+      return { title: `ARMOUR SHUTTERS: ${hm.shutters ? 'DOWN' : 'UP'}`, body: 'Steel slats down over the windscreen, a vision slot left open. Hits on the bow reach the bridge\'s sensors half as hard. Drive on the slot and the cameras.' };
+    case 'sw_srch':
+      return { title: `SEARCHLIGHT: ${on(hm.search)}`, body: 'The big lamp on the bridge roof. It points wherever you look (drag the glass), a long way out.' };
+    case 'sw_deck':
+      return { title: `DECK FLOODS: ${on(hm.deckLights)}`, body: 'Lights the roof: the lamp posts along the rail and the floods over the deck.' };
+    case 'sw_bcn':
+      return { title: `BEACONS: ${on(hm.beacons)}`, body: 'Amber beacons turning on the bridge roof and the stern rail: everyone round the base sees her coming and clears the road sooner.' };
+    case 'sw_cab':
+      return { title: 'CAB LIGHTS', body: 'Warm lamps in the cab. Cosier, but the glass catches their reflection.' };
     case 'info':
       return { title: 'INFO SWITCH', body: 'ON: tapping any control explains it instead of working it (handy on a touch screen). Hovering explains them either way.' };
     case 'aim':

@@ -204,11 +204,13 @@ export class Game {
    * captain's cabin adds switches: floodlights, the bilge pump boost, the master arm (guns safe), power diverted from
    * the shield generator to the drive, and cooldowns on the horn and the halon fire suppression. Then the drive mode
    * (eco, normal, sport, crawl), the overdrive stage (I-III), the engine preheater, the sanders (seconds of sand
-   * left, and their recharge), the diff lock, the dozer plough, the smoke dischargers, and the refinery's AUTO switch.
+   * left, and their recharge), the diff lock, the dozer plough, the smoke dischargers, and the refinery's AUTO switch;
+   * the bridge's armour shutters, the roof searchlight, the deck floods and the amber beacons.
    */
   helm = {
     lever: 0, brake: 0, brakeSet: false, toroids: [true, true, true, true], overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false,
     mode: 'normal' as DriveMode, odStage: 1, preheat: false, sandT: 0, sandCd: 0, diffLock: false, plow: false, smokeT: 0, smokeCd: 0, refine: true, roarT: 0,
+    shutters: false, search: false, deckLights: false, beacons: false,
   };
   /** Damage control sends repair teams on its own (the vitals screen's AUTO switch), and its next check. */
   autoRepair = true;
