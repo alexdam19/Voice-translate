@@ -529,6 +529,8 @@ export class Cabin3D {
         arch, x: e.x, y: e.y, z, rot, len, t: e.anim + e.id * 0.37, gait: Math.min(1, moving / Math.max(1, e.speed)),
         body: new THREE.Color(def?.color ?? '#8a7a6a'), eye: new THREE.Color(e.boss ? '#ff40ff' : e.elite ? '#ffd040' : '#ff4020').multiplyScalar(2),
         flash: e.hitFlash > 0, look: lookFor(e.kind, def?.faction),
+        // Mid-blow for a moment after each attack; anything on your hull keeps at it.
+        atk: e.latch ? (v.time * 1.4 + e.id * 0.37) % 1 : (e.atkT ?? 9) < 0.6 ? (e.atkT ?? 9) / 0.6 : 0,
       };
       this.creatures.add(d, this.ox, this.oz, dist > 140 + len * 10);
       if (dist < 700 && nr < 2000 && !e.latch) {

@@ -21,11 +21,15 @@ import { hash2, rgb, type RGB } from './pixels';
 
 export type HeroRole =
   | 'rifleman' | 'marine' | 'heavy' | 'sniper' | 'officer' | 'engineer' | 'mechanic' | 'medic' | 'pilot' | 'signal'
-  | 'cook' | 'deckhand' | 'firefighter' | 'trader' | 'crew' | 'robot';
+  | 'cook' | 'deckhand' | 'firefighter' | 'trader' | 'crew' | 'robot'
+  // The hostile ones: the dead (shamblers, runners, bloaters, brutes, skeletons), raiders, cultists and cyborgs.
+  | 'zombie' | 'runner' | 'bloater' | 'brute' | 'skeleton' | 'raider' | 'cultist' | 'cyborg';
 
 export type HeroPose =
   | 'stand' | 'walk' | 'run' | 'aim' | 'wave' | 'work' | 'carry' | 'salute' | 'sit' | 'sleep' | 'hose' | 'weld'
-  | 'type' | 'cheer' | 'look' | 'duck' | 'point';
+  | 'type' | 'cheer' | 'look' | 'duck' | 'point'
+  // The dead's slow lurch, arms out; a clawing swipe; a two-handed overhead smash.
+  | 'shamble' | 'claw' | 'slam';
 
 export interface HeroSpec {
   role: HeroRole;
@@ -53,6 +57,14 @@ interface Kit {
   /** Wider and deeper (armour, plate carriers). */
   bulk?: number;
   gloves?: boolean;
+  /** The dead: rotting flesh, a swollen bloater, or bare bones. */
+  undead?: 'rot' | 'bloat' | 'bone';
+  /** Taller than life (brutes). */
+  scale?: number;
+  /** Clothes in rags, blood down them. */
+  torn?: boolean;
+  /** Spiked shoulder plates (raiders). */
+  spikes?: boolean;
 }
 
 const KITS: Record<HeroRole, Kit> = {
@@ -72,7 +84,18 @@ const KITS: Record<HeroRole, Kit> = {
   trader: { head: 'wrap', torso: 'poncho', legs: '#3a3228', boots: '#4a3622', held: 'none', uni: '#8c5c38' },
   crew: { head: 'none', torso: 'jacket', legs: '#3e4450', boots: '#2a2018', held: 'none', uni: '#4c5c6c' },
   robot: { head: 'robot', torso: 'robot', legs: '#7a7e84', boots: '#4a4e54', held: 'wrench', pack: 'boiler', uni: '#8a8e94', glow: '#ffb040', bulk: 1.15 },
+  zombie: { head: 'none', torso: 'jacket', legs: '#3e4450', boots: '#2a2420', held: 'none', uni: '#5c5a4a', undead: 'rot', torn: true },
+  runner: { head: 'none', torso: 'hoodie', legs: '#35404e', boots: '#3a3430', held: 'none', uni: '#4e3c3a', undead: 'rot', torn: true },
+  bloater: { head: 'none', torso: 'jacket', legs: '#4a4436', boots: '#2a2420', held: 'none', uni: '#6a6850', undead: 'bloat', bulk: 1.85, torn: true },
+  brute: { head: 'none', torso: 'vest', legs: '#3a3228', boots: '#221c16', held: 'none', uni: '#4a3a2a', undead: 'rot', bulk: 1.6, scale: 1.45, torn: true },
+  skeleton: { head: 'none', torso: 'jacket', legs: '#d8d0bc', boots: '#d8d0bc', held: 'none', uni: '#d8d0bc', undead: 'bone' },
+  raider: { head: 'wrap', torso: 'vest', legs: '#4a3a2a', boots: '#2a2018', held: 'rifle', uni: '#6a4a30', spikes: true, gloves: true },
+  cultist: { head: 'hood', torso: 'coat', legs: '#2a1a24', boots: '#1a1216', held: 'none', uni: '#5a1a2a', glow: '#c040ff' },
+  cyborg: { head: 'marine', torso: 'armor', legs: '#4a4e56', boots: '#2a2e34', held: 'rifle', uni: '#5a606a', glow: '#ff3030', bulk: 1.2, gloves: true },
 };
+
+/** The dead's skin: grey-green rot, a bloater's sick yellow, bone. */
+const DEAD_SKIN = { rot: ['#8a9678', '#7c8a6c', '#98a088', '#8a8a74'], bloat: ['#a8a86a', '#9aa060'], bone: ['#d8d0bc'] };
 
 const SKINS = ['#f1c7a1', '#e3b087', '#c98d5e', '#a86a42', '#7d4c2e', '#5c3620', '#f6d6bb'];
 const HAIRS = ['#16120f', '#2f2119', '#5a3c26', '#8a5a2e', '#c8a468', '#7a2a18', '#2a2a2e', '#b8b4ac'];
@@ -139,12 +162,13 @@ interface Body {
 function bodyOf(spec: HeroSpec, kit: Kit): Body {
   const r = (k: number): number => hash2(spec.seed, k, 911);
   const robot = spec.role === 'robot';
-  const fem = !robot && r(5) < 0.34;
-  const s = robot ? 0.86 : (fem ? 0.95 : 1) * (0.96 + r(6) * 0.08);
+  const fem = !robot && !kit.scale && r(5) < 0.34;
+  const s = (robot ? 0.86 : (fem ? 0.95 : 1) * (0.96 + r(6) * 0.08)) * (kit.scale ?? 1);
+  const dead = kit.undead ? DEAD_SKIN[kit.undead] : null;
   return {
     s, fem, robot,
     sw: (fem ? 0.172 : 0.198) * (kit.bulk ?? 1),
-    skin: rgb(SKINS[Math.floor(r(1) * SKINS.length)]),
+    skin: rgb(dead ? dead[Math.floor(r(1) * dead.length)] : SKINS[Math.floor(r(1) * SKINS.length)]),
     hair: rgb(HAIRS[Math.floor(r(2) * HAIRS.length)]),
     style: fem ? [2, 3, 5, 0][Math.floor(r(3) * 4)] : [0, 0, 1, 4, 5, 0][Math.floor(r(3) * 6)],
     beard: !fem && !robot && r(4) < 0.2,
@@ -185,7 +209,7 @@ interface Rig {
 
 /** Frames in each pose's cycle. */
 function framesOf(pose: HeroPose): number {
-  return pose === 'walk' ? 8 : pose === 'run' ? 6 : pose === 'wave' || pose === 'work' || pose === 'weld' || pose === 'type' || pose === 'hose' || pose === 'cheer' ? 2 : 1;
+  return pose === 'walk' || pose === 'shamble' ? 8 : pose === 'run' ? 6 : pose === 'claw' || pose === 'slam' ? 4 : pose === 'wave' || pose === 'work' || pose === 'weld' || pose === 'type' || pose === 'hose' || pose === 'cheer' ? 2 : 1;
 }
 
 /** Poses the skeleton: legs by angle, arms by angle or reaching for what they hold. */
@@ -218,6 +242,46 @@ function rigOf(pose: HeroPose, f: number, kit: Kit, b: Body): Rig {
         [sw * Math.sin(T), 0.12, run ? 1.4 : 0.2 + 0.3 * Math.max(0, Math.sin(T))],
       ];
       if (long) gunMode = kit.held === 'minigun' ? 'hip' : 'port';
+      break;
+    }
+    case 'shamble': {
+      // A lurch: short uneven steps (one foot drags), hunched, head lolling, arms reaching out in front.
+      const leg = (ph: number, drag: boolean): Leg => ({ p: 0.02 + (drag ? 0.2 : 0.34) * Math.sin(ph), k: 0.1 + 0.6 * Math.max(0, Math.cos(ph - 0.3)) ** 1.5, a: 0.1, f: drag ? -0.35 : 0.1 });
+      legs = [leg(T, false), leg(T + Math.PI, true)];
+      lean = 0.3;
+      twist = 0.12 * Math.sin(T);
+      headP = 0.28 + 0.06 * Math.sin(T * 2);
+      headY = 0.22;
+      drop = 0.04;
+      const reachUp = kit.undead === 'bloat' ? 0.75 : 1.3;
+      arms = [[reachUp + 0.12 * Math.sin(T), 0.14, 0.35], [reachUp - 0.1 + 0.12 * Math.sin(T + 1.3), 0.2, 0.5]];
+      gunMode = 'none';
+      break;
+    }
+    case 'claw': {
+      // Lunge and swipe: the right arm back and high, then raking down across; the left reaching.
+      const ph = f % 4;
+      lean = 0.2 + ph * 0.08;
+      headP = 0.1;
+      legs = [{ p: 0.45, k: 0.35, a: 0.1 }, { p: -0.32, k: 0.12, a: 0.1, f: -0.12 }];
+      arms = [
+        [1.25, 0.12, 0.35],
+        ([[2.7, 0.35, 0.3], [2.3, 0.1, 0.8], [1.1, -0.35, 0.4], [0.55, -0.45, 0.2]] as [number, number, number][])[ph],
+      ];
+      gunMode = 'none';
+      break;
+    }
+    case 'slam': {
+      // Both fists up over the head, then down together.
+      const ph = f % 4;
+      const up = ph < 2;
+      lean = up ? -0.08 + ph * 0.04 : 0.35 + (ph - 2) * 0.15;
+      drop = ph === 3 ? 0.12 : 0;
+      headP = up ? -0.2 : 0.3;
+      legs = [{ p: 0.3, k: ph === 3 ? 0.6 : 0.25, a: 0.18 }, { p: -0.2, k: ph === 3 ? 0.5 : 0.15, a: 0.18 }];
+      const a: [number, number, number] = ph === 0 ? [2.6, 0.15, 0.5] : ph === 1 ? [3.0, 0.1, 0.3] : ph === 2 ? [1.6, 0.15, 0.2] : [0.75, 0.2, 0.1];
+      arms = [a, a];
+      gunMode = 'none';
       break;
     }
     case 'aim':
@@ -436,6 +500,8 @@ const COOL: RGB = [26, 30, 62];
 const WARM: RGB = [255, 244, 214];
 
 /** A colour lit (k > 0) toward a warm highlight or shaded (k < 0) toward a cool dark. */
+const css = (c: RGB, a = 1): string => `rgba(${Math.round(Math.max(0, Math.min(255, c[0])))},${Math.round(Math.max(0, Math.min(255, c[1])))},${Math.round(Math.max(0, Math.min(255, c[2])))},${a})`;
+
 function tone(c: RGB, k: number, m: Mat = 'cloth'): string {
   let r: number, g: number, b: number;
   if (k >= 0) {
@@ -660,6 +726,9 @@ function paintFigure(P: Paint, spec: HeroSpec, pose: HeroPose, f: number, lying:
   const sleeve: RGB = kit.torso === 'hivis' ? rgb(kit.legs) : kit.torso === 'apron' ? rgb('#f2f2ea') : kit.torso === 'bunker' ? rgb('#443a2a') : kit.torso === 'vest' ? lift(uni, 0.05) : uni;
   const clothM: Mat = robot ? 'metal' : 'cloth';
   const brass = rgb('#c8963a');
+  const bone = kit.undead === 'bone';
+  const boneC = rgb('#d8d0bc');
+  const dead = !!kit.undead;
   const parts: { d: number; draw: () => void }[] = [];
   const pr = (v: V): P2 => proj(P, v);
 
@@ -689,6 +758,14 @@ function paintFigure(P: Paint, spec: HeroSpec, pose: HeroPose, f: number, lying:
     parts.push({
       d: (H[2] + K[2] + A[2]) / 3,
       draw: () => {
+        if (bone) {
+          // Thigh bone, knee, shin bone, the small bones of the foot.
+          capsule(P, H, K, 0.03 * s, 0.026 * s, lift(boneC, shade), 'cloth');
+          blob(P, K, 0.034 * s, 0.032 * s, boneC, 'cloth');
+          capsule(P, K, A, 0.026 * s, 0.022 * s, lift(boneC, shade), 'cloth');
+          capsule(P, A, Tt, 0.028 * s, 0.018 * s, lift(boneC, shade - 0.05), 'cloth');
+          return;
+        }
         capsule(P, H, K, 0.083 * s, 0.06 * s, lc, clothM);
         if (robot) blob(P, K, 0.055 * s, 0.055 * s, brass, 'brass');
         capsule(P, K, A, 0.058 * s, 0.043 * s, lc, clothM);
@@ -828,6 +905,21 @@ function paintFigure(P: Paint, spec: HeroSpec, pose: HeroPose, f: number, lying:
       }
       default:
     }
+    if (kit.torn) {
+      // Rags: rips showing the skin under them, dirt, and blood down the front.
+      for (let q = 0; q < 7; q++) {
+        const hh = 0.02 + hash2(spec.seed, q, 71) * 0.42, side = (hash2(spec.seed, q, 73) - 0.5) * 0.26;
+        const c0 = pr(off(r.pel, [r.U, hh * s], [r.R, side * s], [r.F, 0.12 * bulk * s]));
+        x.fillStyle = q < 2 ? css(skin, 0.95) : q < 4 ? 'rgba(96,12,8,0.6)' : 'rgba(24,18,12,0.45)';
+        x.beginPath();
+        x.ellipse(c0[0], c0[1], (0.018 + hash2(spec.seed, q, 75) * 0.03) * s * P.k, (0.022 + hash2(spec.seed, q, 77) * 0.04) * s * P.k, hash2(spec.seed, q, 79) * 3, 0, Math.PI * 2);
+        x.fill();
+      }
+      // The hem hangs in tatters.
+      const hem = pr(off(r.pel, [r.U, -0.08 * s]));
+      x.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let q = 0; q < 6; q++) x.fillRect(hem[0] - span + ((q + 0.5) / 6) * span * 2, hem[1] - 0.02 * s * P.k, 0.012 * s * P.k, 0.04 * s * P.k);
+    }
     x.restore();
     x.strokeStyle = tone(tCol, -0.85);
     x.lineWidth = P.ow;
@@ -883,7 +975,46 @@ function paintFigure(P: Paint, spec: HeroSpec, pose: HeroPose, f: number, lying:
       }
     }
   };
-  parts.push({ d: tc[2], draw: torsoDraw });
+  if (bone) {
+    // A skeleton: the spine, the pelvis and the ribcage in hoops.
+    parts.push({
+      d: tc[2],
+      draw: () => {
+        const x = P.x;
+        blob(P, pr(off(r.pel, [r.U, 0.01 * s])), 0.12 * s, 0.07 * s, boneC, 'cloth');
+        capsule(P, pr(off(r.pel, [r.U, 0.02 * s])), pr(off(r.pel, [r.U, 0.52 * s])), 0.024 * s, 0.02 * s, lift(boneC, -0.1), 'cloth');
+        for (let k = 0; k < 5; k++) {
+          const hh = 0.23 + k * 0.055;
+          const C0 = pr(off(r.pel, [r.U, hh * s]));
+          const w = (0.09 + 0.05 * Math.sin(((k + 1) / 6) * Math.PI)) * s * P.k;
+          const hgt = Math.max(0.015, 0.09 * P.sp) * s * P.k;
+          x.lineWidth = 0.034 * s * P.k;
+          x.strokeStyle = tone(boneC, -0.85);
+          x.beginPath();
+          x.ellipse(C0[0], C0[1], w, hgt, 0, 0, Math.PI * 2);
+          x.stroke();
+          x.lineWidth = 0.02 * s * P.k;
+          x.strokeStyle = css(lift(boneC, 0.05 - k * 0.03));
+          x.stroke();
+        }
+      },
+    });
+  } else parts.push({ d: tc[2], draw: torsoDraw });
+  // A bloater's belly, swollen and blistered, out in front of everything.
+  if (kit.undead === 'bloat' && !lying) {
+    const bc = off(r.pel, [r.U, 0.14 * s], [r.F, 0.16 * bulk * s]);
+    parts.push({
+      d: pr(bc)[2] + 0.02,
+      draw: () => {
+        blob(P, pr(bc), 0.2 * s, 0.19 * s, lift(skin, 0.06), 'skin');
+        for (let q = 0; q < 6; q++) {
+          const pc = pr(off(bc, [r.R, (hash2(spec.seed, q, 81) - 0.5) * 0.3 * s], [r.U, (hash2(spec.seed, q, 83) - 0.5) * 0.28 * s], [r.F, 0.12 * s]));
+          blob(P, pc, 0.022 * s, 0.022 * s, rgb('#c8d040'), 'glow', false);
+          glow(P, pc, 0.04 * s, 'rgba(200,230,60,0.6)');
+        }
+      },
+    });
+  }
 
   // Long garments hang over the front thigh too.
   if (long && !r.sit && !lying) {
@@ -943,10 +1074,22 @@ function paintFigure(P: Paint, spec: HeroSpec, pose: HeroPose, f: number, lying:
     parts.push({
       d: (S0[2] + E[2] + W[2]) / 3 + (i === 1 ? 0.02 : 0),
       draw: () => {
+        if (bone) {
+          capsule(P, S0, E, 0.026 * s, 0.022 * s, lift(boneC, i === 0 ? -0.1 : 0), 'cloth');
+          blob(P, E, 0.026 * s, 0.026 * s, boneC, 'cloth');
+          capsule(P, E, W, 0.022 * s, 0.018 * s, lift(boneC, i === 0 ? -0.1 : 0), 'cloth');
+          return;
+        }
         const bulky = kit.torso === 'armor' || kit.torso === 'bunker' || kit.torso === 'coat';
         capsule(P, S0, E, (bulky ? 0.064 : 0.056) * s * (b.fem ? 0.9 : 1), 0.046 * s, sc, clothM);
         if (robot) blob(P, E, 0.045 * s, 0.045 * s, brass, 'brass');
-        capsule(P, E, W, 0.046 * s, 0.036 * s, kit.torso === 'hivis' || kit.torso === 'vest' ? lift(sc, -0.05) : sc, clothM);
+        // The dead's sleeves are torn off at the elbow.
+        capsule(P, E, W, 0.046 * s, 0.036 * s, dead ? lift(skin, i === 0 ? -0.08 : 0) : kit.torso === 'hivis' || kit.torso === 'vest' ? lift(sc, -0.05) : sc, dead ? 'skin' : clothM);
+        if (kit.spikes) {
+          // Spiked pauldrons.
+          blob(P, S0, 0.08 * s, 0.065 * s, rgb('#3a3028'), 'leather');
+          for (const q of [-0.4, 0.4]) line2(P, pr(off(r.sh[i], [r.U, 0.03 * s], [r.F, q * 0.08 * s])), pr(off(r.sh[i], [r.U, 0.14 * s], [r.R, (i ? 1 : -1) * 0.05 * s], [r.F, q * 0.1 * s])), '#b8b0a0', 0.022 * s);
+        }
         if (kit.torso === 'armor' || (robot && P.lod > 0)) blob(P, S0, 0.085 * s * (kit.bulk ?? 1), 0.07 * s, lift(uni, 0.08), robot ? 'brass' : 'metal');
         if (i === 1 && spec.role === 'medic' && P.lod > 0) {
           const m = pr(off(r.sh[1], [sub(r.el[1], r.sh[1]), 0.4]));
@@ -961,6 +1104,18 @@ function paintFigure(P: Paint, spec: HeroSpec, pose: HeroPose, f: number, lying:
       draw: () => {
         const glove = kit.gloves || robot;
         const hc = off(r.wr[i], [norm(sub(r.wr[i], r.el[i])), 0.045 * s]);
+        if (bone) {
+          blob(P, pr(hc), 0.03 * s, 0.035 * s, boneC, 'cloth');
+          return;
+        }
+        if (kit.undead) {
+          // Claws (a brute's hands are huge).
+          const big = kit.scale ? 1.9 : 1;
+          blob(P, pr(hc), 0.05 * s * big, 0.055 * s * big, lift(skin, -0.05), 'skin');
+          if (P.lod > 0) for (const q of [-1, 0, 1]) line2(P, pr(off(hc, [norm(sub(r.wr[i], r.el[i])), 0.05 * s * big], [r.R, q * 0.02 * s * big])), pr(off(hc, [norm(sub(r.wr[i], r.el[i])), 0.085 * s * big], [r.R, q * 0.025 * s * big])), '#2a2016', 0.012 * s * big);
+          return;
+        }
+        if (kit.glow && kit.torso === 'coat') glow(P, pr(hc), 0.09 * s, kit.glow);
         if (robot) {
           capsule(P, W, pr(off(hc, [r.F, 0.03 * s])), 0.02 * s, 0.014 * s, rgb('#4a4e54'), 'metal');
           capsule(P, W, pr(off(hc, [UP, -0.04 * s])), 0.02 * s, 0.014 * s, rgb('#4a4e54'), 'metal');
@@ -1024,6 +1179,31 @@ function paintHead(P: Paint, r: Rig, kit: Kit, b: Body, spec: HeroSpec, skin: RG
     }
     return;
   }
+  if (kit.undead === 'bone') {
+    // A skull: the cranium, cheekbones and jaw, dark sockets with a spark in them.
+    const bc = rgb('#dcd4c0');
+    blob(P, pr(off(r.head, [r.HF, 0.035 * s], [hU, -0.06 * s])), 0.055 * s, 0.05 * s, lift(bc, -0.08), 'cloth');
+    blob(P, C, 0.1 * s, (0.11 * P.cp + 0.1 * P.sp) * s, bc, 'cloth');
+    if (fw > -0.2) {
+      for (const sd of [-1, 1]) {
+        const e = pr(off(r.head, [r.HF, 0.085 * s], [HR, sd * 0.036 * s], [hU, -0.005 * s]));
+        x.fillStyle = '#1a120c';
+        x.beginPath();
+        x.ellipse(e[0], e[1], 0.022 * s * P.k * Math.max(0.4, fw), 0.024 * s * P.k, 0, 0, Math.PI * 2);
+        x.fill();
+        glow(P, e, 0.025 * s, 'rgba(120,220,255,0.9)');
+      }
+      const n = pr(off(r.head, [r.HF, 0.1 * s], [hU, -0.04 * s]));
+      x.fillStyle = '#2a1e14';
+      x.fillRect(n[0] - 0.008 * s * P.k, n[1] - 0.01 * s * P.k, 0.016 * s * P.k, 0.018 * s * P.k);
+      const m = pr(off(r.head, [r.HF, 0.08 * s], [hU, -0.085 * s]));
+      for (let q = -2; q <= 2; q++) {
+        x.fillStyle = q % 2 ? '#2a1e14' : '#efe8d6';
+        x.fillRect(m[0] + q * 0.01 * s * P.k * Math.max(0.4, fw), m[1] - 0.006 * s * P.k, 0.009 * s * P.k, 0.014 * s * P.k);
+      }
+    }
+    return;
+  }
   if (kit.head === 'robot') {
     // A brass dome with a lamp-lit eye slit and an antenna.
     box(P, off(r.head, [hU, -0.01 * s]), [r.HF, hU, HR], [0.09 * s, 0.085 * s, 0.1 * s], rgb('#8a8e94'), 'metal');
@@ -1083,6 +1263,24 @@ function paintHead(P: Paint, r: Rig, kit: Kit, b: Body, spec: HeroSpec, skin: RG
         x.fillRect(p[0] - 0.012 * s * P.k, p[1] - 0.008 * s * P.k, 0.024 * s * P.k, 0.016 * s * P.k);
       }
     }
+  }
+  // The dead: filmed-over eyes that catch the light, the jaw hanging open.
+  if (kit.undead && fw > -0.25) {
+    for (const sd of [-1, 1]) {
+      const e = off(r.head, [r.HF, 0.088 * s], [HR, sd * 0.034 * s], [hU, -0.005 * s]);
+      if (facing(P, norm(sub(e, r.head))) < 0.02) continue;
+      const p = pr(e);
+      x.fillStyle = '#e8e0a0';
+      x.fillRect(p[0] - 0.01 * s * P.k, p[1] - 0.006 * s * P.k, 0.02 * s * P.k, 0.012 * s * P.k);
+      glow(P, p, 0.02 * s, 'rgba(230,220,120,0.5)');
+    }
+    const m = pr(off(r.head, [r.HF, 0.09 * s], [hU, -0.075 * s]));
+    x.fillStyle = '#2a0c08';
+    x.beginPath();
+    x.ellipse(m[0], m[1], 0.022 * s * P.k * Math.max(0.35, fw), 0.018 * s * P.k, 0, 0, Math.PI * 2);
+    x.fill();
+    x.fillStyle = 'rgba(110,14,10,0.7)';
+    x.fillRect(m[0] - 0.006 * s * P.k, m[1], 0.012 * s * P.k, 0.05 * s * P.k);
   }
   // Beard.
   if (b.beard && fw > -0.4) {
@@ -1349,8 +1547,8 @@ function headingKey(view: HeroView): number {
 }
 
 /**
- * A person painted into an `S`-pixel-square canvas (the figure stands about 0.86 S tall): from the side facing
- * right, or from above facing `view.heading`.
+ * A person painted into an `S`-pixel-square canvas (the figure stands about 0.86 S tall, whatever its size): from the
+ * side facing right, or from above facing `view.heading`.
  */
 export function hero(spec: HeroSpec, pose: HeroPose, frame: number, S: number, view: HeroView = 'side'): HTMLCanvasElement {
   const nf = framesOf(pose);
@@ -1360,7 +1558,14 @@ export function hero(spec: HeroSpec, pose: HeroPose, frame: number, S: number, v
   const key = `${spec.role}|${variant}|${spec.color ?? ''}|${pose}|${f}|${S}|${hk}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  if (cache.size > 4000) cache.clear();
+  // Oldest out first (never the whole lot at once: that would repaint a crowd in one frame).
+  if (cache.size > 6000) {
+    let n = 0;
+    for (const k2 of cache.keys()) {
+      cache.delete(k2);
+      if (++n >= 600) break;
+    }
+  }
   const lying = pose === 'sleep';
   const W = S, H = lying ? Math.ceil(S * 0.46) : S;
   const R = S >= 96 ? 2 : 3;
@@ -1377,7 +1582,8 @@ export function hero(spec: HeroSpec, pose: HeroPose, frame: number, S: number, v
     psi = -hd;
     phi = 0.62;
   }
-  const k = ((S * 0.86) / 1.8) * R;
+  // Big ones (brutes) are fitted to the canvas too: draw them with a bigger S.
+  const k = ((S * 0.86) / (1.8 * (KITS[spec.role].scale ?? 1))) * R;
   const foot = heroFoot(S, view);
   const P: Paint = {
     x, k, ow: Math.max(1, R * 0.55), ox: lying ? W * R * 0.5 : foot.x * R, oy: lying ? H * R * 0.78 : foot.y * R,
@@ -1394,6 +1600,13 @@ export function hero(spec: HeroSpec, pose: HeroPose, frame: number, S: number, v
   softOutline(c);
   cache.set(key, c);
   return c;
+}
+
+/** The same figure only if it's already painted (for crowds painted a few a frame), else null. */
+export function heroIfPainted(spec: HeroSpec, pose: HeroPose, frame: number, S: number, view: HeroView = 'side'): HTMLCanvasElement | null {
+  const nf = framesOf(pose);
+  const f = ((frame % nf) + nf) % nf;
+  return cache.get(`${spec.role}|${spec.seed & 15}|${spec.color ?? ''}|${pose}|${f}|${S}|${headingKey(view)}`) ?? null;
 }
 
 /** A soft dark rim round the figure so it reads against any ground. */

@@ -22,6 +22,8 @@ export interface Enemy {
   range: number;
   atkCd: number;
   atkRate: number;
+  /** Seconds since its last attack began (the attack animation plays off it). */
+  atkT?: number;
   threat: number;
   elite: boolean;
   flying: boolean;

@@ -29,7 +29,8 @@ import { drawColossus, type ColossusView } from './px/colossusDraw';
 import { prewarmColossi } from './px/colossusArt';
 import { visZ } from './px/fx2d';
 import { hatFor, topPerson } from './px/people';
-import { hero, heroFoot } from './px/heroes';
+import { hero, heroFoot, heroIfPainted } from './px/heroes';
+import { foeFor, foePose, type Foe } from './px/foes';
 import { quantizeSize } from './px/creaturesHD';
 import type { Aboard } from '../game/aboard';
 
@@ -872,11 +873,52 @@ export class View2D {
     return h.a;
   }
 
+  /** Figures painted this frame (a new crowd is painted a couple of dozen at a time). */
+  private foeBudget = 0;
+
+  /**
+   * A hostile person as a painted figure, facing the way it's going, in its pose (lurching, running, clawing,
+   * smashing, aiming). False if it isn't painted yet and the frame's painting is used up (the caller draws the old
+   * sprite this once).
+   */
+  private drawFoe(e: Enemy, f: Foe, heading: number): boolean {
+    const c = this.ctx;
+    const def = ENEMIES[e.kind];
+    const S = Math.max(e.horde ? 24 : 28, Math.min(128, Math.round((1.8 * f.scale * this.ppm * 1.25) / 0.86 / 4) * 4)) * (f.scale > 1.1 ? 1.3 : 1);
+    const Sq = Math.round(S / 4) * 4;
+    const view = { heading };
+    const spec = { role: f.role, seed: e.id % 6, color: f.color };
+    const { pose, frame } = foePose(e, f, def);
+    let img = heroIfPainted(spec, pose, frame, Sq, view);
+    if (!img && this.foeBudget > 0) {
+      this.foeBudget--;
+      img = hero(spec, pose, frame, Sq, view);
+    }
+    img ??= heroIfPainted(spec, pose, 0, Sq, view) ?? heroIfPainted(spec, 'stand', 0, Sq, view);
+    if (!img) return false;
+    const ft = heroFoot(Sq, view);
+    const gx = Math.round(this.bx(e.x, e.y)), gy = Math.round(this.by(e.x, e.y));
+    const lift = e.flying ? Math.max(2, (1.6 + visZ(e.z)) * this.ppm * ZK * 1.3) : visZ(e.z) * this.ppm * ZK;
+    this.hostileRing(gx, gy, Sq * 0.2, Sq * 0.12, e.boss, e.elite);
+    c.drawImage(img, gx - ft.x, Math.round(gy - ft.y - lift));
+    if (e.hitFlash > 0) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      c.globalAlpha = Math.min(0.6, e.hitFlash * 4);
+      c.drawImage(img, gx - ft.x, Math.round(gy - ft.y - lift));
+      c.restore();
+    }
+    if (e.burn > 0 && Math.random() < 0.3) this.fx.emit(e.x, e.y, e.r, 0, 0, 2, 0.4, Math.max(0.5, e.r * 0.5), '#ff6d00', { add: true });
+    if (e.aim) this.drawAimLine(e);
+    return true;
+  }
+
   private drawEnemies(g: Game, air: boolean): void {
     const c = this.ctx;
     const ppm = this.ppm;
     const R = this.groundR + 30;
     const p = g.player;
+    if (!air) this.foeBudget = 24;
     this.headT -= 1;
     if (this.headT <= 0) {
       this.headT = 300;
@@ -902,15 +944,19 @@ export class View2D {
       const size = Math.max(min, real);
       const toP = Math.atan2(p.y - e.y, p.x - e.x);
       const a = this.headingOf(e.id, e.x, e.y, toP) + this.th;
+      // People (the dead, raiders, cultists, cyborgs) are painted figures.
+      const foe = !e.titan && !e.boss ? foeFor(e, def, arch) : null;
+      if (foe && this.drawFoe(e, foe, a)) continue;
       // Hard Vacuum sprites (OpenHV) for everything short of the giants: the facing drawn for its heading.
       const look = !e.titan && !e.boss ? ohvLookFor(e.kind, def, arch) : null;
       const sheet = look ? (e.hitFlash > 0 ? ohvFlash(look.sheet) : ohvCanvas(look.sheet, look.team, look.tint, look.tintK)) : null;
       if (look && sheet) {
         const sh = ohvSheet(look.sheet)!;
         const k = Math.max(3, Math.round(size / (sh.fw * 0.6)));
-        const gx = Math.round(this.bx(e.x, e.y));
+        const atkO = (e.atkT ?? 9) < 0.5 ? Math.sin((Math.PI * (e.atkT ?? 9)) / 0.5) * size * 0.25 : 0;
+        const gx = Math.round(this.bx(e.x, e.y) + Math.cos(a) * atkO);
         const lift = e.flying ? Math.max(2, (1.6 + visZ(e.z)) * ppm * ZK * 1.3) : visZ(e.z) * ppm * ZK;
-        const gy = Math.round(this.by(e.x, e.y) - lift);
+        const gy = Math.round(this.by(e.x, e.y) + Math.sin(a) * atkO - lift);
         c.fillStyle = 'rgba(0,0,0,0.3)';
         const so = e.flying ? Math.max(3, size * 0.4) : 1;
         c.beginPath();
@@ -937,7 +983,20 @@ export class View2D {
       const q = quantizeSize(size);
       const ks = size / q;
       const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', q, frame, variant, arch === 'humanoid' ? lookFor(e.kind, def?.faction) : '');
-      const sx = Math.round(this.bx(e.x, e.y)), sy = Math.round(this.by(e.x, e.y) - (e.flying ? Math.max(2, (1.6 + visZ(e.z)) * ppm * ZK * 1.3) : visZ(e.z) * ppm * ZK));
+      // An attack: it lunges into the blow (a giant's lands with a shockwave in the dust).
+      const atk = (e.atkT ?? 9) < 0.55 ? (e.atkT ?? 9) / 0.55 : 0;
+      const lg = Math.sin(Math.PI * atk) * size * 0.22;
+      const sx = Math.round(this.bx(e.x, e.y) + Math.cos(a) * lg), sy = Math.round(this.by(e.x, e.y) + Math.sin(a) * lg - (e.flying ? Math.max(2, (1.6 + visZ(e.z)) * ppm * ZK * 1.3) : visZ(e.z) * ppm * ZK));
+      if (atk > 0.45 && (e.titan || size > 40) && !e.flying) {
+        const k2 = (atk - 0.45) / 0.55;
+        const fx0 = this.bx(e.x, e.y) + Math.cos(a) * size * 0.45, fy0 = this.by(e.x, e.y) + Math.sin(a) * size * 0.45;
+        c.strokeStyle = `rgba(230,200,150,${0.7 * (1 - k2)})`;
+        c.lineWidth = Math.max(1.5, size * 0.04 * (1 - k2));
+        c.beginPath();
+        c.ellipse(fx0, fy0, size * (0.15 + k2 * 0.6), size * (0.1 + k2 * 0.4), 0, 0, Math.PI * 2);
+        c.stroke();
+        if (Math.random() < 0.4) this.fx.emit(e.x + Math.cos(a - this.th) * e.r, e.y + Math.sin(a - this.th) * e.r, 0.3, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.8, 1.2, Math.max(1, e.r * 0.4), '#9a8a6a', { grow: 2, alpha: 0.55 });
+      }
       // Shadow on the ground (flyers' is further off).
       const so = e.flying ? Math.max(3, size * 0.4) : Math.max(1, size * 0.08);
       c.fillStyle = 'rgba(0,0,0,0.3)';

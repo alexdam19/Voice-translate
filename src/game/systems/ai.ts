@@ -560,6 +560,7 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
   }
   if (edge <= e.range + 0.25 && e.atkCd <= 0) {
     e.atkCd = 1 / e.atkRate;
+    e.atkT = 0;
     if (e.kind === 'bomber' || ENEMIES[e.kind].explode) {
       explode(g, e.x, e.y, ENEMIES[e.kind].splash ?? 2, e.dmg, 'enemy', {}, e.kind === 'z_bloater' ? '#c6ff00' : '#ff5252');
       e.hp = 0;
@@ -637,6 +638,7 @@ function siegeMarch(g: Game, e: Enemy, goal: { x: number; y: number }, dt: numbe
     e.atkCd -= dt;
     if (e.atkCd <= 0) {
       e.atkCd = 1 / e.atkRate;
+      e.atkT = 0;
       clawGate(g, e.dmg);
       if (Math.random() < 0.3) g.fx.push({ t: 'spark', x: e.x, y: e.y - 1, color: '#ffab40', n: 2 });
     }
@@ -686,6 +688,7 @@ export function updateEnemies(g: Game, dt: number): void {
       continue;
     }
     e.anim += dt * (2 + e.speed);
+    e.atkT = (e.atkT ?? 9) + dt;
     e.hitFlash = Math.max(0, e.hitFlash - dt);
     if (e.bumpT) e.bumpT = Math.max(0, e.bumpT - dt);
     if (e.burn > 0) {
@@ -794,6 +797,7 @@ export function updateEnemies(g: Game, dt: number): void {
       e.atkCd -= dt;
       if (e.atkCd <= 0 && edge <= e.range + 0.2 && !e.burrowed) {
         e.atkCd = 1 / e.atkRate;
+        e.atkT = 0;
         if (d.aimed) {
           aimedShot(g, e, tgt, d.aimed);
         } else if (ranged) {

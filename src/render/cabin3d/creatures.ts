@@ -15,6 +15,8 @@ type Mat = 'fur' | 'skin' | 'scale' | 'chitin' | 'metal' | 'rock' | 'bone' | 'cl
 type Role = 'body' | 'dark' | 'light' | 'bone' | 'eye' | 'metal' | 'claw' | 'skin' | 'cloth' | 'glow';
 type Anim =
   | { k: 'leg'; ph: number; amp: number }
+  /** An arm: swings with the walk and comes up and down in an attack (`lift` radians at the top of the swing). */
+  | { k: 'arm'; ph: number; amp: number; lift: number }
   | { k: 'knee'; ph: number; amp: number }
   | { k: 'wing'; ph: number; amp: number; side: number }
   | { k: 'sway'; ph: number; amp: number }
@@ -193,7 +195,7 @@ const PLANS: Record<Arch, Part[]> = {
     eyes(o, 0.075, 0.935, 0.025, 0.008);
     for (const [sd, ph] of [[-1, 0], [1, Math.PI]] as [number, number][]) {
       const u = o.length;
-      o.push(P('limb', 'cloth', 'cloth', [0, 0.84, sd * 0.15], [0.03, 0.17, 0.03], { r: [0, 0, 0.5], anim: { k: 'leg', ph: ph + Math.PI, amp: 0.2 } }));
+      o.push(P('limb', 'cloth', 'cloth', [0, 0.84, sd * 0.15], [0.03, 0.17, 0.03], { r: [0, 0, 0.5], anim: { k: 'arm', ph: ph + Math.PI, amp: 0.2, lift: sd > 0 ? 2.2 : 1.4 } }));
       o.push(P('limb', 'skin', 'skin', [0, -0.17, 0], [0.025, 0.16, 0.025], { parent: u, r: [0, 0, 1.1] }));
       const t = o.length;
       o.push(P('limb', 'cloth', 'dark', [0, 0.52, sd * 0.06], [0.042, 0.25, 0.042], { anim: { k: 'leg', ph, amp: 0.55 } }));
@@ -264,7 +266,7 @@ const PLANS: Record<Arch, Part[]> = {
     o.push(P('sphere', 'glow', 'glow', [0.18, 1.3, 0], [0.06, 0.1, 0.12]));
     for (const [sd, ph] of [[-1, 0], [1, Math.PI]] as [number, number][]) {
       const a = o.length;
-      o.push(P('limb', 'rock', 'body', [0, 1.52, sd * 0.4], [0.14, 0.55, 0.14], { r: [sd * 0.15, 0, 0.1], anim: { k: 'leg', ph: ph + Math.PI, amp: 0.35 } }));
+      o.push(P('limb', 'rock', 'body', [0, 1.52, sd * 0.4], [0.14, 0.55, 0.14], { r: [sd * 0.15, 0, 0.1], anim: { k: 'arm', ph: ph + Math.PI, amp: 0.35, lift: 2.6 } }));
       const f = o.length;
       o.push(P('limb', 'rock', 'dark', [0, -0.55, 0], [0.12, 0.45, 0.12], { parent: a, r: [0, 0, 0.3] }));
       o.push(P('box', 'rock', 'body', [0, -0.5, 0], [0.24, 0.24, 0.24], { parent: f }));
@@ -350,7 +352,12 @@ export interface CreatureDraw {
   eye: THREE.Color;
   flash: boolean;
   look: '' | 'zombie' | 'skeleton';
+  /** Mid-attack (0..1 through the blow; 0 not attacking): arms come up and down, jaws gape, the body lunges. */
+  atk?: number;
 }
+
+/** An attack's arm swing: up over the first 40%, then down hard through the target. */
+const swing = (t: number): number => (t <= 0 ? 0 : t < 0.4 ? t / 0.4 : Math.max(-0.25, 1 - ((t - 0.4) / 0.6) * 1.25));
 
 const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpE = new THREE.Euler(), tmpV = new THREE.Vector3(), tmpS = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1);
@@ -400,7 +407,10 @@ export class Creatures3D {
     const list = this.ensure(d.arch, lo, i + 1);
     this.n.set(key, i + 1);
     // Root: at the creature, turned to its heading, scaled to its length.
-    const root = new THREE.Matrix4().compose(tmpV.set(d.x - ox, d.z, d.y - oz), tmpQ.setFromEuler(tmpE.set(0, -d.rot, 0)), tmpS.set(d.len, d.len, d.len));
+    // An attack throws the body forward and pitches it into the blow.
+    const atk = d.atk ?? 0;
+    const lunge = atk > 0 ? Math.sin(Math.PI * atk) * 0.18 * d.len : 0;
+    const root = new THREE.Matrix4().compose(tmpV.set(d.x - ox + Math.cos(d.rot) * lunge, d.z, d.y - oz + Math.sin(d.rot) * lunge), tmpQ.setFromEuler(tmpE.set(0, -d.rot, -Math.sin(Math.PI * atk) * 0.22, 'YXZ')), tmpS.set(d.len, d.len, d.len));
     const T = d.t * (4 + d.gait * 6);
     // Natural colour: the kind's tint, toned toward grey-brown and darkened a little.
     const body = d.body.clone().lerp(new THREE.Color('#6a6258'), 0.42).multiplyScalar(0.9);
@@ -422,6 +432,9 @@ export class Creatures3D {
           case 'leg':
             rz += Math.sin(T + a.ph) * a.amp * d.gait;
             break;
+          case 'arm':
+            rz += Math.sin(T + a.ph) * a.amp * d.gait * (atk > 0 ? 0.2 : 1) + swing(atk) * a.lift;
+            break;
           case 'knee':
             rz -= Math.max(0, Math.sin(T + a.ph + 1.2)) * a.amp * d.gait;
             break;
@@ -432,7 +445,7 @@ export class Creatures3D {
             ry += Math.sin(d.t * 3 + a.ph) * a.amp;
             break;
           case 'jaw':
-            rz += (Math.sin(d.t * 5) * 0.5 + 0.5) * a.amp;
+            rz += (Math.sin(d.t * 5) * 0.5 + 0.5) * a.amp + Math.sin(Math.PI * atk) * a.amp * 1.8;
             break;
           case 'seg':
             py += Math.sin(d.t * 5 - a.i * 0.9) * a.amp * 0.5;
