@@ -125,6 +125,11 @@ export class App {
         const h = this.game.helm;
         if (cmd === 'overdrive') this.toggleOverdrive();
         else if (cmd === 'warp') this.cycleWarp();
+        else if (cmd === 'jaws') {
+          h.plow = !h.plow;
+          this.hud.toast(h.plow ? 'COMPACTOR: the jaws open. She eats whatever she drives into and spits out bales of scrap.' : 'Compactor jaws shut.', h.plow ? '#ffd740' : '#b0bec5');
+          this.sound('ui');
+        }
         else if (cmd === 'stop') this.allStop();
         else {
           h.lever = Math.max(-0.5, Math.min(1, Math.round((h.lever + (cmd === 'up' ? 0.25 : -0.25)) * 4) / 4));

@@ -66,7 +66,7 @@ export interface HudActions {
   /** Set up camp / pack up. */
   camp(): void;
   /** The helm: throttle lever steps, all stop, overdrive. */
-  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp'): void;
+  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp' | 'jaws'): void;
   /** Into the captain's cabin (first person). */
   cabin(): void;
   /** The all-decks interior cutaway. */
@@ -146,6 +146,7 @@ export class Hud {
   private gaugeCtl = h('div', 'dg-ctl');
   private odBtn: HTMLButtonElement | null = null;
   private warpBtn: HTMLButtonElement | null = null;
+  private jawsBtn: HTMLButtonElement | null = null;
   /** Fires, flooding, lost crawlers and failing systems (tap for the bridge status display). */
   private alerts = h('div', 'titan-alerts');
   private kitBtn = h('div', 'kit-btn');
@@ -268,7 +269,7 @@ export class Hud {
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
     this.hpBox.append(this.alerts, this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
     this.gauge.append(this.gaugeRead, this.gaugeCtl);
-    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): a big burst of speed for a lot of fuel, until the engine overheats (Engine Workshop parts change all three)'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near']] as const) {
+    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): a big burst of speed for a lot of fuel, until the engine overheats (Engine Workshop parts change all three)'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near'], ['jaws', 'JAWS', 'Compactor: open the bow\'s jaws and she eats whatever she drives into (buildings, walls, wrecks, small creatures), spitting it out of the stern as bales of scrap. 10% less top speed while open.']] as const) {
       const b = button(label, (e) => {
         e.stopPropagation();
         act.helm(cmd);
@@ -276,6 +277,7 @@ export class Hud {
       b.title = tip;
       if (cmd === 'overdrive') this.odBtn = b;
       if (cmd === 'warp') this.warpBtn = b;
+      if (cmd === 'jaws') this.jawsBtn = b;
       this.gaugeCtl.appendChild(b);
     }
     this.alerts.addEventListener('click', (e) => {
@@ -702,6 +704,7 @@ export class Hud {
       if (this.warpBtn) {
         setText(this.warpBtn, `⏩ ×${g.warp}`);
         this.warpBtn.classList.toggle('on', g.warp > 1);
+        if (this.jawsBtn) this.jawsBtn.classList.toggle('on', g.helm.plow);
       }
       setHTML(this.gaugeRead, `<div class="dg-spd"><b>${Math.round(Math.abs(p.speed) * 3.6)}</b><small>km/h${p.speed < -0.05 ? ' R' : ''}</small></div>`
         + `<div class="dg-thr" title="Throttle"><i class="${thr < 0 ? 'rev' : ''}" style="height:${Math.round(Math.min(1, Math.abs(thr)) * 100)}%"></i></div>`

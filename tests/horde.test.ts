@@ -295,7 +295,7 @@ describe('Dead waves', () => {
     p.x = w.fx + Math.cos(a) * 1600;
     p.y = w.fy + Math.sin(a) * 1600;
     const xp0 = g.commander.xp;
-    for (let i = 0; i < 70 && w.phase === 'surge'; i++) updateWaves(g, 0.1);
+    for (let i = 0; i < 70 && (w.phase as string) === 'surge'; i++) updateWaves(g, 0.1);
     expect(w.phase).toBe('calm');
     expect(w.dead).toBe(false);
     expect(g.commander.xp).toBeGreaterThan(xp0);

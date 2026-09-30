@@ -496,6 +496,10 @@ export class Cabin3D {
         (this.pillar.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(v.time * 2) * 0.06;
       }
     }
+    // The compactor's jaws swing open, the throat glowing between them.
+    ship.jaws.forEach((j, i) => (j.rotation.y = (i ? -1 : 1) * g.helm.mouth * 0.5));
+    (ship.maw.material as THREE.MeshBasicMaterial).opacity = g.helm.mouth * (0.75 + Math.sin(v.time * 9) * 0.15);
+    ship.maw.visible = g.helm.mouth > 0.02;
     // Headlamps.
     const on = g.helm.lights;
     this.heads.forEach((s, i) => {

@@ -651,6 +651,7 @@ export class View2D {
         const lights = drawTitanSprite(c, t, g, this.time, sx, sy, t.rot + this.th, ppm);
         if (lights) {
           this.hullExtras(t, lights);
+          if (t === g.player) this.drawMouth(g);
           continue;
         }
       }
@@ -722,6 +723,75 @@ export class View2D {
       c.globalAlpha = 1;
       c.setTransform(1, 0, 0, 1, 0, 0);
     }
+  }
+
+  /**
+   * The compactor's mouth at the bow: two armoured jaws hinged at the corners of the nose swing open into a V as wide
+   * as the hull; between them the throat glows, and a row of grinder teeth churns across it.
+   */
+  private drawMouth(g: Game): void {
+    const t = g.player;
+    const m = g.helm.mouth;
+    if (m <= 0.01 || t.dead) return;
+    const c = this.ctx;
+    const L = t.stats.length / 2, W = t.stats.width / 2;
+    const hx = L - 5, open = m * 0.5, jl = W * 0.62;
+    const sx = this.bx(t.x, t.y), sy = this.by(t.x, t.y);
+    const a = t.rot + this.th, k = this.ppm;
+    c.save();
+    c.setTransform(Math.cos(a) * k, Math.sin(a) * k, -Math.sin(a) * k, Math.cos(a) * k, sx, sy);
+    // The throat.
+    const tip = (sd: number): [number, number] => [hx + Math.cos(open) * jl, sd * (W * 0.46 + Math.sin(open) * jl)];
+    const [tx0, ty0] = tip(-1), [tx1, ty1] = tip(1);
+    c.fillStyle = '#140a06';
+    c.beginPath();
+    c.moveTo(hx - 2, -W * 0.46);
+    c.lineTo(tx0, ty0);
+    c.lineTo(tx1, ty1);
+    c.lineTo(hx - 2, W * 0.46);
+    c.closePath();
+    c.globalAlpha = Math.min(1, m * 1.4);
+    c.fill();
+    const gr = c.createRadialGradient(hx, 0, 1, hx, 0, W * 0.55);
+    gr.addColorStop(0, `rgba(255,130,40,${0.75 * m})`);
+    gr.addColorStop(0.5, `rgba(200,50,20,${0.35 * m})`);
+    gr.addColorStop(1, 'rgba(120,20,10,0)');
+    c.fillStyle = gr;
+    c.fill();
+    // Grinder teeth churning across the throat.
+    const ph = (this.time * 14) % 3;
+    c.fillStyle = '#9aa0a8';
+    for (let y = -W * 0.44 + ph; y < W * 0.44; y += 3) {
+      c.beginPath();
+      c.moveTo(hx - 1.5, y);
+      c.lineTo(hx + 1.2, y + 0.8);
+      c.lineTo(hx - 1.5, y + 1.6);
+      c.fill();
+    }
+    // The jaws: steel plates with hazard stripes along their edges and teeth along their lips.
+    for (const sd of [-1, 1]) {
+      c.save();
+      c.translate(hx, sd * W * 0.46);
+      c.rotate(sd * open);
+      c.fillStyle = '#3e434b';
+      c.fillRect(0, sd > 0 ? 0 : -3.2, jl, 3.2);
+      c.fillStyle = '#5a616c';
+      c.fillRect(0, sd > 0 ? 0 : -1, jl, 1);
+      for (let x = 0; x < jl; x += 2.4) {
+        c.fillStyle = Math.floor(x / 2.4) % 2 ? '#1a1a1a' : '#e8b820';
+        c.fillRect(x, sd > 0 ? 2.4 : -3.2, 2.4, 0.8);
+      }
+      c.fillStyle = '#c8ccd2';
+      for (let x = 1; x < jl - 1; x += 2) {
+        c.beginPath();
+        c.moveTo(x, 0);
+        c.lineTo(x + 1, -sd * 1.4);
+        c.lineTo(x + 2, 0);
+        c.fill();
+      }
+      c.restore();
+    }
+    c.restore();
   }
 
   /** A black copy of a sprite, for its shadow. */

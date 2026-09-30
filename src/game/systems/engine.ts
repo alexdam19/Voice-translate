@@ -363,8 +363,10 @@ export function driveSpec(g: Game, t: Tank): DriveSpec {
   }
   if (hm.sandT > 0) out.grip += 0.25;
   if (hm.plow) {
+    // The compactor's jaws open: she eats what's ahead (systems/compactor), a little slower.
     out.crush *= 1.6;
     out.modeTop *= 0.9;
+    out.fuel *= 1.08;
   }
   if (hm.overdrive && out.odStages > 0) out.od = odStage(out, hm.odStage);
   return out;

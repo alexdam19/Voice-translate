@@ -87,7 +87,7 @@ export function tipFor(id: string, g: Game): { title: string; body: string } | n
     case 'diff':
       return { title: `DIFF LOCK: ${on(hm.diffLock)}`, body: 'Locks the differentials between the crawler banks: +15% grip on bad ground, but she turns 40% wider.' };
     case 'plow':
-      return { title: `DOZER PLOUGH: ${hm.plow ? 'DOWN' : 'UP'}`, body: 'Lowers the bow plough: +60% force against everything she hits (fewer creatures get a grip to climb aboard), for 10% top speed.' };
+      return { title: `COMPACTOR: ${hm.plow ? 'JAWS OPEN' : 'SHUT'}`, body: `Opens the bow's jaws into a mouth as wide as the hull: she eats whatever she drives into (buildings, walls, wrecks, trees, rock, small creatures; big ones get mauled), grinds it down and spits it out of the stern in bales the crew turn into scrap. +60% force against what she hits, 10% less top speed, a little more fuel. ${hm.bales} bales so far.` };
     case 'smoke':
       return { title: `SMOKE DISCHARGERS${hm.smokeT > 0 ? ` (${Math.ceil(hm.smokeT)} s)` : ''}`, body: `A cloud round the hull for ${SMOKE_T} s: hits land a third softer inside it, and anything not already on the hull or part of a horde loses track of her. Reload ${SMOKE_CD} s.${hm.smokeCd > 0 && hm.smokeT <= 0 ? ` (${Math.ceil(hm.smokeCd)} s)` : ''}` };
     case 'cams':

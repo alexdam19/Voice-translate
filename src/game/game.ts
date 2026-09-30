@@ -212,6 +212,8 @@ export class Game {
     lever: 0, brake: 0, brakeSet: false, toroids: [true, true, true, true], overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false,
     mode: 'normal' as DriveMode, odStage: 1, preheat: false, sandT: 0, sandCd: 0, diffLock: false, plow: false, smokeT: 0, smokeCd: 0, refine: true, roarT: 0,
     shutters: false, search: false, deckLights: false, beacons: false,
+    /** The compactor (the plough switch): how open the bow's jaws are (0-1), the rubble on its way to the next bale, bales made, what it's eaten. */
+    mouth: 0, biteT: 0, bale: 0, bales: 0, eaten: 0,
   };
   /** Damage control sends repair teams on its own (the vitals screen's AUTO switch), and its next check. */
   autoRepair = true;

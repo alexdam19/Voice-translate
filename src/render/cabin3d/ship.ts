@@ -35,6 +35,9 @@ export interface ShipModel {
   /** Amber beacons (their domes and glows) and the deck's lamp posts, switched from the cab. */
   beacons: { mat: THREE.MeshBasicMaterial; glows: THREE.Sprite[] };
   lampMat: THREE.MeshBasicMaterial;
+  /** The compactor's jaws at the bow (turned open by the mouth) and the glowing throat between them. */
+  jaws: THREE.Object3D[];
+  maw: THREE.Mesh;
 }
 
 const steel = new THREE.MeshStandardMaterial({ color: '#8a929c', roughness: 0.45, metalness: 0.6 });
@@ -465,9 +468,31 @@ export function buildShip(t: Tank, klass: string): ShipModel {
     turrets.set(m.id, { yaw: tu.yaw, barrels: tu.barrels, reach });
   }
   const key = shipKey(t, klass);
+  // The compactor: two armoured jaws hinged either side of the nose, low down, and the throat between them.
+  const jaws: THREE.Object3D[] = [];
+  const jl = W * 0.62, jh = Math.min(14, H * 0.32), jy = crawlH * 0.25;
+  let noseX = L / 2 - 4;
+  while (noseX > 0 && !insidePoly(pts as [number, number][], noseX, 0)) noseX -= 1;
+  const hazard = new THREE.MeshStandardMaterial({ color: '#d8a820', roughness: 0.6, metalness: 0.3 });
+  for (const sd of [-1, 1]) {
+    const hinge = new THREE.Group();
+    hinge.position.set(noseX - 4, jy, sd * W * 0.44);
+    const plateM = new THREE.Mesh(new THREE.BoxGeometry(jl, jh, 1.6).translate(jl / 2, jh / 2, sd * 0.8), plateDark);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(jl, 1.2, 1.7).translate(jl / 2, jh - 0.6, sd * 0.8), hazard);
+    hinge.add(plateM, stripe);
+    for (let x = 1.5; x < jl - 1; x += 2.6) {
+      const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.2, 5).rotateX(-sd * Math.PI / 2).translate(x, jh * 0.3, -sd * 0.9), steel);
+      hinge.add(tooth);
+    }
+    hinge.traverse((o) => (o.castShadow = true));
+    group.add(hinge);
+    jaws.push(hinge);
+  }
+  const maw = new THREE.Mesh(new THREE.BoxGeometry(2, jh * 0.9, W * 0.86).translate(noseX - 4.5, jy + jh * 0.45, 0), new THREE.MeshBasicMaterial({ color: '#ff7a28', transparent: true, opacity: 0, toneMapped: false }));
+  group.add(maw);
   const lampMat = lamp.clone();
   const dress = dressDeck(t, group, H, L, W, pts as [number, number][], lampMat);
-  return { group, L, W, H, turrets, treads, stacks, key, cab, ...dress, search: { yoke, drum, lens, glass: lensMat }, beacons: { mat: beaconMat, glows }, lampMat };
+  return { group, L, W, H, turrets, treads, stacks, key, cab, ...dress, search: { yoke, drum, lens, glass: lensMat }, beacons: { mat: beaconMat, glows }, lampMat, jaws, maw };
 }
 
 export function shipKey(t: Tank, klass: string): string {

@@ -658,7 +658,7 @@ export class Cabin {
         break;
       case 'plow':
         hm.plow = !hm.plow;
-        this.message(hm.plow ? 'DOZER PLOUGH DOWN' : 'DOZER PLOUGH UP', '#ffd740');
+        this.message(hm.plow ? 'COMPACTOR JAWS OPENING: SHE EATS WHAT SHE HITS' : 'COMPACTOR JAWS SHUT', '#ffd740');
         break;
       case 'smoke': {
         const n = fireSmoke(g);

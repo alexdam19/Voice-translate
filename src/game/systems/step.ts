@@ -1,6 +1,7 @@
 import { updateCompound } from './compound';
 import { updateComms } from './comms';
 import { updateNav } from './nav';
+import { updateCompactor } from './compactor';
 import { recordTelemetry } from '../telemetry';
 import type { Game } from '../game';
 import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
@@ -244,6 +245,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateFuel(g, dt);
       updateComms(g, dt);
       updateNav(g, dt);
+      updateCompactor(g, dt);
       updateHelm(g, dt);
       recordTelemetry(g, dt);
       updateTeams(g, dt);
