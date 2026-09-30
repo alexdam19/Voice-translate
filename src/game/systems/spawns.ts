@@ -1,3 +1,4 @@
+import { inCompound } from '../../shared/compound';
 import { ZONE } from '../../shared/map';
 import { REGION_INFO, threatAt } from '../../shared/mapgen';
 import { ENEMIES, ZONE_ROSTER } from '../enemyDefs';
@@ -10,10 +11,16 @@ import { pickKind } from './world';
 /** Nothing spawns this close to the Mega Hangar: the doors are guarded. */
 const SAFE_RADIUS = 1200;
 
-/** Is a spot inside the Mega Hangar's guarded perimeter? */
+/** Is a spot inside the Mega Hangar's guarded perimeter (round the Hangar, and anywhere near the compound's wall)? */
 export function nearHome(g: Game, x: number, y: number): boolean {
   const h = g.gen.hangar;
-  return !!h && g.mode === 'world' && Math.hypot(x - h.x, y - h.y) < SAFE_RADIUS;
+  return !!h && g.mode === 'world' && (Math.hypot(x - h.x, y - h.y) < SAFE_RADIUS || inCompound(x - h.x, y - h.y, 300));
+}
+
+/** Round the compound's wall (where hordes gather to get in)? */
+function atWall(g: Game, x: number, y: number): boolean {
+  const h = g.gen.hangar;
+  return !!h && g.mode === 'world' && inCompound(x - h.x, y - h.y, 500);
 }
 
 function spawnPoint(g: Game, minD: number, maxD: number): { x: number; y: number } | null {
@@ -43,6 +50,9 @@ export function updateSpawns(g: Game, dt: number): void {
   for (let i = g.enemies.length - 1; i >= 0; i--) {
     const e = g.enemies[i];
     if (e.camp || e.titan || e.boss) continue;
+    // A siege keeps coming for the compound however far you are from it (until you're long gone); whatever is
+    // clawing at the wall stays there while you're about.
+    if ((e.siege || atWall(g, e.x, e.y)) && Math.hypot(e.x - p.x, e.y - p.y) < 3500) continue;
     if (Math.hypot(e.x - p.x, e.y - p.y) > (p.fortress ? 700 : 80) + ext) g.enemies.splice(i, 1);
   }
   for (let i = g.tanks.length - 1; i >= 0; i--) {

@@ -1,3 +1,5 @@
+import { newCompound, type CompoundState } from './systems/compound';
+import { newTelemetry, type Telemetry } from './telemetry';
 import { CHUNK, MAX_BASE_CREW } from '../shared/constants';
 import { Fog } from '../shared/fog';
 import { canAfford, payCost, type Cost, type Stack } from '../shared/inventory';
@@ -237,6 +239,10 @@ export class Game {
   targetCache: { at: number; list: Target[] } = { at: -1, list: [] };
   /** The goal: strongholds, Mothership parts and the last stand. */
   campaign: Campaign = newCampaign();
+  /** The Mega Hangar's compound: its gate, towers, people and visiting bases. */
+  compound: CompoundState = newCompound();
+  /** The flight recorder (cabin trend screens). */
+  telemetry: Telemetry = newTelemetry();
   /** Life aboard: fatigue, hunger. */
   life: CrewLife = newCrewLife();
   /** The Titan Crawler's armour zones, crawlers, subsystems, fires, flooding and supplies. */

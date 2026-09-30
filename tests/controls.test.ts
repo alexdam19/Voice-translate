@@ -4,7 +4,7 @@ import { engineSpec } from '../src/game/systems/engine';
 import { helmDrive, stepWorld, warpBlocked } from '../src/game/systems/step';
 import { CH, OBS, TER } from '../src/shared/map';
 import { wrapAngle } from '../src/shared/types';
-import { game } from './helpers';
+import { game, outside } from './helpers';
 
 const DT = 1 / 30;
 
@@ -22,7 +22,7 @@ const top = (g: ReturnType<typeof game>): number => Math.min(TITAN.cap, g.player
 
 describe('Titan Crawler handling', () => {
   it('is slow off the mark, then very fast once she has way on; she coasts and brakes slowly', () => {
-    const g = game();
+    const g = outside(game());
     const p = g.player;
     expect(top(g) * 3.6).toBeGreaterThan(230);
     expect(top(g) * 3.6).toBeLessThan(330);
@@ -105,9 +105,9 @@ describe('Titan Crawler handling', () => {
   });
 
   it('overdrive: faster, for about triple the fuel, until the engine overheats', { timeout: 30000 }, () => {
-    const g = game();
+    const g = outside(game());
     const p = g.player;
-    // A long straight slab out of the hangar door, so the ground stays the same the whole run.
+    // A long straight slab out from the compound's gate, so the ground stays the same the whole run.
     for (let y = 0; y < 2600; y++) for (let x = -40; x <= 40; x++) g.map.set(Math.floor(p.x) + x, Math.floor(p.y) + y, { ter: TER.CONCRETE, obs: OBS.NONE });
     for (let y = 0; y < 2600; y += CH) for (let x = -40; x <= 40 + CH; x += CH) g.map.chunk(Math.floor((p.x + x) / CH), Math.floor((p.y + y) / CH)).touched = true;
     g.helm.lever = 1;

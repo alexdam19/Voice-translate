@@ -1,0 +1,161 @@
+import { hash2 } from './rng';
+
+/**
+ * The Mega Hangar's compound: a walled town round the Hangar, laid out by hand. Everything here is in metres
+ * relative to the Hangar's centre (x east, y south); the Hangar itself is 700 x 420 with its great door facing south.
+ *
+ *  - A fortified wall 8 m thick (a Titan can neither crush nor climb it) with a guard tower every 160 m and one big
+ *    gate in the south wall, 140 m wide, flanked by two gate towers. Only the gate lets anything in or out.
+ *  - East of the Hangar, the town: fuel tanks, barracks, a workshop and a canteen, streets of container homes, the
+ *    market square with its stalls, a clinic, a water tower, the radio mast, greenhouses, a warehouse, the armory.
+ *  - West, the docks: three pads where other crawler bases park, with their workshops and stores.
+ *  - Down the middle, a wide lane from the Hangar door to the gate for the Titans, gatehouses by the gate.
+ */
+
+export const COMPOUND = {
+  x0: -760,
+  x1: 760,
+  y0: -440,
+  y1: 1000,
+  wall: 8,
+  /** Half the gate's width. */
+  gateHalf: 70,
+  towerHalf: 8,
+  gateTowerHalf: 12,
+  towerEvery: 160,
+} as const;
+
+export type StructKind =
+  | 'tank' | 'barracks' | 'workshop' | 'bar' | 'home' | 'stall' | 'statue' | 'watertower' | 'clinic' | 'mast'
+  | 'warehouse' | 'greenhouse' | 'garage' | 'armory' | 'gatehouse' | 'command' | 'depot' | 'store' | 'mess';
+
+export interface Struct {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** Height in half-metre units (like the map's obstacle heights). */
+  h: number;
+  kind: StructKind;
+}
+
+const S = (x0: number, y0: number, x1: number, y1: number, h: number, kind: StructKind): Struct => ({ x0, y0, x1, y1, h, kind });
+
+function layout(): Struct[] {
+  const L: Struct[] = [
+    // The town (east).
+    S(396, -416, 430, -382, 30, 'tank'), S(440, -416, 474, -382, 30, 'tank'), S(484, -416, 518, -382, 30, 'tank'),
+    S(540, -416, 730, -360, 16, 'barracks'),
+    S(396, -330, 520, -262, 18, 'workshop'),
+    S(560, -330, 680, -272, 12, 'bar'),
+    S(560, 275 - 5, 570, 275 + 5, 12, 'statue'),
+    S(400, 410, 416, 426, 52, 'watertower'),
+    S(440, 404, 560, 480, 14, 'clinic'),
+    S(690, 410, 698, 418, 70, 'mast'),
+    S(590, 440, 736, 560, 20, 'warehouse'),
+    S(396, 520, 560, 548, 8, 'greenhouse'), S(396, 566, 560, 594, 8, 'greenhouse'),
+    S(396, 640, 520, 740, 18, 'garage'),
+    S(560, 620, 736, 700, 16, 'armory'),
+    S(560, 740, 736, 800, 14, 'barracks'),
+    S(396, 790, 520, 850, 12, 'garage'),
+    // The central lane's flanks and the gatehouses.
+    S(190, 900, 320, 970, 14, 'gatehouse'), S(-320, 900, -190, 970, 14, 'gatehouse'),
+    S(190, 330, 330, 430, 22, 'command'), S(-330, 330, -190, 430, 18, 'depot'),
+    S(190, 520, 330, 640, 16, 'depot'), S(-330, 520, -190, 640, 12, 'mess'),
+    S(190, 720, 330, 820, 14, 'store'), S(-330, 720, -190, 820, 14, 'workshop'),
+    // The docks (west): workshops and stores between the pads.
+    S(-744, -80, -650, 0, 14, 'workshop'), S(-470, -80, -384, 0, 12, 'store'),
+    S(-744, 330, -650, 400, 14, 'workshop'), S(-470, 330, -384, 400, 12, 'store'),
+    S(-744, 760, -560, 840, 16, 'garage'), S(-520, 760, -384, 840, 14, 'barracks'),
+  ];
+  // Streets of container homes, a few lots left empty.
+  for (let r = 0; r < 8; r++) {
+    for (let k = 0; k < 7; k++) {
+      if (hash2(k, r, 4401) < 0.16) continue;
+      const x0 = 396 + k * 48, y0 = -230 + r * 48;
+      L.push(S(x0, y0, x0 + 34, y0 + 30, 10 + Math.floor(hash2(k, r, 4402) * 3) * 4, 'home'));
+    }
+  }
+  // Market stalls round the square.
+  for (let k = 0; k < 12; k++) {
+    L.push(S(410 + k * 26, 176, 426 + k * 26, 186, 4, 'stall'));
+    L.push(S(410 + k * 26, 364, 426 + k * 26, 374, 4, 'stall'));
+  }
+  return L;
+}
+
+export const STRUCTS: Struct[] = layout();
+
+/** The docking pads for visiting bases (centre, bow pointing north), 110 x 250. */
+export const PADS: { x: number; y: number }[] = [{ x: -560, y: -250 }, { x: -560, y: 160 }, { x: -560, y: 560 }];
+export const PAD_W = 110, PAD_L = 250;
+
+/** The gate: its centre (in the middle of the south wall), and the stretch of wall its doors close. */
+export const GATE = { x: 0, y: COMPOUND.y1 - COMPOUND.wall / 2 } as const;
+
+export interface Tower {
+  x: number;
+  y: number;
+  half: number;
+  gate: boolean;
+}
+
+function towers(): Tower[] {
+  const C = COMPOUND;
+  const out: Tower[] = [];
+  const inner = C.wall / 2;
+  for (let x = C.x0 + inner; x <= C.x1 - inner + 1; x += C.towerEvery) {
+    out.push({ x, y: C.y0 + inner, half: C.towerHalf, gate: false });
+    if (Math.abs(x) > C.gateHalf + C.gateTowerHalf + C.towerHalf + 10) out.push({ x, y: C.y1 - inner, half: C.towerHalf, gate: false });
+  }
+  for (let y = C.y0 + inner + C.towerEvery; y < C.y1 - inner - 20; y += C.towerEvery) {
+    out.push({ x: C.x0 + inner, y, half: C.towerHalf, gate: false });
+    out.push({ x: C.x1 - inner, y, half: C.towerHalf, gate: false });
+  }
+  out.push({ x: C.x1 - inner, y: C.y1 - inner, half: C.towerHalf, gate: false });
+  out.push({ x: C.x0 + inner, y: C.y1 - inner, half: C.towerHalf, gate: false });
+  for (const s of [-1, 1]) out.push({ x: s * (C.gateHalf + C.gateTowerHalf), y: C.y1 - inner, half: C.gateTowerHalf, gate: true });
+  return out;
+}
+
+export const TOWERS: Tower[] = towers();
+
+/** Is (hx, hy) (relative to the Hangar) one of the gate's door tiles? */
+export function isGateTile(hx: number, hy: number): boolean {
+  return hy >= COMPOUND.y1 - COMPOUND.wall && hy < COMPOUND.y1 && Math.abs(hx + 0.5) < COMPOUND.gateHalf;
+}
+
+/** Inside the compound's outer wall line? */
+export function inCompound(hx: number, hy: number, pad = 0): boolean {
+  const C = COMPOUND;
+  return hx >= C.x0 - pad && hx < C.x1 + pad && hy >= C.y0 - pad && hy < C.y1 + pad;
+}
+
+/**
+ * What the compound puts on a tile (relative to the Hangar), or null outside it: the wall and its towers (the gate's
+ * doors closed), the buildings, and the ground (the lane and the pads in plating, the rest concrete).
+ */
+export function compoundTile(hx: number, hy: number): { t: 'concrete' | 'metal' | 'road'; o: 'bastion' | 'struct' | null; h: number } | null {
+  const C = COMPOUND;
+  if (!inCompound(hx, hy)) return null;
+  for (const tw of TOWERS) if (Math.abs(hx + 0.5 - tw.x) < tw.half && Math.abs(hy + 0.5 - tw.y) < tw.half) return { t: 'concrete', o: 'bastion', h: tw.gate ? 64 : 48 };
+  if (hx < C.x0 + C.wall || hx >= C.x1 - C.wall || hy < C.y0 + C.wall || hy >= C.y1 - C.wall) return { t: 'concrete', o: 'bastion', h: 30 };
+  for (const s of STRUCTS) if (hx >= s.x0 && hx < s.x1 && hy >= s.y0 && hy < s.y1) return { t: 'concrete', o: 'struct', h: s.h };
+  if (Math.abs(hx + 0.5) < 60 && hy > 210) return { t: 'road', o: null, h: 0 };
+  for (const p of PADS) if (Math.abs(hx + 0.5 - p.x) < PAD_W / 2 && Math.abs(hy + 0.5 - p.y) < PAD_L / 2) return { t: 'metal', o: null, h: 0 };
+  return { t: 'concrete', o: null, h: 0 };
+}
+
+/**
+ * Open ground where people go about their day (rectangles relative to the Hangar), weighted by how many live there:
+ * the market square, the lane's edges, the Hangar's apron, the streets between the homes, round the pads.
+ */
+export const AREAS: { x0: number; y0: number; x1: number; y1: number; n: number; kind: 'market' | 'street' | 'apron' | 'dock' | 'lane' }[] = [
+  { x0: 404, y0: 192, x1: 726, y1: 360, n: 22, kind: 'market' },
+  { x0: -150, y0: 240, x1: -112, y1: 980, n: 6, kind: 'lane' },
+  { x0: 112, y0: 240, x1: 150, y1: 980, n: 6, kind: 'lane' },
+  { x0: -320, y0: 214, x1: 320, y1: 300, n: 10, kind: 'apron' },
+  ...Array.from({ length: 8 }, (_, r) => ({ x0: 396, y0: -198 + r * 48, x1: 730, y1: -186 + r * 48, n: 2, kind: 'street' as const })),
+  { x0: 380, y0: 600, x1: 740, y1: 616, n: 3, kind: 'street' },
+  ...PADS.map((p) => ({ x0: p.x - PAD_W / 2 - 14, y0: p.y - PAD_L / 2, x1: p.x + PAD_W / 2 + 14, y1: p.y + PAD_L / 2, n: 4, kind: 'dock' as const })),
+];

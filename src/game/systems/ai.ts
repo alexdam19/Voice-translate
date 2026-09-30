@@ -1,3 +1,4 @@
+import { clawGate, hardAt, siegeGoal } from './compound';
 import { losClear } from '../../shared/motion';
 import { turnToward } from '../../shared/types';
 import { eid, type Enemy, type Projectile } from '../entities';
@@ -505,6 +506,14 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
     }
     return;
   }
+  // A siege makes for the compound's gate while you're behind the wall.
+  if (e.siege) {
+    const goal = siegeGoal(g, e.x, e.y, e.id);
+    if (goal) {
+      siegeMarch(g, e, goal, dt, near);
+      return;
+    }
+  }
   // Squad units in the way get mobbed; otherwise it's the fortress.
   let tgt = nearestFriendly(g, e, 3, friends);
   if (!tgt && !g.player.dead) tgt = { id: g.player.id, x: g.player.x, y: g.player.y, r: g.player.stats.width / 2, flying: false };
@@ -578,8 +587,10 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
     my /= ml;
   }
   const sp = e.speed * slowMul(e);
+  const ox = e.x, oy = e.y;
   e.x += (mx * sp + e.vx) * dt;
   e.y += (my * sp + e.vy) * dt;
+  if (!e.flying) wallSlide(g, e, ox, oy);
   const decay = Math.pow(0.05, dt);
   e.vx *= decay;
   e.vy *= decay;
@@ -595,6 +606,64 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
     e.z += (oh - e.z) * Math.min(1, dt * 8);
   }
   crushAndPush(g, e, dt, latched);
+}
+
+/** The compound's wall can't be climbed: slide along it (or stop against it). */
+function wallSlide(g: Game, e: Enemy, ox: number, oy: number): void {
+  if (!hardAt(g, e.x, e.y)) return;
+  if (!hardAt(g, e.x, oy)) e.y = oy;
+  else if (!hardAt(g, ox, e.y)) e.x = ox;
+  else {
+    e.x = ox;
+    e.y = oy;
+  }
+  e.vx *= 0.3;
+  e.vy *= 0.3;
+}
+
+/** Run for the gate with the crowd; at the doors, claw at them. */
+function siegeMarch(g: Game, e: Enemy, goal: { x: number; y: number }, dt: number, near: Enemy[]): void {
+  let mx = goal.x - e.x, my = goal.y - e.y;
+  const d = Math.hypot(mx, my) || 1;
+  mx /= d;
+  my /= d;
+  e.face = mx >= 0 ? 1 : -1;
+  if (d < 12) {
+    mx *= 0.2;
+    my *= 0.2;
+    e.atkCd -= dt;
+    if (e.atkCd <= 0) {
+      e.atkCd = 1 / e.atkRate;
+      clawGate(g, e.dmg);
+      if (Math.random() < 0.3) g.fx.push({ t: 'spark', x: e.x, y: e.y - 1, color: '#ffab40', n: 2 });
+    }
+  }
+  g.grid.near(e.x, e.y, 1.2, near);
+  for (const o of near) {
+    if (o === e || o.hp <= 0 || o.latch) continue;
+    const ax = e.x - o.x, ay = e.y - o.y;
+    const rr = e.r + o.r;
+    const dd = Math.hypot(ax, ay);
+    if (dd < rr && dd > 1e-4) {
+      mx += (ax / dd) * 0.7;
+      my += (ay / dd) * 0.7;
+    }
+  }
+  const ml = Math.hypot(mx, my);
+  if (ml > 1) {
+    mx /= ml;
+    my /= ml;
+  }
+  // A charge across the open ground, then a crush at the gate.
+  const sp = e.speed * slowMul(e) * (d > 120 ? 2.2 : 1.3);
+  const ox = e.x, oy = e.y;
+  e.x += (mx * sp + e.vx) * dt;
+  e.y += (my * sp + e.vy) * dt;
+  if (!e.flying) wallSlide(g, e, ox, oy);
+  const decay = Math.pow(0.05, dt);
+  e.vx *= decay;
+  e.vy *= decay;
+  e.anim += dt * 4;
 }
 
 export function updateEnemies(g: Game, dt: number): void {

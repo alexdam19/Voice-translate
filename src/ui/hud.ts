@@ -68,6 +68,8 @@ export interface HudActions {
   cabin(): void;
   /** The all-decks interior cutaway. */
   interior(): void;
+  /** Ask the Mega Hangar's Gate Control to open the main gate. */
+  gate(): void;
 }
 
 function setText(el: HTMLElement, s: string): void {
@@ -106,6 +108,8 @@ export class Hud {
   private cmd = h('div', 'cmdr');
   private zone = h('div', 'zone-banner');
   private obj = h('div', 'objective');
+  /** The main gate: shown near it while it's shut, to ask Gate Control for clearance. */
+  private gateBtn = h('button', 'gate-btn');
   private mission = h('div', 'mission');
   private stormBar = h('div', 'storm-bar');
   private track = h('div', 'tracker');
@@ -328,7 +332,11 @@ export class Hud {
       zoomBox.appendChild(b);
     }
     this.mmWrap.appendChild(zoomBox);
-    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost);
+    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost, this.gateBtn);
+    this.gateBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.act.gate();
+    });
     for (const el of [tl, tr, this.bottom, this.doom.root, this.squads, this.perkBox, this.rider, this.mmWrap]) el.addEventListener('mousedown', (e) => e.stopPropagation());
   }
 
@@ -482,6 +490,10 @@ export class Hud {
     this.game = g;
     this.village = village;
     const p = g.player;
+    // The main gate's clearance button.
+    const gp = g.compound.prompt;
+    this.gateBtn.style.display = gp && !village ? 'block' : 'none';
+    if (gp) setHTML(this.gateBtn, `<b>MAIN GATE SEALED</b><span>${gp === 'exit' ? 'REQUEST CLEARANCE TO LEAVE' : 'REQUEST CLEARANCE TO ENTER'}</span>`);
     this.root.classList.toggle('in-village', village);
     // The shop and a building's card sit under the HUD: clear the left column while one is up.
     this.root.classList.toggle('shop-up', village && !!document.querySelector('.v-shop[style*="flex"]'));

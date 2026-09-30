@@ -1,3 +1,4 @@
+import { inCompound } from '../../shared/compound';
 import { MAP_SIZE } from '../../shared/constants';
 import { ZONE } from '../../shared/map';
 import { REGION_INFO, threatAt } from '../../shared/mapgen';
@@ -75,7 +76,10 @@ function spawnPoint(g: Game, dir: number, spread: number): { x: number; y: numbe
   const ext = p.stats.length / 2;
   const a = dir + (Math.random() - 0.5) * spread;
   // Out past the edge of sight, so the wall of them comes over the horizon.
-  const d = ext + (p.fortress ? 330 + Math.random() * 60 : 44 + Math.random() * 16);
+  let d = ext + (p.fortress ? 330 + Math.random() * 60 : 44 + Math.random() * 16);
+  // Never inside the Mega Hangar's wall: they come from outside it.
+  const hg = g.gen.hangar;
+  if (hg) while (d < 3000 && inCompound(p.x + Math.cos(a) * d - hg.x, p.y + Math.sin(a) * d - hg.y, 40)) d += 60;
   return {
     x: Math.max(4, Math.min(MAP_SIZE - 4, p.x + Math.cos(a) * d)),
     y: Math.max(4, Math.min(MAP_SIZE - 4, p.y + Math.sin(a) * d)),

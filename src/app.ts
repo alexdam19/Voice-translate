@@ -1,3 +1,4 @@
+import { requestClearance } from './game/systems/compound';
 import type { CrewMember } from './game/crew';
 import { KIT_KEY } from './shared/constants';
 import { NODE_INFO, RUNE_INFO, SITE_INFO } from './shared/mapgen';
@@ -130,6 +131,7 @@ export class App {
       },
       cabin: () => this.toggleCabin(),
       interior: () => this.toggleInterior(),
+      gate: () => requestClearance(this.game, 'player'),
     });
     this.mapCtx = this.hud.minimap.getContext('2d')!;
     this.villageUI = new VillageUI(uiRoot, this);

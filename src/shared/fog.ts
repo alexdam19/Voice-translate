@@ -13,8 +13,16 @@ export class Fog {
   /** Chunk index -> 1 byte per tile (0/1). */
   readonly seen = new Map<number, Uint8Array>();
   version = 0;
+  /** Rectangles always in sight (the Mega Hangar compound, watched from its towers). */
+  lit: { x0: number; y0: number; x1: number; y1: number }[] = [];
 
   constructor(readonly size: number) {}
+
+  /** In one of the always-lit rectangles? */
+  isLit(x: number, y: number): boolean {
+    for (const r of this.lit) if (x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1) return true;
+    return false;
+  }
 
   private get cps(): number {
     return Math.ceil(this.size / CH);
@@ -22,11 +30,12 @@ export class Fog {
 
   isVisible(x: number, y: number): boolean {
     const tx = Math.floor(x) - this.ox, ty = Math.floor(y) - this.oy;
-    if (tx < 0 || ty < 0 || tx >= Fog.W || ty >= Fog.W) return false;
-    return this.vis[ty * Fog.W + tx] === 1;
+    if (tx < 0 || ty < 0 || tx >= Fog.W || ty >= Fog.W) return this.isLit(x, y);
+    return this.vis[ty * Fog.W + tx] === 1 || (this.lit.length > 0 && this.isLit(x, y));
   }
 
   isExplored(x: number, y: number): boolean {
+    if (this.lit.length && this.isLit(x, y)) return true;
     const tx = Math.floor(x), ty = Math.floor(y);
     if (tx < 0 || ty < 0 || tx >= this.size || ty >= this.size) return false;
     const c = this.seen.get((ty >> 5) * this.cps + (tx >> 5));

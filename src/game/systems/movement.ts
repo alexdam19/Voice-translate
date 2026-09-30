@@ -1,3 +1,4 @@
+import { hardAt, hullBlocked } from './compound';
 import { CHUNK } from '../../shared/constants';
 import { TRACK_MARKS } from '../game';
 import { crushable, navModeFor, OBS_COLOR, TER, TRACTION, ZONE, type NavMode } from '../../shared/map';
@@ -427,6 +428,23 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   t.pushY *= Math.pow(0.02, dt);
   t.x += dx;
   t.y += dy;
+  // The compound's wall and buildings (and the docked bases) stop a hull dead: only the gate lets you through.
+  if (t.fortress && hullBlocked(g, t)) {
+    t.x -= dx;
+    t.y -= dy;
+    t.rot = rot0;
+    if (hullBlocked(g, t)) {
+      // Turned into it: back straight out along the heading.
+      t.x -= Math.cos(t.rot) * Math.sign(t.speed || 1) * 0.6;
+      t.y -= Math.sin(t.rot) * Math.sign(t.speed || 1) * 0.6;
+    }
+    if (Math.abs(t.speed) > 4 && t === g.player) {
+      g.hooks.sound('crunch', t.x, t.y, Math.min(1, Math.abs(t.speed) / 30));
+      g.fx.push({ t: 'shake', amt: 0.12 });
+    }
+    t.speed *= -0.15;
+    t.pushX = t.pushY = 0;
+  }
   if (resolveTank(g, t)) t.speed *= 0.9;
   // Flatten whatever is under the hull: every frame while moving, a few times a second while parked
   // (it may have been towed, blinked or loaded on top of rubble).
@@ -511,6 +529,8 @@ export function moveSmall(g: Game, x: number, y: number, r: number, dx: number, 
   if (flying || r > 2.5) {
     const nx = x + dx, ny = y + dy;
     if (g.map.zoneAt(nx, ny) === ZONE.EDGE) return { x, y, hit: true };
+    // Nothing strides over the compound's wall.
+    if (!flying && hardAt(g, nx, ny)) return { x, y, hit: true };
     return { x: nx, y: ny, hit: false };
   }
   return moveCircle(g.map, x, y, r, dx, dy, 'ground');

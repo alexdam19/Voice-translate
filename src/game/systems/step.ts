@@ -1,3 +1,5 @@
+import { updateCompound } from './compound';
+import { recordTelemetry } from '../telemetry';
 import type { Game } from '../game';
 import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
 import { updateAllies } from './allies';
@@ -220,10 +222,12 @@ export function stepWorld(g: Game, dt: number): void {
       updateStations(g, dt);
       updateTitan(g, dt);
       updateHelm(g, dt);
+      recordTelemetry(g, dt);
       updateTeams(g, dt);
       updateOrders(g, dt);
     }
     updateAirlift(g, dt);
+    updateCompound(g, dt);
     updateCamp(g, dt);
     updateWeather(g, dt);
     updateOutposts(g);

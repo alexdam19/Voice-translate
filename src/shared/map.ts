@@ -58,6 +58,8 @@ export const TRACTION: Record<DriveKey, number[]> = {
 export const OBS = {
   NONE: 0, ROCK: 1, BOULDER: 2, RUIN: 3, SANDSTONE: 4, ICE_SPIRE: 5, BASALT: 6, SHARD: 7, FUNGUS: 8,
   CLIFF: 9, WRECK: 10, WALL: 11, PILLAR: 12, TREE: 13,
+  /** The Mega Hangar compound's fortified wall and towers, and its buildings: nothing crushes or climbs them. */
+  BASTION: 14, STRUCT: 15,
 } as const;
 export type Obs = (typeof OBS)[keyof typeof OBS];
 
@@ -75,6 +77,8 @@ OBS_COLOR[OBS.WRECK] = '#6a5446';
 OBS_COLOR[OBS.WALL] = '#6e6e72';
 OBS_COLOR[OBS.PILLAR] = '#3c3c50';
 OBS_COLOR[OBS.TREE] = '#3e5a2a';
+OBS_COLOR[OBS.BASTION] = '#5c6068';
+OBS_COLOR[OBS.STRUCT] = '#7a7266';
 
 /** The Crater's zones (see shared/crater.ts for where they are). */
 export const ZONE = {
@@ -97,7 +101,9 @@ export function navModeFor(drive: DriveKey, crush = false): NavMode {
 export const isCrushMode = (m: NavMode): boolean => m === 'crush' || m === 'crushMagma' || m === 'crushHover';
 
 /** Obstacles a fortress can roll over and flatten. */
-export const crushable = (o: number): boolean => o !== OBS.NONE && o !== OBS.CLIFF && o !== OBS.PILLAR;
+export const crushable = (o: number): boolean => o !== OBS.NONE && o !== OBS.CLIFF && o !== OBS.PILLAR && o !== OBS.BASTION && o !== OBS.STRUCT;
+/** Walls a Titan can't crush or climb and a horde can't clamber over: only a gate gets you through. */
+export const hardObs = (o: number): boolean => o === OBS.BASTION || o === OBS.STRUCT;
 
 /** Map chunks are CHUNK x CHUNK tiles. */
 export const CH = 32;
@@ -242,9 +248,11 @@ export class GameMap {
   /** True if a mover with this nav mode can't enter the tile. */
   blocked(tx: number, ty: number, mode: NavMode): boolean {
     if (!this.inside(tx, ty)) return true;
-    if (mode === 'air' || isCrushMode(mode)) return false;
+    if (mode === 'air') return false;
     const c = this.chunkAtTile(tx, ty);
     const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
+    // Nothing crushes or climbs the Mega Hangar compound's wall and buildings.
+    if (isCrushMode(mode)) return hardObs(c.obs[i]);
     if (c.obs[i] !== 0) return true;
     const t = c.ter[i];
     if (t === TER.LAVA) return mode === 'ground';
@@ -276,6 +284,11 @@ export class GameMap {
       if (!onlyObstacleModes) c.clear.clear();
       else for (const m of [...c.clear.keys()]) if (!isCrushMode(m)) c.clear.delete(m);
     }
+  }
+
+  /** Drops every mode's cached clearance for the chunks within `r` tiles of a spot (a gate opened or shut). */
+  invalidateNavNear(tx: number, ty: number, r: number): void {
+    for (let cy = (ty - r) >> CH_SHIFT; cy <= (ty + r) >> CH_SHIFT; cy++) for (let cx = (tx - r) >> CH_SHIFT; cx <= (tx + r) >> CH_SHIFT; cx++) this.peek(cx, cy)?.clear.clear();
   }
 
   /** Flattens a crushable obstacle. Returns true if something was there. */
@@ -325,13 +338,13 @@ export class GameMap {
         if (!this.inside(tx, ty)) blocked = true;
         else if (x >= M && x < M + CH && y >= M && y < M + CH) {
           const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
-          blocked = mode === 'air' || isCrushMode(mode) ? false : c.obs[i] !== 0 || (c.ter[i] === TER.LAVA && mode === 'ground') || (c.ter[i] === TER.ACID && mode !== 'hover');
+          blocked = mode === 'air' ? false : isCrushMode(mode) ? hardObs(c.obs[i]) : c.obs[i] !== 0 || (c.ter[i] === TER.LAVA && mode === 'ground') || (c.ter[i] === TER.ACID && mode !== 'hover');
         } else {
           const nc = this.peek(tx >> CH_SHIFT, ty >> CH_SHIFT);
           if (!nc) blocked = false;
           else {
             const i = ((ty & CH_MASK) << CH_SHIFT) | (tx & CH_MASK);
-            blocked = mode === 'air' || isCrushMode(mode) ? false : nc.obs[i] !== 0 || (nc.ter[i] === TER.LAVA && mode === 'ground') || (nc.ter[i] === TER.ACID && mode !== 'hover');
+            blocked = mode === 'air' ? false : isCrushMode(mode) ? hardObs(nc.obs[i]) : nc.obs[i] !== 0 || (nc.ter[i] === TER.LAVA && mode === 'ground') || (nc.ter[i] === TER.ACID && mode !== 'hover');
           }
         }
         d[y * W + x] = blocked ? 0 : 1000;

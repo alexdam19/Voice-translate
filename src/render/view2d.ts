@@ -1,3 +1,4 @@
+import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
 import { MODULES, TITAN_DECK_INFO, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
 import type { Enemy } from '../game/entities';
@@ -109,6 +110,11 @@ class FogLayer {
         const px = Math.floor((fog.ox + vx - this.ox) / S);
         if (px >= 0 && px < N) d[(py * N + px) * 4 + 3] = 0;
       }
+    }
+    for (const r of fog.lit) {
+      const px0 = Math.max(0, Math.floor((r.x0 - this.ox) / S)), px1 = Math.min(N, Math.ceil((r.x1 - this.ox) / S));
+      const py0 = Math.max(0, Math.floor((r.y0 - this.oy) / S)), py1 = Math.min(N, Math.ceil((r.y1 - this.oy) / S));
+      for (let py = py0; py < py1; py++) for (let px = px0; px < px1; px++) d[(py * N + px) * 4 + 3] = 0;
     }
     this.canvas.getContext('2d')!.putImageData(this.img, 0, 0);
   }
@@ -304,8 +310,12 @@ export class View2D {
     this.fx.drawGround(c, this.map);
     this.drawDecals(g);
     this.drawFeatures(g);
+    drawCompoundGround(this.cview(), g);
     this.drawPickups(g);
+    drawCompoundPeople(this.cview(), g);
     this.drawTanks(g);
+    drawCompoundOverhead(this.cview(), g);
+    drawCompoundTags(this.cview(), g);
     this.drawColossi(g);
     if (this.deckView > 0 && g.player.titan) this.drawDeckCutaway(g.player, this.deckView);
     this.drawEnemies(g, false);
@@ -609,8 +619,14 @@ export class View2D {
     }
   }
 
+  /** What the compound's painters need of the view. */
+  private cview(): CompoundView {
+    return { c: this.ctx, ppm: this.ppm, ct: this.ct, st: this.st, th: this.th, time: this.time, bx: (x, y) => this.bx(x, y), by: (x, y) => this.by(x, y), near: (x, y, r) => this.near(x, y, r) };
+  }
+
   private drawTanks(g: Game): void {
-    const list: Tank[] = [...g.tanks];
+    // Visiting bases in the compound first (they sit under everything else).
+    const list: Tank[] = [...g.compound.bases.map((b) => b.tank), ...g.tanks];
     if (g.outrider) list.push(g.outrider);
     list.push(g.player);
     const c = this.ctx;

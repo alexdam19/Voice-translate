@@ -2,12 +2,23 @@ import { finishNow, placeBuilding } from '../src/game/actions';
 import { chassisForCC, MODULES } from '../src/game/defs';
 import { Game } from '../src/game/game';
 import { techsForLevel } from '../src/game/progress';
+import { gateXY } from '../src/game/systems/compound';
 import { installHandlers } from '../src/game/systems/step';
 
 export function game(seed = 91): Game {
   const g = new Game(seed);
   installHandlers(g);
   g.revealAll = true;
+  return g;
+}
+
+/** Puts the Titan out on the open ground south of the compound's main gate, facing away from it. */
+export function outside(g: Game): Game {
+  const gp = gateXY(g)!;
+  const p = g.player;
+  p.x = gp.x;
+  p.y = gp.y + p.stats.length / 2 + 120;
+  p.rot = g.gen.spawnRot ?? p.rot;
   return g;
 }
 

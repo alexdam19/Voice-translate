@@ -3,7 +3,7 @@ import { ENEMIES } from '../game/enemyDefs';
 import { isDocked } from '../game/campaign';
 import { CLASSES } from '../game/classes';
 import { dumpHalon, HALON_CD, HALON_WATER, HORN_CD, soundHorn } from '../game/systems/helm';
-import { COMPARTMENTS, crawlersUp, damageState, FUEL_MAX, TOROIDS, toroidOut, WATER_MAX } from '../game/systems/titan';
+import { COMPARTMENTS, crawlersUp, damageState, FUEL_MAX, outsideTemp, TOROIDS, toroidOut } from '../game/systems/titan';
 import { archFor, creatureSprite, lookFor } from '../render/px/creatures2d';
 import { glowSprite } from '../render/px/fx2d';
 import { hash2, rgb } from '../render/px/pixels';
@@ -14,7 +14,9 @@ import { OBS, OBS_COLOR, TER, TERRAIN } from '../shared/map';
 import type { OpenWorld } from '../shared/mapgen';
 import { ZONES } from '../shared/zones';
 import { h } from './dom';
-import { pxMini, pxText } from './pixfont';
+import { pxMini } from './pixfont';
+import { bevel, bracket, button, crack, dial, disc, makeNoise, plate, ringPx, rivet, shadeHex } from './cabinKit';
+import { dialsModule, drawScreen, PAGES, reactorModule, supplyModule, type Page } from './cabinScreens';
 
 /**
  * The captain's cabin: the forward cab at the Titan's bow, seen first person like the driving cab of a locomotive
@@ -63,13 +65,44 @@ interface Flash {
   max: number;
 }
 
-const DASH_H = 118;
 const LIP = 16;
-const MOD_H = DASH_H - LIP;
-const HEAD = 12;
-/** Module widths, left to right. */
-const MODS: [string, number][] = [['radar', 92], ['gauges', 104], ['panel', 116], ['engines', 52], ['drive', 38], ['throttle', 50]];
-const ROW_W = MODS.reduce((a, [, w]) => a + w, 0) + (MODS.length - 1) * 2;
+const MOD_H = 102;
+/** The overhead panel: the compass and buttons, then status lamps, breakers and small dials. */
+const HEAD = 28;
+/** Console modules and their widths, in the order they're laid out (they wrap onto more rows on narrow screens). */
+const MODS: [string, number][] = [['radar', 88], ['dials', 128], ['panel', 112], ['engines', 50], ['drive', 36], ['throttle', 48], ['supply', 84], ['reactor', 68]];
+
+interface Layout {
+  rows: [string, number][][];
+  rowW: number;
+  screens: number;
+  scrH: number;
+  dashH: number;
+}
+
+/** Lays the console out for a canvas W x H: module rows, then how many screens fit above them. */
+function layoutFor(W: number, H: number): Layout | null {
+  const rows: [string, number][][] = [];
+  let cur: [string, number][] = [];
+  let cw = 0;
+  for (const m of MODS) {
+    const add = (cur.length ? 2 : 0) + m[1];
+    if (cur.length && cw + add > W - 8) {
+      rows.push(cur);
+      cur = [];
+      cw = 0;
+    }
+    cw += (cur.length ? 2 : 0) + m[1];
+    cur.push(m);
+  }
+  rows.push(cur);
+  const widths = rows.map((r) => r.reduce((a, [, w]) => a + w, 0) + (r.length - 1) * 2);
+  const rowW = Math.max(...widths);
+  if (rowW > W - 8) return null;
+  const screens = Math.max(1, Math.min(4, Math.floor((rowW + 2) / 118)));
+  const scrH = H >= 400 ? 78 : 66;
+  return { rows, rowW, screens, scrH, dashH: LIP + scrH + rows.length * MOD_H };
+}
 /** How far the windscreen sees (m). */
 const ZFAR = 1500;
 /** Obstacles stand a little taller than the map says, so the skyline reads from the cab. */
@@ -100,7 +133,11 @@ export class Cabin {
   private depth = new Float32Array(0);
   private W = 0;
   private H = 0;
-  private two = false;
+  private lay: Layout = layoutFor(640, 400)!;
+  /** The page each screen shows (click to turn it). */
+  private pages: Page[] = [...PAGES.slice(0, 4)];
+  /** The lucky charm hanging from the roof: its swing (radians) and swing rate. */
+  private charm = { a: 0, w: 0, lastSpeed: 0, lastYaw: 0 };
   private hits: Hit[] = [];
   private drag: { id: string; pid: number; x0: number; v0: number } | null = null;
   private hoverId = '';
@@ -165,14 +202,19 @@ export class Cabin {
 
   private resize(): void {
     const w = window.innerWidth, hh = window.innerHeight;
-    const coarse = matchMedia('(pointer: coarse)').matches;
-    let s = Math.max(1, Math.min(Math.floor(w / (ROW_W + 4)), Math.floor((hh * (coarse ? 0.62 : 0.5)) / DASH_H)));
-    let two = false;
-    if (Math.floor(w / s) < ROW_W + 4) {
-      two = true;
-      s = Math.max(1, Math.min(Math.floor(w / 240), Math.floor((hh * 0.5) / (LIP + MOD_H * 2))));
+    // The biggest pixels that still fit the whole console with a decent windscreen above it.
+    let s = 1;
+    let lay: Layout | null = null;
+    for (let k = 4; k >= 1; k--) {
+      const L = layoutFor(Math.ceil(w / k), Math.ceil(hh / k));
+      if (L && Math.ceil(hh / k) - HEAD - L.dashH >= Math.max(90, Math.ceil(hh / k) * 0.3)) {
+        s = k;
+        lay = L;
+        break;
+      }
     }
-    this.two = two;
+    if (!lay) lay = layoutFor(Math.ceil(w), Math.ceil(hh)) ?? { rows: [MODS], rowW: 628, screens: 0, scrH: 0, dashH: LIP + MOD_H };
+    this.lay = lay;
     this.W = Math.ceil(w / s);
     this.H = Math.ceil(hh / s);
     this.cv.width = this.W;
@@ -188,7 +230,7 @@ export class Cabin {
   }
 
   private get dashH(): number {
-    return this.two ? LIP + MOD_H * 2 : DASH_H;
+    return this.lay.dashH;
   }
 
   /** Bottom of the windscreen. */
@@ -313,6 +355,21 @@ export class Cabin {
       case 'radar':
         this.radarI = (this.radarI + 1) % RADAR_RANGES.length;
         break;
+      case 'scr0':
+      case 'scr1':
+      case 'scr2':
+      case 'scr3': {
+        // Turn the screen to the next page no other screen is showing.
+        const i = Number(id.slice(3));
+        const shown = new Set(this.pages.slice(0, this.lay.screens));
+        let k = PAGES.indexOf(this.pages[i]);
+        for (let n = 0; n < PAGES.length; n++) {
+          k = (k + 1) % PAGES.length;
+          if (!shown.has(PAGES[k])) break;
+        }
+        this.pages[i] = PAGES[k];
+        break;
+      }
       case 'lights':
         hm.lights = !hm.lights;
         this.act.toast(hm.lights ? 'FLOODLIGHTS ON: +12% sight range, a trickle of fuel.' : 'Floodlights off.', hm.lights ? '#fff59d' : '#b0bec5');
@@ -412,6 +469,7 @@ export class Cabin {
     this.drawFlashes(g);
     this.drawGlassHud(g);
     this.drawFrame(g);
+    this.cabDetails(g, dt);
     this.drawDash(g);
     if (this.hitT > 0) {
       c.fillStyle = `rgba(255,20,0,${(this.hitT / 0.35) * 0.22})`;
@@ -960,15 +1018,24 @@ export class Cabin {
     // A battered hull cracks the glass.
     const hp = g.player.hp / Math.max(1, g.player.stats.maxHp);
     if (hp < 0.35) crack(c, Math.round(W * 0.84), HEAD + 8, hp < 0.15 ? 5 : 3);
-    // Ceiling: riveted plate, the compass tape, and the exit and vitals buttons.
+    // The overhead panel: the compass tape, the clock, the exit and vitals buttons; then lamps, breakers, dials.
     plate(c, 0, 0, W, HEAD, '#2e2c28', this.noise);
     c.fillStyle = '#141311';
     c.fillRect(0, HEAD - 1, W, 1);
+    c.fillStyle = '#1c1b18';
+    c.fillRect(0, 12, W, 1);
+    c.fillStyle = '#46433c';
+    c.fillRect(0, 13, W, 1);
     this.compass(g, Math.round(W / 2 - 70), 2, 140, 8);
     button(c, W - 52, 1, 48, 10, 'EXIT  F', '#7a2a20', this.press.exit > 0, '#ffd0c0');
-    this.hit('exit', W - 52, 0, 52, HEAD);
+    this.hit('exit', W - 52, 0, 52, 12);
     button(c, 4, 1, 48, 10, 'VITALS Y', '#24402a', this.press.vitals > 0, '#b0ffb0');
-    this.hit('vitals', 0, 0, 54, HEAD);
+    this.hit('vitals', 0, 0, 54, 12);
+    if (W > 330) {
+      const t = Math.floor(g.stats.time);
+      pxMini(c, `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`, W - 58, 4, '#ffb030', 'right');
+    }
+    this.overhead(g, 16);
     // Look buttons at the bottom corners of the glass.
     button(c, 8, B - 22, 14, 10, '<', '#2a2a30', this.press.lookL > 0, '#c0c8ff');
     this.hit('lookL', 6, B - 24, 18, 14);
@@ -1014,6 +1081,7 @@ export class Cabin {
     const c = this.x;
     const W = this.W, H = this.H;
     const y0 = this.winB;
+    const L = this.lay;
     // The console: a riveted slab below the glass, a darker top lip with the steering lever.
     plate(c, 0, y0, W, H - y0, '#3a3732', this.noise);
     c.fillStyle = '#1c1b18';
@@ -1022,16 +1090,24 @@ export class Cabin {
     c.fillStyle = '#4a4740';
     c.fillRect(0, y0 + LIP - 1, W, 1);
     this.steerLever(g, y0);
-    // Plaque and the clock on the lip.
-    if (W > 300) {
-      pxMini(c, `TITAN CRAWLER ${CLASSES[g.player.klass]?.name.toUpperCase() ?? ''}`.slice(0, 28), 6, y0 + 6, '#8a8272');
-      const t = Math.floor(g.stats.time);
-      pxMini(c, `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`, W - 6, y0 + 6, '#ffb030', 'right');
-    }
-    // Modules.
-    const rows: [string, number][][] = this.two ? [[MODS[0], MODS[1], MODS[4]], [MODS[2], MODS[3], MODS[5]]] : [MODS];
+    if (W > 300) pxMini(c, `TITAN CRAWLER ${CLASSES[g.player.klass]?.name.toUpperCase() ?? ''}`.slice(0, 28), 6, y0 + 6, '#8a8272');
+    const x0 = Math.round((W - L.rowW) / 2);
     let y = y0 + LIP;
-    for (const row of rows) {
+    // The screen bank on its glare shield: click a screen to turn its page.
+    if (L.screens > 0) {
+      plate(c, x0 - 4, y, L.rowW + 8, L.scrH, '#22211d', this.noise);
+      c.fillStyle = '#12110f';
+      c.fillRect(x0 - 4, y + L.scrH - 1, L.rowW + 8, 1);
+      const sw = Math.floor((L.rowW - (L.screens - 1) * 2) / L.screens);
+      for (let i = 0; i < L.screens; i++) {
+        const sx = x0 + i * (sw + 2);
+        drawScreen(c, g, this.pages[i], sx, y + 1, sw, L.scrH - 3, this.time, i);
+        this.hit(`scr${i}`, sx, y + 1, sw, L.scrH - 3);
+      }
+      y += L.scrH;
+    }
+    // The modules.
+    for (const row of L.rows) {
       const rw = row.reduce((a, [, w]) => a + w, 0) + (row.length - 1) * 2;
       let x = Math.round((W - rw) / 2);
       for (const [id, w] of row) {
@@ -1041,38 +1117,190 @@ export class Cabin {
         rivet(c, x + w - 3, y + 3);
         rivet(c, x + 2, y + MOD_H - 5);
         rivet(c, x + w - 3, y + MOD_H - 5);
-        if (id === 'radar') this.radar(g, x, y + 1, w);
-        else if (id === 'gauges') this.gauges(g, x, y + 1, w);
-        else if (id === 'panel') this.panel(g, x, y + 1, w);
-        else if (id === 'drive') this.driveBox(g, x, y + 1, w);
-        else if (id === 'engines') this.engines(g, x, y + 1, w);
-        else this.throttle(g, x, y + 1, w);
+        switch (id) {
+          case 'radar': this.radar(g, x, y + 1, w); break;
+          case 'dials': dialsModule(c, g, x, y + 1, w, MOD_H - 3, this.time); break;
+          case 'panel': this.panel(g, x, y + 1, w); break;
+          case 'engines': this.engines(g, x, y + 1, w); break;
+          case 'drive': this.driveBox(g, x, y + 1, w); break;
+          case 'throttle': this.throttle(g, x, y + 1, w); break;
+          case 'supply': supplyModule(c, g, x, y + 1, w, MOD_H - 3, this.time); break;
+          case 'reactor': reactorModule(c, g, x, y + 1, w, MOD_H - 3, this.time); break;
+        }
         x += w + 2;
       }
       y += MOD_H;
     }
-    // Beside the console: pipes and a fire extinguisher, where there's room.
-    const side = Math.floor((W - (this.two ? 240 : ROW_W)) / 2);
-    if (side >= 22) {
-      for (const sx of [6, W - 18]) {
-        c.fillStyle = '#5a3a26';
-        c.fillRect(sx, y0 + LIP + 4, 4, H - y0 - LIP - 8);
-        c.fillStyle = '#8a5a3a';
-        c.fillRect(sx, y0 + LIP + 4, 1, H - y0 - LIP - 8);
-        c.fillStyle = '#2a2a2a';
-        for (let yy = y0 + LIP + 12; yy < H - 8; yy += 22) c.fillRect(sx - 1, yy, 6, 2);
+    this.cabWalls(g, y0, x0 - 6, x0 + L.rowW + 6);
+  }
+
+  /** Either side of the console, where there's room: pipes, the radio handset, a clipboard, a mug, the extinguisher. */
+  private cabWalls(g: Game, y0: number, left: number, right: number): void {
+    const c = this.x;
+    const W = this.W, H = this.H;
+    for (const [a, b] of [[0, left], [right, W]] as [number, number][]) {
+      const w = b - a;
+      if (w < 14) continue;
+      // Conduits down the wall.
+      for (let k = 0; k < Math.min(3, Math.floor(w / 10)); k++) {
+        const px = a + 4 + k * 8;
+        c.fillStyle = k === 1 ? '#3a4a5a' : '#5a3a26';
+        c.fillRect(px, y0 + LIP + 2, 4, H - y0 - LIP - 4);
+        c.fillStyle = k === 1 ? '#5a7088' : '#8a5a3a';
+        c.fillRect(px, y0 + LIP + 2, 1, H - y0 - LIP - 4);
+        c.fillStyle = '#1a1a1a';
+        for (let yy = y0 + LIP + 10 + k * 7; yy < H - 6; yy += 24) c.fillRect(px - 1, yy, 6, 2);
       }
-      const ex = side >= 40 ? 14 : 0;
-      if (ex) {
+      if (w < 44) continue;
+      const cx = a + Math.floor(w / 2) + 8;
+      if (a === 0) {
+        // The radio: a handset on its hook, a coiled cord, a frequency window.
+        c.fillStyle = '#1e1e1c';
+        c.fillRect(cx - 10, y0 + LIP + 8, 22, 30);
+        c.fillStyle = '#0a0c0a';
+        c.fillRect(cx - 7, y0 + LIP + 11, 16, 6);
+        pxMini(c, '121.5', cx + 1, y0 + LIP + 12, '#ffb030', 'center', null);
+        c.fillStyle = '#2a2a28';
+        c.fillRect(cx - 8, y0 + LIP + 20, 6, 15);
+        c.fillStyle = '#3a3a36';
+        c.fillRect(cx - 8, y0 + LIP + 20, 6, 2);
+        c.fillStyle = Math.floor(this.time * 2) % 2 && g.wave.phase !== 'calm' ? '#ff3020' : '#301008';
+        c.fillRect(cx + 6, y0 + LIP + 22, 3, 3);
+        c.fillStyle = '#141414';
+        for (let k = 0; k < 7; k++) c.fillRect(cx - 5 + (k % 2), y0 + LIP + 36 + k * 2, 2, 1);
+        // The route clipboard.
+        if (H - y0 > 150) {
+          c.fillStyle = '#6a4a2a';
+          c.fillRect(cx - 10, y0 + LIP + 56, 22, 30);
+          c.fillStyle = '#e8e0c8';
+          c.fillRect(cx - 8, y0 + LIP + 60, 18, 24);
+          c.fillStyle = '#8a8a8a';
+          c.fillRect(cx - 3, y0 + LIP + 54, 8, 4);
+          c.fillStyle = '#6a6a60';
+          for (let k = 0; k < 6; k++) c.fillRect(cx - 6, y0 + LIP + 63 + k * 3, 10 + (k % 3) * 2, 1);
+          c.fillStyle = '#c02010';
+          c.fillRect(cx + 4, y0 + LIP + 70, 2, 2);
+        }
+      } else {
+        // A tin mug that rattles at speed, and the extinguisher.
+        const rattle = Math.abs(g.player.speed) > 20 ? Math.round(Math.sin(this.time * 40) * 0.6) : 0;
+        c.fillStyle = '#5a6a7a';
+        c.fillRect(cx - 5 + rattle, y0 + LIP + 12, 8, 9);
+        c.fillStyle = '#8a9aaa';
+        c.fillRect(cx - 5 + rattle, y0 + LIP + 12, 8, 1);
+        c.fillStyle = '#2a1a10';
+        c.fillRect(cx - 4 + rattle, y0 + LIP + 13, 6, 1);
+        c.fillStyle = '#5a6a7a';
+        c.fillRect(cx + 3 + rattle, y0 + LIP + 14, 2, 4);
         c.fillStyle = '#a01a10';
-        c.fillRect(ex, H - 42, 10, 30);
+        c.fillRect(cx - 5, H - 44, 10, 30);
         c.fillStyle = '#e04030';
-        c.fillRect(ex + 1, H - 41, 2, 28);
+        c.fillRect(cx - 4, H - 43, 2, 28);
         c.fillStyle = '#222';
-        c.fillRect(ex + 2, H - 46, 6, 4);
-        pxMini(c, 'FIRE', ex + 5, H - 30, '#ffe0d0', 'center', null);
+        c.fillRect(cx - 3, H - 48, 6, 4);
+        pxMini(c, 'FIRE', cx, H - 32, '#ffe0d0', 'center', null);
       }
     }
+  }
+
+  /** The overhead panel's lower row: subsystem lamps, circuit breakers, and four small dials. */
+  private overhead(g: Game, y: number): void {
+    const c = this.x;
+    const W = this.W;
+    const s = g.titan;
+    const blink = Math.floor(this.time * 3) % 2 === 0;
+    const lamps: [string, number][] = [['PWR', s.systems.power], ['DRV', s.systems.propulsion], ['STR', s.systems.steering], ['GUN', s.systems.weapons], ['SEN', s.systems.sensors], ['LIF', s.systems.life]];
+    lamps.forEach(([lab, v], i) => {
+      const lx = 4 + i * 15;
+      const st = damageState(v);
+      const lit = v > 0.8 ? true : v <= 0.1 ? blink : true;
+      c.fillStyle = '#0a0a0a';
+      c.fillRect(lx, y, 14, 9);
+      c.fillStyle = lit ? shadeHex(st.color, v > 0.8 ? 0.55 : 1) : '#1a1a1a';
+      c.fillRect(lx + 1, y + 1, 12, 7);
+      pxMini(c, lab, lx + 7, y + 2, '#0a0a00', 'center', null);
+    });
+    // Circuit breakers: tripped (down, red) when their system is disabled; some are the switches you've thrown.
+    const hm = g.helm;
+    const brk: [string, boolean][] = [['N', s.systems.sensors > 0.1], ['C', s.systems.sensors > 0.1], ['R', s.systems.sensors > 0.1], ['H', s.systems.life > 0.1], ['P', hm.pumps], ['L', hm.lights], ['G', !hm.safe], ['A', s.systems.power > 0.1]];
+    const bx0 = Math.round(W / 2 - 44);
+    if (W > 330) brk.forEach(([lab, on], i) => {
+      const x = bx0 + i * 11;
+      c.fillStyle = '#141412';
+      c.fillRect(x, y - 1, 9, 8);
+      c.fillStyle = on ? '#d8d0c0' : '#c03020';
+      c.fillRect(x + 3, on ? y : y + 3, 3, 3);
+      c.fillStyle = '#5a564c';
+      c.fillRect(x + 2, y + 3, 5, 1);
+      pxMini(c, lab, x + 4, y + 8, '#8a8272', 'center', null);
+    });
+    // Four small dials: oxygen, cabin temperature, outside temperature, hull.
+    const p = g.player;
+    const dials: [string, number, string][] = [
+      ['O2', (s.oxygen - 0.15) / 0.07, `${(s.oxygen * 100).toFixed(0)}`],
+      ['CAB', (s.temp + 20) / 70, `${Math.round(s.temp)}`],
+      ['OUT', (outsideTemp(g) + 30) / 90, `${Math.round(outsideTemp(g))}`],
+      ['HUL', p.hp / Math.max(1, p.stats.maxHp), `${Math.round((p.hp / Math.max(1, p.stats.maxHp)) * 100)}`],
+    ];
+    if (W > 250) dials.forEach(([lab, v, val], i) => {
+      const dx = W - 4 - (4 - i) * 30;
+      pxMini(c, lab, dx + 11, y + 1, '#c0b8a8', 'right', null);
+      pxMini(c, val, dx + 11, y + 8, '#ffb030', 'right', null);
+      dial(c, dx + 20, y + 6, 6, v, '', { ticks: 4, red: lab === 'HUL' ? 0 : 0.25 });
+    });
+  }
+
+  /** The cab around the glass: sun visors, the wiper (it runs in a storm), the lucky charm swinging from the roof. */
+  private cabDetails(g: Game, dt: number): void {
+    const c = this.x;
+    const W = this.W, B = this.winB;
+    // Sun visors over the side panes, one flipped down.
+    for (const [x0, x1, down] of [[4, Math.round(W * 0.26) - 3, true], [Math.round(W * 0.74) + 4, W - 4, false]] as [number, number, boolean][]) {
+      const vw = Math.round((x1 - x0) * 0.7), vx = x0 + Math.round((x1 - x0 - vw) / 2);
+      const vh = down ? 9 : 3;
+      c.fillStyle = '#1e1d1a';
+      c.fillRect(vx, HEAD, vw, vh + 1);
+      c.fillStyle = '#3a3630';
+      c.fillRect(vx + 1, HEAD, vw - 2, vh);
+      c.fillStyle = '#4e4a42';
+      c.fillRect(vx + 1, HEAD + vh - 1, vw - 2, 1);
+      rivet(c, vx + 2, HEAD + 1);
+      rivet(c, vx + vw - 3, HEAD + 1);
+    }
+    // The wiper on the middle pane: parked, or sweeping through the storm.
+    const px = Math.round(W * 0.5), py = B - 2;
+    const storm = g.weather.phase === 'active';
+    const a = storm ? -Math.PI / 2 + Math.sin(this.time * 3.2) * 1.1 : -0.12;
+    const len = Math.round(Math.min(W * 0.2, (B - HEAD) * 0.6));
+    c.fillStyle = '#141414';
+    for (let d = 0; d < len; d++) c.fillRect(Math.round(px + Math.cos(a) * d), Math.round(py + Math.sin(a) * d), d > len * 0.25 ? 2 : 1, 1);
+    c.fillStyle = '#2a2a2a';
+    c.fillRect(px - 2, py - 1, 4, 3);
+    // The charm: it swings when she turns, brakes and accelerates.
+    const p = g.player;
+    const ch = this.charm;
+    const acc = dt > 0 ? (p.speed - ch.lastSpeed) / dt : 0;
+    ch.lastSpeed = p.speed;
+    const lat = p.yawRate * p.speed;
+    ch.w += (-9 * Math.sin(ch.a) - 1.1 * ch.w - lat * 0.6 - acc * 0.04) * Math.min(0.05, dt);
+    ch.a = Math.max(-1.2, Math.min(1.2, ch.a + ch.w * Math.min(0.05, dt)));
+    const hx = Math.round(W * 0.42), L = 14;
+    for (let d = 0; d < L; d++) {
+      c.fillStyle = '#6a6458';
+      c.fillRect(Math.round(hx + Math.sin(ch.a) * d), HEAD + Math.round(Math.cos(ch.a) * d), 1, 1);
+    }
+    const bxp = Math.round(hx + Math.sin(ch.a) * L), byp = HEAD + Math.round(Math.cos(ch.a) * L);
+    // A little brass skull.
+    c.fillStyle = '#5a3a10';
+    c.fillRect(bxp - 2, byp, 5, 5);
+    c.fillStyle = '#d8a040';
+    c.fillRect(bxp - 2, byp, 5, 4);
+    c.fillStyle = '#ffe080';
+    c.fillRect(bxp - 1, byp, 2, 1);
+    c.fillStyle = '#2a1a08';
+    c.fillRect(bxp - 1, byp + 2, 1, 1);
+    c.fillRect(bxp + 1, byp + 2, 1, 1);
+    void ringPx;
   }
 
   private steerLever(g: Game, y0: number): void {
@@ -1179,78 +1407,6 @@ export class Cabin {
     pxMini(c, 'RADAR', x0 + 4, y0 + 3, '#c0b8a8');
     pxMini(c, `${range >= 1000 ? `${range / 1000}K` : range}M`, x0 + w - 4, y0 + MOD_H - 11, '#6aff7a', 'right');
     this.hit('radar', x0, y0, w, MOD_H - 3);
-  }
-
-  private gauges(g: Game, x0: number, y0: number, w: number): void {
-    const c = this.x;
-    const p = g.player;
-    const s = g.titan;
-    // The speed dial.
-    const kmh = Math.abs(p.speed) * 3.6;
-    const max = Math.max(40, Math.ceil((p.stats.topSpeed * 3.6 * 1.6) / 20) * 20);
-    const cx = x0 + 26, cy = y0 + 28, r = 21;
-    disc(c, cx, cy, r + 2, '#1a1a18');
-    disc(c, cx, cy, r + 1, '#8a8678');
-    disc(c, cx, cy, r, '#e8e0c8');
-    const a0 = Math.PI * 0.75, span = Math.PI * 1.5;
-    for (let i = 0; i <= 8; i++) {
-      const a = a0 + (span * i) / 8;
-      c.fillStyle = i >= 7 ? '#c02010' : '#202020';
-      for (let d = r - 4; d < r - 1; d++) c.fillRect(Math.round(cx + Math.cos(a) * d), Math.round(cy + Math.sin(a) * d), 1, 1);
-    }
-    // The tachometer ring inside it: the engine's revs (she barely pulls until it has spooled up).
-    for (let i = 0; i < 24; i++) {
-      const a = a0 + (span * (i + 0.5)) / 24;
-      const on = (i + 0.5) / 24 <= p.spool;
-      c.fillStyle = on ? (p.spool > 0.92 ? '#20a030' : '#2080d0') : '#c8c0a8';
-      c.fillRect(Math.round(cx + Math.cos(a) * (r - 7)), Math.round(cy + Math.sin(a) * (r - 7)), 1, 1);
-    }
-    pxMini(c, 'KMH', cx, cy + 7, '#505050', 'center', null);
-    const na = a0 + span * Math.min(1.02, kmh / max);
-    c.fillStyle = '#d01808';
-    for (let d = 0; d < r - 3; d += 0.7) c.fillRect(Math.round(cx + Math.cos(na) * d), Math.round(cy + Math.sin(na) * d), 1, 1);
-    disc(c, cx, cy, 2, '#202020');
-    pxText(c, String(Math.round(kmh)).padStart(3, ' '), cx, y0 + 52, 1, 'amber', 'center');
-    // Readouts.
-    const hg = g.gen.hangar ?? g.gen.spawn;
-    const dist = Math.hypot(hg.x - p.x, hg.y - p.y);
-    const brg = ((((p.rot + Math.PI / 2) * 180) / Math.PI) % 360 + 360) % 360;
-    const lines: [string, string, string][] = [
-      ['HDG', String(Math.round(brg) % 360).padStart(3, '0'), '#ffb030'],
-      ['THR', `${g.helm.lever >= 0 ? '+' : ''}${Math.round(g.helm.lever * 100)}%`, g.helm.lever < 0 ? '#ff6040' : '#ffb030'],
-      ['RPM', `${Math.round(p.spool * 100)}%`, p.spool > 0.92 ? '#6aff7a' : '#40a8ff'],
-      ['HOT', g.helm.overheat ? 'TRIP' : `${Math.round(g.helm.heat * 100)}%`, g.helm.overheat || g.helm.heat > 0.8 ? '#ff6040' : g.helm.heat > 0.5 ? '#ffb030' : '#6aff7a'],
-      ['HNG', dist >= 1000 ? `${(dist / 1000).toFixed(1)}K` : `${Math.round(dist)}M`, '#40c4ff'],
-    ];
-    c.fillStyle = '#0a0c0a';
-    c.fillRect(x0 + 52, y0 + 5, w - 57, 50);
-    lines.forEach(([k, v, col], i) => {
-      pxMini(c, k, x0 + 55, y0 + 8 + i * 9, '#6a8a70', 'left', null);
-      pxMini(c, v, x0 + w - 8, y0 + 8 + i * 9, col, 'right', null);
-    });
-    // Six supply gauges.
-    const bars: [string, number, string][] = [
-      ['FUL', s.fuel / FUEL_MAX, '#ffb030'],
-      ['H2O', s.water / WATER_MAX, '#40c4ff'],
-      ['O2', Math.max(0, (s.oxygen - 0.15) / 0.06), '#b0f0ff'],
-      ['TMP', Math.max(0, Math.min(1, (s.temp + 20) / 70)), s.temp > 32 || s.temp < 8 ? '#ff6040' : '#ffd740'],
-      ['HUL', p.hp / Math.max(1, p.stats.maxHp), '#76ff03'],
-      ['SHD', p.stats.shield > 0 ? p.shield / p.stats.shield : 0, '#18ffff'],
-    ];
-    const bw = Math.floor((w - 8) / 6);
-    bars.forEach(([lab, v, col], i) => {
-      const bx = x0 + 5 + i * bw, by = y0 + 60;
-      const bh = 26;
-      c.fillStyle = '#0a0a0a';
-      c.fillRect(bx, by, bw - 4, bh);
-      const low = lab !== 'TMP' && lab !== 'SHD' && v < 0.15;
-      const fh = Math.round(Math.max(0, Math.min(1, v)) * (bh - 2));
-      c.fillStyle = low && Math.floor(this.time * 3) % 2 ? '#ff2010' : col;
-      c.fillRect(bx + 1, by + bh - 1 - fh, bw - 6, fh);
-      c.fillStyle = 'rgba(0,0,0,0.35)';
-      for (let t = by + 5; t < by + bh; t += 5) c.fillRect(bx + 1, t, bw - 6, 1);
-      pxMini(c, lab, bx + (bw - 4) / 2, by + bh + 3, '#c0b8a8', 'center');
-    });
   }
 
   private panel(g: Game, x0: number, y0: number, w: number): void {
@@ -1479,120 +1635,6 @@ export class Cabin {
 function lighten(c: number): number {
   const r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
   return pack(r * 1.3 + 12, g * 1.3 + 12, b * 1.3 + 12);
-}
-
-function shadeHex(hex: string, k: number): string {
-  const [r, g, b] = rgb(hex);
-  return `rgb(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)})`;
-}
-
-function makeNoise(): HTMLCanvasElement {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 64;
-  const x = c.getContext('2d')!;
-  const img = x.createImageData(64, 64);
-  for (let i = 0; i < 64 * 64; i++) {
-    const n = hash2(i % 64, Math.floor(i / 64), 17);
-    const v = n < 0.08 ? 0 : n > 0.95 ? 255 : 128;
-    img.data[i * 4] = v;
-    img.data[i * 4 + 1] = v;
-    img.data[i * 4 + 2] = v;
-    img.data[i * 4 + 3] = v === 128 ? 0 : 40;
-  }
-  x.putImageData(img, 0, 0);
-  return c;
-}
-
-/** A metal plate: a flat colour with grain. */
-function plate(c: CanvasRenderingContext2D, x: number, y: number, w: number, hh: number, col: string, noise: HTMLCanvasElement): void {
-  c.fillStyle = col;
-  c.fillRect(x, y, w, hh);
-  const pat = c.createPattern(noise, 'repeat');
-  if (pat) {
-    c.fillStyle = pat;
-    c.fillRect(x, y, w, hh);
-  }
-}
-
-function bevel(c: CanvasRenderingContext2D, x: number, y: number, w: number, hh: number): void {
-  c.fillStyle = '#6a675f';
-  c.fillRect(x, y, w, 1);
-  c.fillRect(x, y, 1, hh);
-  c.fillStyle = '#1e1d1a';
-  c.fillRect(x, y + hh - 1, w, 1);
-  c.fillRect(x + w - 1, y, 1, hh);
-}
-
-function rivet(c: CanvasRenderingContext2D, x: number, y: number): void {
-  c.fillStyle = '#1a1916';
-  c.fillRect(x, y + 1, 2, 1);
-  c.fillStyle = '#9a968a';
-  c.fillRect(x, y, 1, 1);
-  c.fillStyle = '#6a675f';
-  c.fillRect(x + 1, y, 1, 1);
-}
-
-function disc(c: CanvasRenderingContext2D, cx: number, cy: number, r: number, col: string): void {
-  c.fillStyle = col;
-  for (let yy = Math.floor(cy - r); yy <= Math.ceil(cy + r); yy++) {
-    const t = (yy + 0.5 - cy) / r;
-    if (Math.abs(t) > 1) continue;
-    const hw = r * Math.sqrt(1 - t * t);
-    const a = Math.round(cx - hw), b = Math.round(cx + hw);
-    if (b > a) c.fillRect(a, yy, b - a, 1);
-  }
-}
-
-function ringPx(c: CanvasRenderingContext2D, cx: number, cy: number, r: number, col: string): void {
-  c.fillStyle = col;
-  const n = Math.max(12, Math.round(r * 6));
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    c.fillRect(Math.round(cx + Math.cos(a) * r), Math.round(cy + Math.sin(a) * r), 1, 1);
-  }
-}
-
-function button(c: CanvasRenderingContext2D, x: number, y: number, w: number, hh: number, label: string, col: string, pressed: boolean, ink: string): void {
-  x = Math.round(x);
-  y = Math.round(y);
-  c.fillStyle = '#0a0a0a';
-  c.fillRect(x, y, w, hh);
-  c.fillStyle = pressed ? shadeHex(col, 0.7) : col;
-  c.fillRect(x + 1, y + 1, w - 2, hh - 2);
-  if (!pressed) {
-    c.fillStyle = 'rgba(255,255,255,0.28)';
-    c.fillRect(x + 1, y + 1, w - 2, 1);
-    c.fillStyle = 'rgba(0,0,0,0.35)';
-    c.fillRect(x + 1, y + hh - 2, w - 2, 1);
-  }
-  pxMini(c, label, x + w / 2, y + Math.floor((hh - 5) / 2) + (pressed ? 1 : 0), ink, 'center');
-}
-
-function bracket(c: CanvasRenderingContext2D, x: number, y: number, s: number, col: string): void {
-  c.fillStyle = col;
-  const a = Math.round(x - s / 2), b = Math.round(y - s / 2), e = Math.round(s), k = Math.max(2, Math.round(s / 4));
-  c.fillRect(a, b, k, 1);
-  c.fillRect(a, b, 1, k);
-  c.fillRect(a + e - k, b, k, 1);
-  c.fillRect(a + e - 1, b, 1, k);
-  c.fillRect(a, b + e - 1, k, 1);
-  c.fillRect(a, b + e - k, 1, k);
-  c.fillRect(a + e - k, b + e - 1, k, 1);
-  c.fillRect(a + e - 1, b + e - k, 1, k);
-}
-
-function crack(c: CanvasRenderingContext2D, x: number, y: number, n: number): void {
-  c.fillStyle = 'rgba(230,240,255,0.55)';
-  for (let k = 0; k < n; k++) {
-    let px = x, py = y;
-    const a = 1.2 + k * 0.7;
-    for (let i = 0; i < 26; i++) {
-      px += Math.cos(a + (hash2(k, i, 2) - 0.5) * 1.4) * 2;
-      py += Math.sin(a + (hash2(k, i, 3) - 0.5) * 1.4) * 2;
-      c.fillRect(Math.round(px), Math.round(py), 1, 1);
-    }
-  }
 }
 
 const CLASS_COL: Record<string, string> = { juggernaut: '#38c8ff', bastion: '#ffd740', ark: '#76ff03', nightrunner: '#b388ff', dredge: '#ffab40' };

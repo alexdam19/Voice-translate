@@ -1,6 +1,7 @@
 import { MAP_SIZE } from './constants';
 import { craterNoise, craterThreat, craterZone, DIVOT, inLake, LOCATIONS, locationById, RIVERS, ROAD_LINKS, ZONE_INFO } from './crater';
 import { CH, GameMap, OBS, TER, ZONE, type MapChunk } from './map';
+import { COMPOUND, compoundTile, inCompound } from './compound';
 import { Perlin } from './noise';
 import { RNG, hash2 } from './rng';
 
@@ -397,8 +398,9 @@ export class OpenWorld implements WorldGen {
     }
     // The Mega Hangar's apron road and the Dead Zone gate.
     const h = this.hangar;
-    line([{ x: h.x, y: h.y + HANGAR.d / 2 }, { x: h.x, y: h.y + HANGAR.d / 2 + 600 }]);
-    line(this.meander(h.x, h.y + HANGAR.d / 2 + 600, this.gate.x, this.gate.y, 200, 99));
+    // Out through the compound's gate first.
+    line([{ x: h.x, y: h.y + HANGAR.d / 2 }, { x: h.x, y: h.y + COMPOUND.y1 + 160 }]);
+    line(this.meander(h.x, h.y + COMPOUND.y1 + 160, this.gate.x, this.gate.y, 200, 99));
   }
 
   private buildRivers(): void {
@@ -427,7 +429,10 @@ export class OpenWorld implements WorldGen {
 
   /** Is a spot inside a named place that shouldn't have random features (the hangar, settlements, strongholds)? */
   private inNamed(x: number, y: number, pad: number): boolean {
-    for (const m of this.regions) if (m.kind !== 'divot' && m.kind !== 'lake' && m.kind !== 'spires' && Math.hypot(m.x - x, m.y - y) < (m.kind === 'hangar' ? 560 : m.r) + pad) return true;
+    for (const m of this.regions) {
+      if (m.kind === 'divot' || m.kind === 'lake' || m.kind === 'spires') continue;
+      if (m.kind === 'hangar' ? inCompound(x - m.x, y - m.y, pad + 60) : Math.hypot(m.x - x, m.y - y) < m.r + pad) return true;
+    }
     return false;
   }
 
@@ -622,7 +627,7 @@ export class OpenWorld implements WorldGen {
     const zs = new Uint8Array(81);
     for (let j = 0; j <= 8; j++) for (let i = 0; i <= 8; i++) zs[j * 9 + i] = this.zoneOf(x0 + i * 4, y0 + j * 4);
     const h = this.hangar;
-    const nearHangar = Math.abs(mx - h.x) < HANGAR.w / 2 + 400 && Math.abs(my - h.y) < HANGAR.d / 2 + 700;
+    const nearHangar = Math.abs(mx - h.x) < COMPOUND.x1 + 60 && my - h.y > COMPOUND.y0 - 60 && my - h.y < COMPOUND.y1 + 60;
     const divD = Math.hypot(mx - DIVOT.x, my - DIVOT.y);
     for (let ly = 0; ly < CH; ly++) {
       for (let lx = 0; lx < CH; lx++) {
@@ -832,11 +837,18 @@ export class OpenWorld implements WorldGen {
             else if (t === TER.LAVA || t === TER.ACID || t === TER.WATER) t = TER.BASALT;
           }
         }
-        // The Mega Hangar and its apron.
+        // The Mega Hangar's compound: its wall, towers and gate, the town, the docks, the lane.
         if (nearHangar) {
           const hx = x + 0.5 - h.x, hy = y + 0.5 - h.y;
           const W = HANGAR.w / 2, D = HANGAR.d / 2;
-          if (Math.abs(hx) < W + 300 && hy > -D - 120 && hy < D + 650) {
+          const ct = compoundTile(x - h.x, y - h.y);
+          if (ct) {
+            t = ct.t === 'metal' ? TER.METAL : ct.t === 'road' ? TER.ROAD : TER.CONCRETE;
+            o = ct.o === 'bastion' ? OBS.BASTION : ct.o === 'struct' ? OBS.STRUCT : 0;
+            oh = ct.o ? ct.h : 0;
+          }
+          // The Hangar itself.
+          if (Math.abs(hx) < W + 4 && Math.abs(hy) < D + 4) {
             o = 0;
             oh = 0;
             t = Math.abs(hx) < W && Math.abs(hy) < D ? TER.METAL : TER.CONCRETE;
