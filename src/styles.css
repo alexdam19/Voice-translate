@@ -1695,3 +1695,8 @@ html.touch .joy { display: block; }
 .comm-box p { margin: 4px 0 0; font-size: 12px; line-height: 1.35; color: #d8e8f0; }
 @keyframes comm-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @media (max-width: 700px) { .comm-box { bottom: 150px; } .comm-box img { width: 44px; height: 44px; } .comm-box p { font-size: 11px; } }
+/* The 3D view out of the cab and its glass sit under the cab's picture, in the hole left for the windscreen. */
+.cabin canvas.cab3d, .cabin canvas.cabglass { position: absolute; image-rendering: auto; pointer-events: none; }
+.cabin canvas.cab3d { z-index: 0; }
+.cabin canvas.cabglass { z-index: 1; }
+.cabin > canvas:last-child { position: relative; z-index: 2; }

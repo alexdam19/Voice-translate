@@ -294,6 +294,9 @@ export class Game {
   tracked: Track | null = null;
   /** Terrain chunks the fortress flattened something in (renderer rebuilds them). */
   dirtyChunks = new Set<number>();
+  /** Chunks changed by crushing, newest last (a rolling log), and how many there have been in all. */
+  edits: number[] = [];
+  editCount = 0;
   navDirty = false;
   /** Building sections coming down after the fortress broke through them (tile, when, height). */
   collapses: { tx: number; ty: number; t: number; fx: number; fy: number }[] = [];
@@ -605,6 +608,10 @@ export class Game {
   markDirty(tx: number, ty: number): void {
     const cx = Math.floor(tx / CHUNK), cy = Math.floor(ty / CHUNK);
     this.dirtyChunks.add(cy * 8192 + cx);
+    // The cab's 3D view keeps its own copy of the ground: it reads this log of what changed.
+    this.edits.push(cy * 8192 + cx);
+    if (this.edits.length > 4096) this.edits.splice(0, 2048);
+    this.editCount++;
     // Obstacles on a chunk border also change the neighbour's side faces.
     if (tx % CHUNK === 0 && cx > 0) this.dirtyChunks.add(cy * 8192 + cx - 1);
     if (tx % CHUNK === CHUNK - 1) this.dirtyChunks.add(cy * 8192 + cx + 1);

@@ -23,6 +23,7 @@ import { OBS, OBS_COLOR, TER, TERRAIN } from '../shared/map';
 import type { OpenWorld } from '../shared/mapgen';
 import { oilWord } from '../shared/oil';
 import { ZONES } from '../shared/zones';
+import { groundLevel } from '../render/px/terrain2d';
 import { h } from './dom';
 import { pxMini } from './pixfont';
 import { bevel, bracket, button, crack, dial, disc, makeNoise, plate, ringPx, rivet, shadeHex } from './cabinKit';
@@ -30,15 +31,21 @@ import { dialsModule, drawScreen, PAGES, reactorModule, supplyModule, type Page 
 import { buildHullShape, type HullShape } from './cabinHull';
 import { tipFor } from './cabinTips';
 import { agentImage } from './agents';
+import { Cabin3D } from '../render/cabin3d';
+import { Glass } from './cabinGlass';
+import type { FxEvent } from '../game/game';
 
 /**
  * The captain's cabin: the forward cab high on the Titan's bow, seen first person like the driving cab of a
  * locomotive or the bridge of a ship. In the middle is the windscreen, and the glass can show four things:
  *
- *  - VIEW   the wasteland out of the window (a voxel-space render of the real map: ground, rocks, cliffs,
- *           buildings, creatures, shell bursts, and your own ship round and below you: the deck, the turrets turning
- *           to their targets, the soldiers in their nests, the stacks with their flames, the toroids on their
- *           pylons). Drag to look round and to look down; with the GUNSIGHT armed a click marks a target.
+ *  - VIEW   the wasteland out of the window, in 3D (see render/cabin3d): the real map's ground, rocks, cliffs,
+ *           buildings and woods under the zone's sky, every creature a solid animated model, the battle's tracers,
+ *           bursts and smoke, and your own ship below you (the deck, the turrets turning to their targets, the
+ *           stacks smoking). The glass is real glass: tinted, reflecting, grimy at the edges, beaded with rain the
+ *           wiper clears, cracking when the hull's battered. Drag to look anywhere; wheel out to leave the cab for a
+ *           chase camera round the ship. With the GUNSIGHT armed a click marks a target. (Where WebGL isn't there,
+ *           a voxel-space render stands in.)
  *  - DRONE  the spotter drone's live feed from overhead.
  *  - MAP    the whole Crater: zones, places, roads, the mission; click to plot a course.
  *  - DAMAGE CONTROL  the Titan's schematic, every part green to red; click one to send a repair team.
@@ -186,7 +193,7 @@ export class Cabin {
   /** The lucky charm hanging from the roof: its swing (radians) and swing rate. */
   private charm = { a: 0, w: 0, lastSpeed: 0, lastYaw: 0 };
   private hits: Hit[] = [];
-  private drag: { id: string; pid: number; x0: number; y0: number; v0: number; p0: number; moved: boolean } | null = null;
+  private drag: { id: string; pid: number; x0: number; y0: number; v0: number; p0: number; p3: number; moved: boolean } | null = null;
   private hoverId = '';
   /** Looking around from the cab (radians off the bow). */
   private look = 0;
@@ -228,6 +235,14 @@ export class Cabin {
   private scaleK = 1;
   private mapCanvas: HTMLCanvasElement | null = null;
   private mapT = -1;
+  /** The 3D view out (null where WebGL fails: the voxel render stands in) and the glass over it. */
+  private v3: Cabin3D | null = null;
+  private v3Failed = false;
+  private glassFx = new Glass();
+  /** Look pitch for the 3D view (radians down) and how far out the camera is (0 = in the cab). */
+  private pitchR = 0.1;
+  camDist = 0;
+  private fxList: FxEvent[] = [];
 
   constructor(parent: HTMLElement, private act: CabinActions) {
     this.root = h('div', 'cabin');
@@ -243,6 +258,13 @@ export class Cabin {
     this.cv.addEventListener('wheel', (e) => {
       e.preventDefault();
       if (this.glass === 'cam') this.camZoom = Math.max(0.6, Math.min(4, this.camZoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12)));
+      else if (this.glass === 'view' && this.v3) {
+        // Wheel out of the cab to a chase camera round the ship, and on out to high above.
+        const steps = [0, 150, 260, 420, 700, 1100];
+        let i = steps.findIndex((d) => d >= this.camDist - 1);
+        i = Math.max(0, Math.min(steps.length - 1, i + (e.deltaY > 0 ? 1 : -1)));
+        this.camDist = steps[i];
+      }
     }, { passive: false });
     window.addEventListener('resize', () => this.isOpen && this.resize());
   }
@@ -252,6 +274,17 @@ export class Cabin {
     this.isOpen = true;
     this.root.style.display = 'block';
     this.look = 0;
+    this.pitchR = 0.1;
+    if (!this.v3 && !this.v3Failed) {
+      try {
+        this.v3 = new Cabin3D();
+        this.root.insertBefore(this.v3.canvas, this.cv);
+        this.root.insertBefore(this.glassFx.canvas, this.cv);
+      } catch {
+        this.v3Failed = true;
+        this.v3 = null;
+      }
+    }
     this.resize();
   }
 
@@ -353,7 +386,7 @@ export class Cabin {
     }
     if (k.id === 'throttle' || k.id === 'steer' || k.id === 'brake' || k.id === 'glass') {
       this.cv.setPointerCapture(e.pointerId);
-      this.drag = { id: k.id, pid: e.pointerId, x0: px, y0: py, v0: this.look, p0: this.pitch, moved: false };
+      this.drag = { id: k.id, pid: e.pointerId, x0: px, y0: py, v0: this.look, p0: this.pitch, p3: this.pitchR, moved: false };
       if (k.id !== 'glass') this.dragTo(px, py);
       if (k.id === 'throttle') this.act.sound('ui');
       return;
@@ -424,7 +457,8 @@ export class Cabin {
       this.look = d.v0 - ((px - d.x0) / this.VW) * 2.2;
       this.look = Math.atan2(Math.sin(this.look), Math.cos(this.look));
       const wh = this.winB - HEAD;
-      this.pitch = Math.max(-wh * 0.12, Math.min(wh * 0.6, d.p0 - (py - d.y0)));
+      if (this.v3) this.pitchR = Math.max(-0.45, Math.min(1.35, d.p3 + ((py - d.y0) / wh) * 1.3));
+      else this.pitch = Math.max(-wh * 0.12, Math.min(wh * 0.6, d.p0 - (py - d.y0)));
     }
   }
 
@@ -446,7 +480,15 @@ export class Cabin {
         break;
       case 'lookF':
         this.look = 0;
+        this.pitch = 0;
+        this.pitchR = 0.1;
+        this.camDist = 0;
         break;
+      case 'camOut': {
+        const steps = [0, 260, 700];
+        this.camDist = steps[(steps.indexOf(this.camDist) + 1) % steps.length] ?? 0;
+        break;
+      }
       case 'radar':
         this.radarI = (this.radarI + 1) % RADAR_RANGES.length;
         break;
@@ -654,6 +696,11 @@ export class Cabin {
 
   /** The world point behind a pixel of the glass (from the depth buffer), or null for sky and your own deck. */
   private pickGround(g: Game, px: number, py: number): { x: number; y: number } | null {
+    if (this.v3) {
+      if (px < this.VX || px >= this.VX + this.VW || py < HEAD || py >= this.winB) return null;
+      const pt = this.v3.pick((px - this.VX) * this.scaleK, (py - HEAD) * this.scaleK);
+      return pt && !g.player.hits(pt.x, pt.y, 2) ? pt : null;
+    }
     const lx = Math.floor(px - this.VX), ly = Math.floor(py - HEAD);
     const WH = this.win.height;
     if (lx < 0 || ly < 0 || lx >= this.VW || ly >= WH) return null;
@@ -705,7 +752,42 @@ export class Cabin {
     c.beginPath();
     c.rect(VX, HEAD, VW, B - HEAD);
     c.clip();
-    if (this.glass === 'view') {
+    const three = this.glass === 'view' && !!this.v3;
+    if (this.v3) {
+      this.v3.canvas.style.display = three ? 'block' : 'none';
+      this.glassFx.canvas.style.display = three ? 'block' : 'none';
+    }
+    if (three && this.v3) {
+      // The 3D view under a hole in the cab's picture, the glass over it.
+      c.clearRect(VX, HEAD, VW, B - HEAD);
+      const k = this.scaleK;
+      const css = { left: `${VX * k}px`, top: `${HEAD * k}px`, width: `${VW * k}px`, height: `${(B - HEAD) * k}px` };
+      Object.assign(this.v3.canvas.style, css);
+      Object.assign(this.glassFx.canvas.style, { left: css.left, top: css.top });
+      const dpr = Math.min(1.5, window.devicePixelRatio || 1) * (this.v3.struggling ? 0.7 : 1);
+      this.v3.resize(VW * k, (B - HEAD) * k, dpr);
+      this.glassFx.resize(VW * k, (B - HEAD) * k, Math.min(1.5, window.devicePixelRatio || 1));
+      this.v3.setPlayer(p, p.klass);
+      // At speed the cab rattles (more over rough ground).
+      const v = Math.abs(p.speed);
+      const rough = v > 3 && this.camDist === 0 ? Math.min(0.004, (v / 40) * (1.4 - Math.min(1, p.trac)) * 0.0025) : 0;
+      this.v3.render(g, { yaw: this.look, pitch: this.pitchR + Math.sin(this.time * 31) * rough, dist: this.camDist, time: this.time, dt }, this.fxList);
+      this.fxList.length = 0;
+      const sunP = this.v3.project(this.v3.eye.x - 0.55 * 5000, this.v3.eye.y - 0.66 * 5000, this.v3.eye.h + 0.5 * 5000);
+      const storm = g.weather.phase === 'active' ? 1 : 0;
+      const zk = ZONES[g.map.zoneAt(p.x, p.y)]?.key ?? 'verdant';
+      const wiping = storm > 0;
+      this.glassFx.draw({
+        time: this.time, zone: zk, storm, weather: zk === 'frost' ? 'snow' : zk === 'dunes' || zk === 'pass' ? 'sand' : zk === 'ash' || zk === 'scorched' ? 'ash' : 'rain',
+        sun: sunP && sunP.x > -200 && sunP.y > -200 && sunP.x < VW * k + 200 && sunP.y < (B - HEAD) * k + 200 ? { x: sunP.x, y: sunP.y } : null,
+        wiper: wiping ? -Math.PI / 2 + Math.sin(this.time * 3.2) * 1.1 + Math.PI / 2 : 0, wiping, hull: p.hp / Math.max(1, p.stats.maxHp),
+        hit: this.hitT / 0.35, speed: p.speed, outside: this.camDist > 0,
+      }, dt);
+      c.translate(VX, 0);
+      this.drawGlassHud(g);
+      c.translate(-VX, 0);
+      if (this.aimOn) this.drawReticle(g);
+    } else if (this.glass === 'view') {
       this.drawWorld(g);
       // At speed the cab rattles (more over rough ground) and the ground streams past.
       const v = Math.abs(p.speed);
@@ -726,7 +808,7 @@ export class Cabin {
     c.restore();
     this.drawFrame(g);
     this.drawComm(g);
-    if (this.glass === 'view') {
+    if (this.glass === 'view' && this.camDist === 0) {
       c.save();
       c.translate(VX, 0);
       this.cabDetails(g, dt);
@@ -769,6 +851,8 @@ export class Cabin {
 
   /** Explosions and flashes from the world's effect queue (the tactical view isn't drawing, so the cab eats them). */
   private takeFx(g: Game, dt: number): void {
+    if (this.v3 && this.glass === 'view') for (const e of g.fx) this.fxList.push(e);
+    if (this.fxList.length > 400) this.fxList.splice(0, this.fxList.length - 400);
     for (const e of g.fx) {
       if (e.t === 'boom') this.flashes.push({ x: e.x, y: e.y, z: 2, r: Math.max(3, e.r * 1.4), color: e.color.length === 7 ? e.color : '#ffab40', t: e.big ? 0.7 : 0.35, max: e.big ? 0.7 : 0.35 });
       else if (e.t === 'nuke') this.flashes.push({ x: e.x, y: e.y, z: 20, r: e.r * 1.2, color: '#fff3c4', t: 1.6, max: 1.6 });
@@ -1259,10 +1343,17 @@ export class Cabin {
       .slice(0, 4);
     for (const { e, z } of threats) {
       const side = -(e.x - cam.x) * fy + (e.y - cam.y) * fx;
-      const sx = W / 2 + (side * f) / z;
+      let sx = W / 2 + (side * f) / z;
       const size = e.r * 2 * (e.titan ? 1.5 : 2.2);
-      const hp = Math.max(6, (size * f) / z);
-      const sy = hz + (cam.h * f) / z - hp / 2;
+      let hp = Math.max(6, (size * f) / z);
+      let sy = hz + (cam.h * f) / z - hp / 2;
+      if (this.v3) {
+        const q = this.v3.project(e.x, e.y, groundLevel(e.x, e.y) + size * 0.5);
+        if (!q) continue;
+        sx = q.x / this.scaleK;
+        sy = HEAD + q.y / this.scaleK;
+        hp = Math.max(6, (size * (this.v3.cam.projectionMatrix.elements[5] * ((this.winB - HEAD) / 2))) / Math.max(1, q.d));
+      }
       if (sx < 0 || sx > W || sy < HEAD || sy > this.winB) continue;
       const col = e.boss ? '#ff3030' : e.titan ? '#ff8030' : '#d080ff';
       bracket(c, sx, sy, hp * 0.7 + 3, col);
@@ -1273,6 +1364,7 @@ export class Cabin {
       const deg = Math.round((this.look * 180) / Math.PI);
       pxMini(c, `LOOK ${deg > 0 ? 'STBD' : 'PORT'} ${Math.abs(deg)}°`, W / 2, HEAD + 4, '#80ff90', 'center');
     }
+    if (this.v3 && this.camDist > 0) pxMini(c, `EXTERNAL CAMERA  ${this.camDist}M  (WHEEL IN TO RETURN TO THE CAB)`, W / 2, HEAD + 12, '#ffd740', 'center');
     // Teletype: the latest messages, word-wrapped, newest at the bottom.
     const maxc = Math.max(20, Math.floor((W - 64) / 4));
     const lines: { t: string; old: boolean }[] = [];
@@ -1366,9 +1458,17 @@ export class Cabin {
       const f = this.focal();
       const fx = Math.cos(cam.yaw), fy = Math.sin(cam.yaw);
       const dx = ap.x - cam.x, dy = ap.y - cam.y;
-      const z = dx * fx + dy * fy;
+      let z = dx * fx + dy * fy;
+      let sx = this.VX + this.VW / 2 + ((-dx * fy + dy * fx) * f) / z, sy = this.horizon() + HEAD + (cam.h * f) / z;
+      if (this.v3) {
+        const q = this.v3.project(ap.x, ap.y, groundLevel(ap.x, ap.y) + 1);
+        z = q ? q.d : -1;
+        if (q) {
+          sx = this.VX + q.x / this.scaleK;
+          sy = HEAD + q.y / this.scaleK;
+        }
+      }
       if (z > 5) {
-        const sx = this.VX + this.VW / 2 + ((-dx * fy + dy * fx) * f) / z, sy = this.horizon() + HEAD + (cam.h * f) / z;
         const r = 5 + Math.sin(this.time * 8) * 2;
         c.strokeStyle = '#ff3030';
         c.lineWidth = 1;
@@ -1713,8 +1813,8 @@ export class Cabin {
         c.fillRect(px + 3, HEAD, 1, B - HEAD);
         for (let y = HEAD + 6; y < B - 4; y += 12) rivet(c, px, y);
       }
-      // Glass: faint reflections.
-      c.fillStyle = 'rgba(255,255,255,0.05)';
+      // Glass: faint reflections (the 3D view's glass draws its own).
+      c.fillStyle = this.v3 ? 'rgba(0,0,0,0)' : 'rgba(255,255,255,0.05)';
       for (let i = 0; i < 3; i++) {
         const x0 = Math.round(VX + VW * (0.08 + i * 0.3));
         for (let k = 0; k < 18; k++) c.fillRect(x0 + k, HEAD + 4 + k * 2, 2, 2);
@@ -1725,7 +1825,7 @@ export class Cabin {
     plate(c, VX + VW - 4, HEAD, 4, B - HEAD, '#34322e', this.noise);
     // A battered hull cracks the glass.
     const hp = g.player.hp / Math.max(1, g.player.stats.maxHp);
-    if (hp < 0.35) crack(c, Math.round(VX + VW * 0.84), HEAD + 8, hp < 0.15 ? 5 : 3);
+    if (hp < 0.35 && !this.v3) crack(c, Math.round(VX + VW * 0.84), HEAD + 8, hp < 0.15 ? 5 : 3);
     // The overhead panel: the compass tape, the clock, the exit and vitals buttons; then lamps, breakers, dials;
     // then the drive row.
     plate(c, 0, 0, W, HEAD, '#2e2c28', this.noise);
@@ -1754,9 +1854,13 @@ export class Cabin {
       this.hit('lookL', VX + 6, B - 24, 18, 14);
       button(c, VX + VW - 22, B - 22, 14, 10, '>', '#2a2a30', this.press.lookR > 0, '#c0c8ff');
       this.hit('lookR', VX + VW - 24, B - 24, 18, 14);
-      if (Math.abs(this.look) > 0.05 || Math.abs(this.pitch) > 4) {
+      if (Math.abs(this.look) > 0.05 || Math.abs(this.pitch) > 4 || Math.abs(this.pitchR - 0.1) > 0.05 || this.camDist > 0) {
         button(c, VX + VW / 2 - 14, B - 22, 28, 10, 'FWD', '#2a2a30', this.press.lookF > 0, '#c0c8ff');
         this.hit('lookF', VX + VW / 2 - 16, B - 24, 32, 14);
+      }
+      if (this.v3) {
+        button(c, VX + 26, B - 22, 34, 10, this.camDist ? 'CAB' : 'CHASE', '#2a2a30', this.press.camOut > 0, '#ffd740');
+        this.hit('camOut', VX + 24, B - 24, 38, 14);
       }
     }
   }

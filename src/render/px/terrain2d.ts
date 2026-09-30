@@ -176,7 +176,7 @@ function fieldColour(t: number, tx: number, ty: number, r: number, g: number, b:
 }
 
 /** Smooth value noise (0..1) on a grid of `cell` tiles. */
-function vnoise(x: number, y: number, cell: number, seed: number): number {
+export function vnoise(x: number, y: number, cell: number, seed: number): number {
   const fx0 = x / cell, fy0 = y / cell;
   const gx = Math.floor(fx0), gy = Math.floor(fy0);
   const fx = fx0 - gx, fy = fy0 - gy;
@@ -186,6 +186,31 @@ function vnoise(x: number, y: number, cell: number, seed: number): number {
 }
 
 const isBuilding = (o: number): boolean => o === OBS.WALL || o === OBS.RUIN || o === OBS.PILLAR || o === OBS.WRECK;
+
+/** A block of ground for the cab's 3D view (see Terrain2D.ground3D). */
+export interface Ground3D {
+  canvas: HTMLCanvasElement;
+  /** Surface heights (m) at the tile corners, (BLOCK + 1) square. */
+  h: Float32Array;
+  ter: Uint8Array;
+  obs: Uint8Array;
+  /** Obstacle heights (half-metres). */
+  oh: Uint8Array;
+  zone: Uint8Array;
+}
+
+/** Obstacles the 3D view raises into the ground itself (the rest it builds as things standing on it). */
+const RAISED: boolean[] = [];
+for (const o of [OBS.ROCK, OBS.SANDSTONE, OBS.BASALT, OBS.CLIFF, OBS.WRECK, OBS.WALL, OBS.RUIN, OBS.BASTION, OBS.STRUCT]) RAISED[o] = true;
+/** Made things: raised square-edged (unless the 3D view builds them as buildings). */
+export const SHARP: boolean[] = [];
+for (const o of [OBS.WALL, OBS.RUIN, OBS.BASTION, OBS.STRUCT, OBS.WRECK]) SHARP[o] = true;
+const CORNER: [number, number][] = [[-1, -1], [0, -1], [-1, 0], [0, 0]];
+
+/** Height of the open ground (m) at a point: the rolling hills of the hill shading, made real for the 3D view. */
+export function groundLevel(x: number, y: number): number {
+  return (vnoise(x, y, 150, 10) * 7 + vnoise(x, y, 46, 11) * 3 + vnoise(x, y, 15, 12) * 1.1) * 0.8;
+}
 const isLiquid = (t: number): boolean => t === TER.WATER || t === TER.ACID || t === TER.LAVA;
 
 export class Terrain2D {
@@ -350,9 +375,23 @@ export class Terrain2D {
 
   private buildHD(b: Block, bx: number, by: number, f: number): HTMLCanvasElement {
     const S = BLOCK * f;
+    const img = this.upscale(b.px, b.tb, b.ob, bx, by, f);
+    const out = document.createElement('canvas');
+    out.width = S;
+    out.height = S;
+    const ctx = out.getContext('2d')!;
+    ctx.putImageData(img, 0, 0);
+    paintBuildings(ctx, this.map, bx * BLOCK, by * BLOCK, BLOCK, f);
+    this.stampDebris(ctx, bx, by, f);
+    this.stampSprites(ctx, bx, by, f);
+    return out;
+  }
+
+  /** A block's tile colours blown up to `f` pixels a tile: smooth within a ground, crisp and dithered between. */
+  private upscale(px: Uint8ClampedArray, tb: Uint8Array, ob: Uint8Array, bx: number, by: number, f: number): ImageData {
+    const S = BLOCK * f;
     const img = new ImageData(S, S);
     const d = img.data;
-    const px = b.px, tb = b.tb, ob = b.ob;
     const B2 = BLOCK + 2;
     const gx0 = bx * BLOCK * f, gy0 = by * BLOCK * f;
     for (let ty = 0; ty < BLOCK; ty++) {
@@ -420,15 +459,103 @@ export class Terrain2D {
       }
     }
     this.stampDetails(d, bx, by, f, tb, ob);
-    const out = document.createElement('canvas');
-    out.width = S;
-    out.height = S;
-    const ctx = out.getContext('2d')!;
-    ctx.putImageData(img, 0, 0);
-    paintBuildings(ctx, this.map, bx * BLOCK, by * BLOCK, BLOCK, f);
-    this.stampDebris(ctx, bx, by, f);
-    this.stampSprites(ctx, bx, by, f);
-    return out;
+    return img;
+  }
+
+  /**
+   * A block for the cab's 3D view: its ground at `f` pixels a metre without roofs, walls, trees or props (the 3D
+   * view builds those as solid things standing on it), the heights of its surface at the tile corners (rolling
+   * ground, rock and cliffs raised to their height, liquids sunk), and its tiles.
+   */
+  ground3D(bx: number, by: number, f: number, built: (tx: number, ty: number) => boolean): Ground3D {
+    const x0 = bx * BLOCK, y0 = by * BLOCK;
+    this.read(x0, y0);
+    const { ter, obs, oh, zn } = this;
+    const N = BLOCK, B2 = BLOCK + 2;
+    const px = new Uint8ClampedArray(N * N * 4);
+    const tb = new Uint8Array(B2 * B2), ob = new Uint8Array(B2 * B2);
+    const T = new Uint8Array(N * N), O = new Uint8Array(N * N), OH = new Uint8Array(N * N), Z = new Uint8Array(N * N);
+    const rock = (i: number, tx: number, ty: number): boolean => {
+      const o = obs[i];
+      return !!o && !!RAISED[o] && !(SHARP[o] && built(tx, ty));
+    };
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const i = (y + PAD) * W + x + PAD;
+        const tx = x0 + x, ty = y0 + y;
+        const t = ter[i], o = obs[i];
+        const q = y * N + x;
+        T[q] = t;
+        O[q] = o;
+        OH[q] = oh[i];
+        Z[q] = zn[i];
+        const n = hash2(tx, ty);
+        let r: number, g: number, b: number;
+        if (rock(i, tx, ty) && !SHARP[o]) {
+          const c = OBS_RGB[o];
+          const k = 0.92 + (n - 0.5) * 0.18 + (vnoise(tx, ty, 3, 21) - 0.5) * 0.3;
+          r = c[0] * k;
+          g = c[1] * k;
+          b = c[2] * k;
+        } else {
+          [r, g, b] = this.groundColour(t, tx, ty, n);
+          if (zn[i] === ZONE.VERDANT && (t === TER.DIRT || t === TER.RUST)) [r, g, b] = fieldColour(t, tx, ty, r, g, b, n);
+          const tn = ter[i - W], tw = ter[i - 1], ts = ter[i + W], te = ter[i + 1];
+          if (isLiquid(t) && (!isLiquid(tn) || !isLiquid(tw) || !isLiquid(ts) || !isLiquid(te))) {
+            const foam = t === TER.LAVA ? [60, 20, 10] : t === TER.ACID ? [200, 255, 170] : [210, 236, 240];
+            r = r * 0.55 + foam[0] * 0.45;
+            g = g * 0.55 + foam[1] * 0.45;
+            b = b * 0.55 + foam[2] * 0.45;
+          } else if (tn !== t || tw !== t || ts !== t || te !== t) {
+            r *= 0.9;
+            g *= 0.9;
+            b *= 0.9;
+          }
+          // Darker at the foot of anything standing on the ground.
+          if (obs[i - W] || obs[i - 1] || obs[i + 1] || obs[i + W]) {
+            r *= 0.8;
+            g *= 0.8;
+            b *= 0.84;
+          }
+        }
+        const l = r * 0.3 + g * 0.59 + b * 0.11;
+        px[q * 4] = l + (r - l) * 1.12;
+        px[q * 4 + 1] = l + (g - l) * 1.12;
+        px[q * 4 + 2] = l + (b - l) * 1.12;
+        px[q * 4 + 3] = 255;
+      }
+    }
+    for (let y = 0; y < B2; y++) for (let x = 0; x < B2; x++) {
+      const i = (y + PAD - 1) * W + x + PAD - 1;
+      tb[y * B2 + x] = ter[i];
+      ob[y * B2 + x] = rock(i, x0 + x - 1, y0 + y - 1) ? 1 : 0;
+    }
+    // Heights at the corners: the ground's roll, and what's raised on the four tiles round each corner.
+    const H1 = N + 1;
+    const h = new Float32Array(H1 * H1);
+    for (let j = 0; j <= N; j++) {
+      for (let i2 = 0; i2 <= N; i2++) {
+        const tx = x0 + i2, ty = y0 + j;
+        let mx = 0, sum = 0, sharp = false, wet = 0;
+        for (const [dx, dy] of CORNER) {
+          const q = (j + dy + PAD) * W + i2 + dx + PAD;
+          if (isLiquid(ter[q])) wet++;
+          if (!rock(q, tx + dx, ty + dy)) continue;
+          const o = obs[q];
+          const rz = oh[q] * 0.5 * (SHARP[o] ? 1 : 0.75 + 0.45 * vnoise(tx, ty, 4, 5));
+          if (SHARP[o]) sharp = true;
+          if (rz > mx) mx = rz;
+          sum += rz;
+        }
+        h[j * H1 + i2] = groundLevel(tx, ty) + (sharp ? mx : (mx + sum / 4) / 2) - (wet ? 0.25 + wet * 0.2 : 0);
+      }
+    }
+    const img = this.upscale(px, tb, ob, bx, by, f);
+    const canvas = document.createElement('canvas');
+    canvas.width = N * f;
+    canvas.height = N * f;
+    canvas.getContext('2d')!.putImageData(img, 0, 0);
+    return { canvas, h, ter: T, obs: O, oh: OH, zone: Z };
   }
 
   /**
