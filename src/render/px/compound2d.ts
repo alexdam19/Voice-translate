@@ -537,8 +537,9 @@ export function drawCompoundPeople(v: CompoundView, g: Game): void {
     c.setTransform(1, 0, 0, 1, 0, 0);
   }
   if (v.ppm < 1.1) return;
-  const S = v.ppm >= 7 ? 40 : v.ppm >= 3.5 ? 28 : 22;
-  const ft = heroFoot(S);
+  // A person stands about 1.6 times life size (so they read), in steps of 4 px to keep the sprite cache small.
+  const S = Math.max(24, Math.min(112, Math.round((v.ppm * 1.8 * 1.6) / 0.86 / 4) * 4));
+  const ft = heroFoot(S, { heading: 0 });
   const cs = g.compound;
   const alarm = cs.alarm;
   // The drill: attention, salute, march in place, at ease, in time for the whole squad.
@@ -547,30 +548,12 @@ export function drawCompoundPeople(v: CompoundView, g: Game): void {
   cs.people.forEach((r, i) => {
     if (!v.near(r.x, r.y, 4)) return;
     const { role, pose, frame } = look(r, i, alarm, drill, waving, v.time);
-    const img = hero({ role, seed: i * 13 + 7, color: role === 'crew' || role === 'deckhand' ? r.uniform : undefined }, pose, frame, S);
+    // Seen from above, facing the way they walk; at a post, out toward the front; otherwise left or right.
+    const hd = r.walking ? Math.atan2(r.ty - r.y, r.tx - r.x) : r.kind === 'sentry' || r.kind === 'guard' ? Math.PI / 2 : r.face < 0 ? Math.PI : 0;
+    const img = hero({ role, seed: i * 13 + 7, color: role === 'crew' || role === 'deckhand' ? r.uniform : undefined }, pose, frame, S, { heading: hd + v.th });
     const sx = Math.round(v.bx(r.x, r.y)), sy = Math.round(v.by(r.x, r.y));
-    c.fillStyle = 'rgba(0,0,0,0.3)';
-    c.fillRect(sx - Math.round(S * 0.18), sy - 1, Math.round(S * 0.36), 2);
-    if (r.face < 0) c.drawImage(flipped(img), sx - (img.width - ft.x), sy - ft.y);
-    else c.drawImage(img, sx - ft.x, sy - ft.y);
+    c.drawImage(img, sx - ft.x, sy - ft.y);
   });
-}
-
-const flips = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
-
-/** A figure mirrored to face left (cached per sprite). */
-function flipped(img: HTMLCanvasElement): HTMLCanvasElement {
-  let f = flips.get(img);
-  if (f) return f;
-  f = document.createElement('canvas');
-  f.width = img.width;
-  f.height = img.height;
-  const x = f.getContext('2d')!;
-  x.translate(img.width, 0);
-  x.scale(-1, 1);
-  x.drawImage(img, 0, 0);
-  flips.set(img, f);
-  return f;
 }
 
 /** Who a resident is and what they're doing, as a figure and a pose. */

@@ -1025,20 +1025,13 @@ export class View2D {
       const size = Math.max(a.kind === 'mine' ? 6 : 10, real * ppm * 1.4);
       if (a.kind === 'marine' || a.kind === 'heavy') {
         // Soldiers are painted figures, upright, facing the way they're going (rifles up when they have a target).
-        const S = Math.max(22, Math.min(48, Math.round(1.8 * ppm * 3.2 / 4) * 4));
+        const S = Math.max(24, Math.min(112, Math.round((ppm * 1.8 * 1.6) / 0.86 / 4) * 4));
         const moving = this.headingOf(a.id + 1e9, a.x, a.y, a.rot);
-        const hx = Math.cos(moving + this.th);
         const pose = a.targetId > 0 && a.cd < 0.6 ? 'aim' : 'walk';
-        const img = hero({ role: a.kind === 'heavy' ? 'heavy' : a.id % 3 === 0 ? 'rifleman' : 'marine', seed: a.id }, pose, Math.floor(a.anim * 7), S);
-        const ft = heroFoot(S);
+        const img = hero({ role: a.kind === 'heavy' ? 'heavy' : a.id % 3 === 0 ? 'rifleman' : 'marine', seed: a.id }, pose, Math.floor(a.anim * 7), S, { heading: moving + this.th });
+        const ft = heroFoot(S, { heading: 0 });
         const sx = Math.round(this.bx(a.x, a.y)), sy = Math.round(this.by(a.x, a.y));
-        c.fillStyle = 'rgba(0,0,0,0.3)';
-        c.fillRect(sx - Math.round(S * 0.2), sy - 1, Math.round(S * 0.4), 2);
-        if (hx < 0) {
-          c.setTransform(-1, 0, 0, 1, sx, sy);
-          c.drawImage(img, -(img.width - ft.x), -ft.y);
-          c.setTransform(1, 0, 0, 1, 0, 0);
-        } else c.drawImage(img, sx - ft.x, sy - ft.y);
+        c.drawImage(img, sx - ft.x, sy - ft.y);
         continue;
       }
       const vehicle = a.kind === 'buggy' || a.kind === 'minitank' || a.kind === 'jet' || a.kind === 'drone' || a.kind === 'dragon';
