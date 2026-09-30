@@ -30,6 +30,8 @@ import type { TrackInfo } from '../game/systems/tracking';
 import { itemIcon, moduleIcon, portrait } from '../render/icons';
 import { cardEl } from './cardView';
 import { button, esc, h, hideTip, isTouch, tooltip } from './dom';
+import { agentFace } from './agents';
+import { AGENTS } from '../game/systems/comms';
 import { Joystick } from './joystick';
 import { OBJECTIVES } from './objectives';
 import { fmtTime } from './village';
@@ -110,6 +112,9 @@ export class Hud {
   private obj = h('div', 'objective');
   /** The main gate: shown near it while it's shut, to ask Gate Control for clearance. */
   private gateBtn = h('button', 'gate-btn');
+  /** The intercom: the Mega Hangar agent's face and what they're saying. */
+  private commBox = h('div', 'comm-box');
+  private commKey = '';
   private mission = h('div', 'mission');
   private stormBar = h('div', 'storm-bar');
   private track = h('div', 'tracker');
@@ -332,7 +337,7 @@ export class Hud {
       zoomBox.appendChild(b);
     }
     this.mmWrap.appendChild(zoomBox);
-    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost, this.gateBtn);
+    this.root.append(this.tint, tl, tr, tc, this.perkBox, this.squads, this.rider, this.bottom, this.doom.root, this.mmWrap, this.hint, this.death, this.dragGhost, this.gateBtn, this.commBox);
     this.gateBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.act.gate();
@@ -493,6 +498,17 @@ export class Hud {
     // The main gate's clearance button.
     const gp = g.compound.prompt;
     this.gateBtn.style.display = gp && !village ? 'block' : 'none';
+    // The intercom.
+    const cm = g.comms.current;
+    this.commBox.style.display = cm && !village ? 'flex' : 'none';
+    if (cm) {
+      const key = `${cm.agent}|${cm.text}`;
+      if (key !== this.commKey) {
+        this.commKey = key;
+        const a = AGENTS[cm.agent];
+        setHTML(this.commBox, `<img src="${agentFace(cm.agent)}" alt=""><div><b style="color:${a.color}">${a.post} · ${a.name}</b><small>${cm.kind.toUpperCase()}</small><p>${esc(cm.text)}</p></div>`);
+      }
+    }
     if (gp) setHTML(this.gateBtn, `<b>MAIN GATE SEALED</b><span>${gp === 'exit' ? 'REQUEST CLEARANCE TO LEAVE' : 'REQUEST CLEARANCE TO ENTER'}</span>`);
     this.root.classList.toggle('in-village', village);
     // The shop and a building's card sit under the HUD: clear the left column while one is up.

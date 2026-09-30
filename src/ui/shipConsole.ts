@@ -1,7 +1,8 @@
 import type { Game } from '../game/game';
 import { crewSummary } from '../game/systems/crewops';
 import { crawlersUp, FUEL_MAX, SYSTEMS, sysMult, toroidOut, WATER_MAX, damageState } from '../game/systems/titan';
-import { shipArtFor } from '../render/px/shipArt';
+import { titanTop, topPalette } from '../render/px/titanTop';
+import { engineDef } from '../game/systems/engine';
 import { h } from './dom';
 import { pxMini, pxText as text } from './pixfont';
 
@@ -143,7 +144,7 @@ export class ShipConsole {
     this.ship.key = key;
     x.clearRect(0, 0, W, H);
     // The silhouette, bow right, from the ship's own art.
-    const art = shipArtFor('main', null, p.dead);
+    const art = titanTop(p.stats.length, p.stats.width, topPalette('main', p.klass, p.dead), `main|${p.klass}|${p.dead}`, engineDef(p.engineKey).flame.jets, false, 1);
     const sx = 16, sy = 4, sw = 80, sh = 32;
     if (art) {
       if (!this.shipImg) {

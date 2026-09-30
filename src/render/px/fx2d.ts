@@ -132,6 +132,12 @@ export class Fx2D {
         const x = Math.round(m.sx(p.x, p.y) - s / 2), y = Math.round(m.sy(p.x, p.y) - visZ(p.z) * ppm * 0.4 - s / 2);
         if (x < -s || y < -s || x > w || y > h) continue;
         c.globalAlpha = Math.min(1, (p.life / p.max) * 1.4) * p.alpha;
+        if (s >= 7) {
+          // Big smoke and dust as soft, lumpy puffs rather than blocks.
+          const pf = puffSprite(p.color, (p.x * 7.3 + p.y * 3.1) | 0);
+          c.drawImage(pf, x - s * 0.15, y - s * 0.15, s * 1.3, s * 1.3);
+          continue;
+        }
         c.fillStyle = p.color;
         c.fillRect(x, y, s, s);
       }
@@ -202,6 +208,36 @@ export class Fx2D {
 }
 
 const glows = new Map<string, HTMLCanvasElement>();
+
+const puffs = new Map<string, HTMLCanvasElement>();
+
+/** A soft, lumpy puff of smoke or dust in a colour (four shapes, picked by `seed`). */
+export function puffSprite(color: string, seed: number): HTMLCanvasElement {
+  const v = ((seed % 4) + 4) % 4;
+  const key = `${color}|${v}`;
+  let c = puffs.get(key);
+  if (c) return c;
+  if (puffs.size > 200) puffs.clear();
+  const S = 48;
+  c = document.createElement('canvas');
+  c.width = S;
+  c.height = S;
+  const x = c.getContext('2d')!;
+  const col = color.length === 7 ? color : '#808080';
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI * 2 + v;
+    const r = S * (0.2 + 0.08 * ((k * 7 + v * 3) % 3));
+    const cx = S / 2 + Math.cos(a) * S * 0.14, cy = S / 2 + Math.sin(a) * S * 0.14;
+    const g = x.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, col + 'cc');
+    g.addColorStop(0.6, col + '66');
+    g.addColorStop(1, col + '00');
+    x.fillStyle = g;
+    x.fillRect(0, 0, S, S);
+  }
+  puffs.set(key, c);
+  return c;
+}
 
 /** A soft round glow of a colour, `px` pixels across (cached by size bucket). */
 export function glowSprite(color: string, px: number): HTMLCanvasElement {

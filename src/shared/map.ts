@@ -122,6 +122,21 @@ export interface Prop {
   gone?: boolean;
 }
 
+/**
+ * A building of a region (a farmhouse, a barn, a factory hall, a raider shack, a temple ruin...): its footprint in
+ * world tiles (x1, y1 exclusive), the art it's drawn with (a sprite family, see art/scripts/buildings.js) and a
+ * variant. Registered in every chunk it overlaps; `key` is the same in each.
+ */
+export interface Building {
+  key: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  style: string;
+  v: number;
+}
+
 /** One CH x CH block of the world. */
 export interface MapChunk {
   cx: number;
@@ -132,6 +147,8 @@ export interface MapChunk {
   oh: Uint8Array;
   zone: Uint8Array;
   props: Prop[];
+  /** Region buildings overlapping this chunk. */
+  buildings: Building[];
   /** Changed since it was generated (kept in memory; everything else can be regenerated). */
   touched: boolean;
   /** Clearance per nav mode (3 x distance in tiles to the nearest blocked tile, capped). */
@@ -184,7 +201,7 @@ export class GameMap {
       return c;
     }
     const n = CH * CH;
-    c = { cx, cy, ter: new Uint8Array(n), obs: new Uint8Array(n), oh: new Uint8Array(n), zone: new Uint8Array(n), props: [], touched: false, clear: new Map(), used: this.tick };
+    c = { cx, cy, ter: new Uint8Array(n), obs: new Uint8Array(n), oh: new Uint8Array(n), zone: new Uint8Array(n), props: [], buildings: [], touched: false, clear: new Map(), used: this.tick };
     this.chunks[k] = c;
     this.live++;
     if (this.filler) this.filler(c, this);

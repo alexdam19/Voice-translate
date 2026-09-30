@@ -96,6 +96,24 @@ describe('Titan Crawler handling', () => {
     expect(p.sideSpeed[0]).toBeGreaterThan(p.sideSpeed[1]);
   });
 
+  it('steers like a ship: the swing builds slowly and carries on after you let go', () => {
+    const g = outside(game());
+    const p = g.player;
+    hold(g, 0, -1, 1.5);
+    hold(g, 0, 0, 10);
+    const r0 = p.rot;
+    hold(g, 1, 0, 0.5);
+    const early = Math.abs(p.turnVel);
+    hold(g, 1, 0, 3);
+    const full = Math.abs(p.turnVel);
+    expect(early).toBeLessThan(full * 0.5);
+    // Helm released: she keeps swinging for a while.
+    const r1 = p.rot;
+    hold(g, 0, 0, 1);
+    expect(Math.abs(wrapAngle(p.rot - r1))).toBeGreaterThan(full * 0.3);
+    expect(Math.abs(wrapAngle(p.rot - r0))).toBeGreaterThan(0.05);
+  });
+
   it('pivots when stopped', () => {
     const g = game();
     const p = g.player;

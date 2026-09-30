@@ -1,4 +1,5 @@
 import { newCompound, type CompoundState } from './systems/compound';
+import { newComms, type Comms } from './systems/comms';
 import { newTelemetry, type Telemetry } from './telemetry';
 import { CHUNK, MAX_BASE_CREW } from '../shared/constants';
 import { Fog } from '../shared/fog';
@@ -26,6 +27,7 @@ import { newCrewLife, type CrewLife } from './systems/crewlife';
 import { newStorm, type Storm } from './systems/weather';
 import { newDeploy, type Deploy } from './systems/camp';
 import { newTitanState, type TitanState } from './systems/titan';
+import type { DriveMode } from './systems/engine';
 import { COLOSSUS_TIMING, type Colossus } from './systems/colossus';
 import type { RepairTeam } from './systems/crewops';
 import type { WorkOrder } from './systems/workorders';
@@ -200,9 +202,14 @@ export class Game {
    * The helm: a throttle lever that stays where you set it (-0.5 full astern .. 1 full ahead), the overdrive switch,
    * the brake handle (0-1; with the lever off and no brake she coasts a long way), and whether the lever is resting on the 0% detent (you have to let go and press again to go past it). The
    * captain's cabin adds switches: floodlights, the bilge pump boost, the master arm (guns safe), power diverted from
-   * the shield generator to the drive, and cooldowns on the horn and the halon fire suppression.
+   * the shield generator to the drive, and cooldowns on the horn and the halon fire suppression. Then the drive mode
+   * (eco, normal, sport, crawl), the overdrive stage (I-III), the engine preheater, the sanders (seconds of sand
+   * left, and their recharge), the diff lock, the dozer plough, the smoke dischargers, and the refinery's AUTO switch.
    */
-  helm = { lever: 0, brake: 0, brakeSet: false, toroids: [true, true, true, true], overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false };
+  helm = {
+    lever: 0, brake: 0, brakeSet: false, toroids: [true, true, true, true], overdrive: false, detent: false, lights: false, pumps: false, safe: false, divert: false, hornCd: 0, halonCd: 0, heat: 0, overheat: false,
+    mode: 'normal' as DriveMode, odStage: 1, preheat: false, sandT: 0, sandCd: 0, diffLock: false, plow: false, smokeT: 0, smokeCd: 0, refine: true, roarT: 0,
+  };
   /** Damage control sends repair teams on its own (the vitals screen's AUTO switch), and its next check. */
   autoRepair = true;
   autoT = 0;
@@ -241,6 +248,8 @@ export class Game {
   campaign: Campaign = newCampaign();
   /** The Mega Hangar's compound: its gate, towers, people and visiting bases. */
   compound: CompoundState = newCompound();
+  /** The intercom to the Mega Hangar (news, objectives, briefings). */
+  comms: Comms = newComms();
   /** The flight recorder (cabin trend screens). */
   telemetry: Telemetry = newTelemetry();
   /** Life aboard: fatigue, hunger. */

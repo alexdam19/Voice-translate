@@ -1,4 +1,5 @@
 import { updateCompound } from './compound';
+import { updateComms } from './comms';
 import { recordTelemetry } from '../telemetry';
 import type { Game } from '../game';
 import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
@@ -10,7 +11,7 @@ import { healPlayer, injureRandomCrew, refillHeal } from './damage';
 import { updateBuffs, updateCrew, updateZones } from './crewsys';
 import { updateSquads } from './squads';
 import { driveTank, manualDrive, separateTanks, updateCollapses, type ManualDrive } from './movement';
-import { engineSpec } from './engine';
+import { driveSpec, odStage } from './engine';
 import { updateAirlift } from './airlift';
 import { updateFocus, updateInteract } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
@@ -27,7 +28,8 @@ import { updateTroops } from './troops';
 import { updateCrewLife } from './crewlife';
 import { FUEL_MAX, newTitanState, updateTitan, WATER_MAX } from './titan';
 import { updateCamp } from './camp';
-import { updateHelm } from './helm';
+import { setDrill, updateFuel } from './fuel';
+import { updateHelm, updateHelmGear } from './helm';
 import { updateTeams } from './crewops';
 import { updateOrders } from './workorders';
 import { updateColossi } from './colossus';
@@ -145,23 +147,40 @@ export function stepWorld(g: Game, dt: number): void {
     }
     const nitro = p.buff('nitro');
     const chill = p.buff('chill');
-    if (helm.overdrive && (g.titan.fuel <= 0 || !p.titan)) helm.overdrive = false;
-    // Overdrive heats the engine; at the red line it trips out and won't relight until it has cooled.
-    const spec = engineSpec(p.engine);
-    if (helm.overdrive) {
-      helm.heat = Math.min(1, helm.heat + spec.heat * dt);
+    const ds = driveSpec(g, p);
+    // Eco and crawl modes have no overdrive; nor does an empty tank.
+    if (helm.overdrive && (g.titan.fuel <= 0 || !p.titan || ds.odStages <= 0)) helm.overdrive = false;
+    // Overdrive heats the engine (each stage much faster); at the red line it trips out and won't relight until it has
+    // cooled. Stage III run hot also hurts the drive.
+    const od = helm.overdrive ? odStage(ds, helm.odStage) : null;
+    if (od) {
+      helm.odStage = od.stage;
+      helm.heat = Math.min(1, helm.heat + ds.heat * od.heat * dt);
+      if (od.stage === 3 && helm.heat > 0.75 && Math.random() < dt * 0.6) g.titan.systems.propulsion = Math.max(0, g.titan.systems.propulsion - 0.004);
       if (helm.heat >= 1) {
         helm.overdrive = false;
         helm.overheat = true;
-        g.hooks.toast('ENGINE OVERHEAT: overdrive tripped. Let it cool (Radiators in the Engine Workshop help).', '#ff5252');
+        g.hooks.toast(`ENGINE OVERHEAT: overdrive ${['I', 'II', 'III'][od.stage - 1]} tripped. Let it cool (Radiators, Intercooler and Governor in the Engine Workshop help).`, '#ff5252');
         g.hooks.sound('alarm');
       }
     } else {
-      helm.heat = Math.max(0, helm.heat - spec.cool * dt);
-      if (helm.overheat && helm.heat < 0.35) helm.overheat = false;
+      helm.heat = Math.max(0, helm.heat - ds.cool * dt);
+      if (helm.overheat && helm.heat < ds.relight) helm.overheat = false;
     }
-    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)) * stormSpeed(g) * (helm.overdrive ? spec.odSpeed : 1);
-    driveTank(g, p, dt, mult, helmDrive(g, dt), helm.overdrive ? spec.odKick : 1);
+    updateHelmGear(g, dt, ds, od?.stage ?? 0);
+    if (p.aimPoint && (p.aimPoint.t -= dt) <= 0) p.aimPoint = null;
+    p.crushMul = ds.crush;
+    // The drill string down: she's pinned to the spot. Opening the throttle has the crew raise it first.
+    if (g.titan.drill > 0 || g.titan.drillWant) {
+      const wants = helm.lever !== 0 || (di.active && (di.y !== 0 || di.x !== 0)) || p.path.length > 0;
+      if (wants && g.titan.drillWant) {
+        setDrill(g, false);
+        g.hooks.toast('DRILL: raising the string before she moves.', '#ffab40');
+      }
+      p.speed = 0;
+    }
+    const mult = (1 + (nitro?.v ?? 0)) * (1 - (chill?.v ?? 0)) * stormSpeed(g) * ds.modeTop * (od ? od.speed : 1);
+    if (g.titan.drill <= 0 && !g.titan.drillWant) driveTank(g, p, dt, mult, helmDrive(g, dt), od ? od.kick : 1);
     if (nitro && Math.random() < dt * 20) {
       const b = p.toWorld(-p.stats.length / 2, (Math.random() - 0.5) * p.stats.width);
       g.fx.push({ t: 'dust', x: b.x, y: b.y, color: '#18ffff' });
@@ -221,6 +240,8 @@ export function stepWorld(g: Game, dt: number): void {
       updateCrewLife(g, dt);
       updateStations(g, dt);
       updateTitan(g, dt);
+      updateFuel(g, dt);
+      updateComms(g, dt);
       updateHelm(g, dt);
       recordTelemetry(g, dt);
       updateTeams(g, dt);

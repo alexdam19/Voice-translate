@@ -8,6 +8,9 @@ import { threatTier, TIER_NAMES } from '../shared/mapgen';
 import { ZONE_INFO } from '../shared/crater';
 import { TERRAIN } from '../shared/map';
 import { crt, crtGlass, dial, disc, hbar, shadeHex, spark } from './cabinKit';
+import { driveSpec, ENGINE_PARTS } from '../game/systems/engine';
+import { CRUDE_MAX, drillRate, fuelDrill, fuelRefinery, oilHere, refineRate } from '../game/systems/fuel';
+import { oilAt, oilWord } from '../shared/oil';
 import { pxMini, pxText } from './pixfont';
 
 /**
@@ -20,12 +23,15 @@ import { pxMini, pxText } from './pixfont';
  *  SYSTEMS   every subsystem's health and state, crawlers, toroids, fires, floods and damage control;
  *  TACTICAL  threat, contacts by kind and bearing, the horde, the nearest colossus, the kill rate;
  *  NAV       where you are, where the mission is and how long to get there, the way home and the fuel range;
- *  CREW      people aboard, on duty and resting, fatigue, hunger, comfort, and the repair teams at work.
+ *  CREW      people aboard, on duty and resting, fatigue, hunger, comfort, and the repair teams at work;
+ *  ENGINE    the power plant: charge (and how long to full), heat, the overdrive stage and its time left, the burn,
+ *            the drive mode and switches, and every component's mark;
+ *  FUEL      the fuel and crude tanks, the drill and the refinery, and an oil survey of the ground around.
  */
 
-export type Page = 'ship' | 'trends' | 'systems' | 'tactical' | 'nav' | 'crew';
-export const PAGES: Page[] = ['ship', 'trends', 'systems', 'tactical', 'nav', 'crew'];
-const TITLE: Record<Page, string> = { ship: 'SHIP STATUS', trends: 'TRENDS 3 MIN', systems: 'SYSTEMS', tactical: 'TACTICAL', nav: 'NAVIGATION', crew: 'CREW & DAMAGE CTRL' };
+export type Page = 'ship' | 'trends' | 'systems' | 'tactical' | 'nav' | 'crew' | 'engine' | 'fuel';
+export const PAGES: Page[] = ['ship', 'engine', 'trends', 'tactical', 'systems', 'fuel', 'nav', 'crew'];
+const TITLE: Record<Page, string> = { ship: 'SHIP STATUS', trends: 'TRENDS 3 MIN', systems: 'SYSTEMS', tactical: 'TACTICAL', nav: 'NAVIGATION', crew: 'CREW & DAMAGE CTRL', engine: 'ENGINE ROOM', fuel: 'FUEL PLANT' };
 
 const AMBER = '#ffb030', GREEN = '#6aff7a', DIM = '#3a7a48', CYAN = '#40c4ff', RED = '#ff4030', WHITE = '#d8ffe0';
 
@@ -55,6 +61,8 @@ export function drawScreen(c: CanvasRenderingContext2D, g: Game, page: Page, x: 
     case 'tactical': tacticalPage(c, g, b, time); break;
     case 'nav': navPage(c, g, b); break;
     case 'crew': crewPage(c, g, b); break;
+    case 'engine': enginePage(c, g, b, time); break;
+    case 'fuel': fuelPage(c, g, b, time); break;
   }
   c.restore();
   crtGlass(c, r);
@@ -464,4 +472,100 @@ export function reactorModule(c: CanvasRenderingContext2D, g: Game, x0: number, 
   const sp = Math.round(mods.speed * 100), gn = Math.round(mods.weapons * 100);
   pxMini(c, `D${sp} G${gn}`, cellsX + cellsW / 2, y0 + 66, sp < 90 || gn < 90 ? '#ffb030' : '#6aff7a', 'center');
   pxMini(c, 'REACTOR', x0 + w / 2, y0 + h - 12, '#8a8272', 'center');
+}
+
+/* ---------------------------------------------------------------- */
+/* ENGINE                                                            */
+/* ---------------------------------------------------------------- */
+
+function enginePage(c: CanvasRenderingContext2D, g: Game, b: Box, time: number): void {
+  const p = g.player, hm = g.helm;
+  const ds = driveSpec(g, p);
+  const d = ds.def;
+  pxMini(c, fit(d.name.toUpperCase(), b.w), b.x, b.y, AMBER, 'left', null);
+  // Charge: the bar fills like a boiler gauge; seconds to full at this rate.
+  const ch = p.spool;
+  const want = Math.max(hm.preheat ? 0.35 : 0, Math.abs(hm.lever));
+  const secs = ch < want ? (want - ch) / Math.max(0.001, ds.spool) : 0;
+  const bw = b.w - 30;
+  pxMini(c, 'CHG', b.x, b.y + 7, DIM, 'left', null);
+  hbar(c, b.x + 14, b.y + 8, bw - 14, 4, ch, ch > 0.8 ? GREEN : AMBER);
+  pxMini(c, secs > 0.05 ? `${secs.toFixed(1)}S` : pct(ch), b.x + b.w, b.y + 7, WHITE, 'right', null);
+  pxMini(c, 'HEAT', b.x, b.y + 14, DIM, 'left', null);
+  const od = ds.od;
+  const heatCol = hm.overheat ? RED : hm.heat > 0.7 ? AMBER : GREEN;
+  hbar(c, b.x + 30, b.y + 15, bw - 30, 3, hm.heat, heatCol);
+  pxMini(c, hm.overheat && Math.floor(time * 3) % 2 ? 'TRIP' : pct(hm.heat), b.x + b.w, b.y + 14, heatCol, 'right', null);
+  const rows: [string, string, string][] = [
+    ['OVERDRV', od ? `${['I', 'II', 'III'][od.stage - 1]} ${Math.max(0, Math.round((1 - hm.heat) / (ds.heat * od.heat)))}S` : `MAX ${['-', 'I', 'II', 'III'][ds.odStages]}`, od ? RED : DIM],
+    ['MODE', `${hm.mode.toUpperCase()}${hm.preheat ? ' PH' : ''}${hm.diffLock ? ' DL' : ''}${hm.plow ? ' PL' : ''}${hm.sandT > 0 ? ' SD' : ''}`, WHITE],
+    ['BURN', `${(fuelBurn(g) * 60).toFixed(1)}/MIN`, fuelBurn(g) < 0 ? GREEN : AMBER],
+    ['POWER', `${d.mw}MW ${d.len}M`, CYAN],
+  ];
+  rows.forEach(([k, v, col], i) => {
+    if (b.y + 21 + i * 7 > b.y + b.h - 12) return;
+    pxMini(c, k, b.x, b.y + 21 + i * 7, DIM, 'left', null);
+    pxMini(c, fit(v, b.w - 30), b.x + b.w, b.y + 21 + i * 7, col, 'right', null);
+  });
+  // Every component's mark as a strip of cells: engine parts, then the running gear.
+  const parts = ENGINE_PARTS;
+  const cw = Math.max(2, Math.floor((b.w - 2) / parts.length) - 1);
+  const y = b.y + b.h - 6;
+  parts.forEach((pt, i) => {
+    const lv = p.engine[pt.key];
+    const x = b.x + i * (cw + 1);
+    c.fillStyle = '#0a1a0e';
+    c.fillRect(x, y - 3, cw, 8);
+    c.fillStyle = pt.group === 'engine' ? AMBER : CYAN;
+    const hgt = Math.round((lv / 8) * 8);
+    if (hgt) c.fillRect(x, y + 5 - hgt, cw, hgt);
+  });
+}
+
+/* ---------------------------------------------------------------- */
+/* FUEL                                                              */
+/* ---------------------------------------------------------------- */
+
+function fuelPage(c: CanvasRenderingContext2D, g: Game, b: Box, time: number): void {
+  const s = g.titan;
+  const p = g.player;
+  const half = Math.floor(b.w * 0.55);
+  // Tanks.
+  pxMini(c, 'FUEL', b.x, b.y, DIM, 'left', null);
+  hbar(c, b.x + 18, b.y + 1, half - 20, 3, s.fuel / FUEL_MAX, s.fuel < FUEL_MAX * 0.15 ? RED : AMBER);
+  pxMini(c, 'CRUDE', b.x, b.y + 7, DIM, 'left', null);
+  hbar(c, b.x + 22, b.y + 8, half - 24, 3, s.crude / CRUDE_MAX, '#a07840');
+  const dr = drillRate(g), rr = refineRate(g);
+  const drillState = !fuelDrill(g) ? 'NONE' : s.drillWant ? (s.drill >= 1 ? 'PUMP' : `DOWN ${pct(s.drill)}`) : s.drill > 0 ? 'RAISE' : 'UP';
+  const lines: [string, string, string][] = [
+    ['DRILL', drillState, !fuelDrill(g) ? DIM : s.drill >= 1 ? GREEN : s.drill > 0 ? AMBER : WHITE],
+    ['PUMP', dr > 0 ? `+${dr.toFixed(1)}/S` : '-', dr > 0 ? GREEN : DIM],
+    ['REFINE', !fuelRefinery(g) ? 'NONE' : g.helm.refine ? (rr > 0 && s.crude > 0 ? `${(rr * 0.85).toFixed(1)}/S` : 'IDLE') : 'OFF', !fuelRefinery(g) ? DIM : g.helm.refine ? GREEN : AMBER],
+  ];
+  lines.forEach(([k, v, col], i) => {
+    const y = b.y + 14 + i * 7;
+    if (y > b.y + b.h - 6) return;
+    pxMini(c, k, b.x, y, DIM, 'left', null);
+    pxMini(c, v, b.x + half - 2, y, col, 'right', null);
+  });
+  // Oil survey: the ground within 1.5 km, heading up, richer brighter; you in the middle.
+  const sx = b.x + half + 2, sw = b.w - half - 2, sh = b.h - 2;
+  const n = Math.max(4, Math.min(12, Math.floor(Math.min(sw, sh) / 4)));
+  const cell = Math.floor(Math.min(sw, sh) / n);
+  const ox = sx + Math.floor((sw - cell * n) / 2), oy = b.y + Math.floor((sh - cell * n) / 2);
+  const span = 1500;
+  const fx = Math.cos(p.rot), fy = Math.sin(p.rot);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const u = ((i + 0.5) / n - 0.5) * 2 * span, v = (0.5 - (j + 0.5) / n) * 2 * span;
+      const wx = p.x + fx * v - fy * u, wy = p.y + fy * v + fx * u;
+      const o = oilAt(wx, wy, g.map.zoneAt(wx, wy));
+      const k = Math.min(1, o / 1.4);
+      c.fillStyle = `rgb(${Math.round(20 + 200 * k)},${Math.round(16 + 120 * k * k)},${Math.round(10 + 20 * k)})`;
+      c.fillRect(ox + i * cell, oy + j * cell, cell - 1, cell - 1);
+    }
+  }
+  c.fillStyle = Math.floor(time * 3) % 2 ? '#ffffff' : GREEN;
+  c.fillRect(ox + Math.floor((n * cell) / 2) - 1, oy + Math.floor((n * cell) / 2) - 1, 2, 3);
+  pxMini(c, `OIL ${oilWord(oilHere(g))}`, b.x, b.y + b.h - 6, '#e0a040', 'left', null);
 }

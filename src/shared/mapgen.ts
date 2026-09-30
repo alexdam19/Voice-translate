@@ -1,6 +1,6 @@
 import { MAP_SIZE } from './constants';
 import { craterNoise, craterThreat, craterZone, DIVOT, inLake, LOCATIONS, locationById, RIVERS, ROAD_LINKS, ZONE_INFO } from './crater';
-import { CH, GameMap, OBS, TER, ZONE, type MapChunk } from './map';
+import { CH, GameMap, OBS, TER, ZONE, type Building, type MapChunk } from './map';
 import { COMPOUND, compoundTile, inCompound } from './compound';
 import { Perlin } from './noise';
 import { RNG, hash2 } from './rng';
@@ -629,6 +629,7 @@ export class OpenWorld implements WorldGen {
     const h = this.hangar;
     const nearHangar = Math.abs(mx - h.x) < COMPOUND.x1 + 60 && my - h.y > COMPOUND.y0 - 60 && my - h.y < COMPOUND.y1 + 60;
     const divD = Math.hypot(mx - DIVOT.x, my - DIVOT.y);
+    const seenBld = new Map<string, 'solid' | 'ruin' | 'none'>();
     for (let ly = 0; ly < CH; ly++) {
       for (let lx = 0; lx < CH; lx++) {
         const x = x0 + lx, y = y0 + ly;
@@ -764,6 +765,11 @@ export class OpenWorld implements WorldGen {
               t = res.t;
               o = res.o;
               oh = res.h;
+              // A gutted tower block: registered once per chunk for its art.
+              if (res.bld && !seenBld.has(res.bld.key)) {
+                seenBld.set(res.bld.key, 'solid');
+                c.buildings.push(res.bld);
+              }
             } else if (dd < DIVOT.rimIn / DIVOT.rimOut) {
               // The crater floor: fused glass, rubble and pools.
               t = n1 > 0.1 ? TER.GLASS : n1 > -0.25 ? TER.CRATER : TER.WATER;
@@ -807,6 +813,36 @@ export class OpenWorld implements WorldGen {
             t = res.t;
             o = res.o;
             oh = res.o ? res.h * REGION_SCALE : res.h;
+            // A building that stands whole inside its region is registered for its art, and a roofed one is solid
+            // (a shell with a roof on would let things walk about on top of it); one the region's edge cuts through
+            // stays a broken shell.
+            const b = res.bld;
+            if (b) {
+              const key = `${reg.id}:${b.rx0}:${b.ry0}`;
+              let state = seenBld.get(key);
+              if (state === undefined) {
+                const X0 = b.rx0 * REGION_SCALE, Y0 = b.ry0 * REGION_SCALE, X1 = (b.rx1 + 1) * REGION_SCALE, Y1 = (b.ry1 + 1) * REGION_SCALE;
+                state = 'solid';
+                for (const [qx, qy] of [[X0, Y0], [X1 - 1, Y0], [X0, Y1 - 1], [X1 - 1, Y1 - 1]]) {
+                  if (Math.hypot(qx + 0.5 - reg.x, qy + 0.5 - reg.y) + p.noise2(qx / 18, qy / 18) * 10 > reg.r) state = 'none';
+                }
+                // A highway or a river through it (they're laid over the regions) leaves it a broken ruin.
+                for (let gy = 0; gy <= 2 && state === 'solid'; gy++) {
+                  for (let gx = 0; gx <= 2 && state === 'solid'; gx++) {
+                    const qx = X0 + ((X1 - X0) * gx) / 2, qy = Y0 + ((Y1 - Y0) * gy) / 2;
+                    for (const sg of roads) if (segDist(qx, qy, sg) <= ROAD_W * 1.8 + 1) state = 'ruin';
+                    for (const sg of rivers) if (segDist(qx, qy, sg) <= sg.w + 1) state = 'ruin';
+                  }
+                }
+                seenBld.set(key, state);
+                if (state === 'solid') c.buildings.push({ key, x0: X0, y0: Y0, x1: X1, y1: Y1, style: b.style, v: b.v });
+                else if (state === 'ruin' && X1 - X0 > 2) c.buildings.push({ key, x0: X0, y0: Y0, x1: X1, y1: Y1, style: 'ruin', v: b.v });
+              }
+              if (state === 'solid' && b.solid) {
+                o = b.o;
+                oh = b.h * REGION_SCALE;
+              }
+            }
             break;
           }
         }
@@ -935,7 +971,7 @@ function segDist(px: number, py: number, s: Seg): number {
  * The lost city in the Divot: 60 m blocks, 16 m avenues; towers rise toward the impact point (up to 150 m), and the
  * very centre is a blast pit of glass. `k` is 0 at the centre and 1 at the city's edge.
  */
-function paintDivotCity(x: number, y: number, k: number, seed: number, p2: Perlin): { t: number; o: number; h: number } {
+function paintDivotCity(x: number, y: number, k: number, seed: number, p2: Perlin): { t: number; o: number; h: number; bld?: Building } {
   if (k < 0.06) return { t: k < 0.03 ? TER.WATER : TER.GLASS, o: 0, h: 0 };
   const B = 60, S2 = 16;
   const bx = Math.floor(x / B), by = Math.floor(y / B);
@@ -947,18 +983,51 @@ function paintDivotCity(x: number, y: number, k: number, seed: number, p2: Perli
   if (lot < 0.24) return { t: TER.CONCRETE, o: hs < 0.4 ? OBS.RUIN : 0, h: 2 + Math.floor(hs * 10) };
   const near = 1 - k;
   const tall = Math.floor(12 + near * near * 110 + hash2(bx, by, seed + 6) * 30 * (0.3 + near));
+  const bld: Building = { key: `dv:${bx}:${by}`, x0: bx * B + S2, y0: by * B + S2, x1: bx * B + B, y1: by * B + B, style: 'gutted', v: Math.floor(lot * 1000) };
   const edge = ix === S2 || iy === S2 || ix === B - 1 || iy === B - 1;
-  if (edge) return { t: TER.CONCRETE, o: hs < 0.1 ? 0 : OBS.RUIN, h: Math.max(4, tall - Math.floor(hs * 10)) };
+  if (edge) return { t: TER.CONCRETE, o: hs < 0.1 ? 0 : OBS.RUIN, h: Math.max(4, tall - Math.floor(hs * 10)), bld };
   const inner = (ix - S2) % 8 === 4 && (iy - S2) % 8 === 4;
   void p2;
-  return { t: TER.CONCRETE, o: inner ? OBS.RUIN : 0, h: inner ? tall : 0 };
+  return { t: TER.CONCRETE, o: inner ? OBS.RUIN : 0, h: inner ? tall : 0, bld };
 }
 
 /**
  * Architecture for one tile of a region, `d` tiles from its centre (all at half resolution, see REGION_SCALE).
  * `keep` leaves the zone's own terrain (open ground inside a big region).
  */
-function paintRegion(reg: Region, x: number, y: number, d: number, R: number, seed: number, p2: Perlin): { t: number; o: number; h: number; keep?: boolean } {
+/**
+ * A building footprint in region tiles (inclusive), found while painting one of its tiles: the art it's drawn with,
+ * a variant, and for a roofed one (solid) the obstacle and height its whole footprint gets.
+ */
+interface RegionBld {
+  rx0: number;
+  ry0: number;
+  rx1: number;
+  ry1: number;
+  style: string;
+  v: number;
+  solid: boolean;
+  o: number;
+  h: number;
+}
+
+/** The look of a town's houses by the country it's in. */
+function townStyle(zone: number): string {
+  return zone === ZONE.FROST || zone === ZONE.WRAITH ? 'house_f' : zone === ZONE.DUNES ? 'house_d' : zone === ZONE.PASS || zone === ZONE.ASH ? 'house_p' : 'house_v';
+}
+
+/** The stone of a temple ruin by the country it's in. */
+function templeStyle(zone: number): string {
+  return zone === ZONE.DUNES || zone === ZONE.PASS ? 'temple_s' : zone === ZONE.SCORCHED || zone === ZONE.SPIRES ? 'temple_b' : zone === ZONE.FROST || zone === ZONE.WRAITH ? 'temple_i' : 'temple_g';
+}
+
+/** A building on a grid of `cw` x `ch` region tiles whose lot starts at (ox, oy): its footprint in region tiles. */
+function lot(x: number, y: number, off: number, cw: number, ch: number, ax: number, ay: number, bx: number, by: number, style: string, v: number, solid: boolean, o: number, h: number): RegionBld {
+  const gx = Math.floor((x + off) / cw), gy = Math.floor((y + off) / ch);
+  return { rx0: gx * cw - off + ax, ry0: gy * ch - off + ay, rx1: gx * cw - off + bx, ry1: gy * ch - off + by, style, v, solid, o, h };
+}
+
+function paintRegion(reg: Region, x: number, y: number, d: number, R: number, seed: number, p2: Perlin): { t: number; o: number; h: number; keep?: boolean; bld?: RegionBld } {
   const k = 1 - d / R;
   const hs = hash2(x, y, seed + reg.id);
   switch (reg.kind) {
@@ -974,18 +1043,25 @@ function paintRegion(reg: Region, x: number, y: number, d: number, R: number, se
       const lx = (x + 1000) % 14, ly = (y + 1000) % 12;
       if (lx < 3 || ly < 3) return { t: TER.ROAD, o: 0, h: 0 };
       const house = hash2(gx, gy, seed + 81);
-      if (house < 0.7 && (lx === 3 || lx === 13 || ly === 3 || ly === 11)) return { t: TER.CONCRETE, o: OBS.WALL, h: 3 + Math.floor(house * 5) };
-      return { t: house < 0.7 ? TER.CONCRETE : TER.GRASS, o: 0, h: 0 };
+      const bh = 3 + Math.floor(house * 5);
+      const bld = house < 0.7 ? lot(x, y, 1000, 14, 12, 3, 3, 13, 11, 'shop', Math.floor(house * 40), true, OBS.WALL, bh) : undefined;
+      if (house < 0.7 && (lx === 3 || lx === 13 || ly === 3 || ly === 11)) return { t: TER.CONCRETE, o: OBS.WALL, h: bh, bld };
+      return { t: house < 0.7 ? TER.CONCRETE : TER.GRASS, o: 0, h: 0, bld };
     }
     case 'raider': {
       // A scrap-wall stronghold: spiked wreck walls, watchtowers, shacks round a yard.
       if (Math.abs(d - (R - 8)) < 2) return { t: TER.RUST, o: hs < 0.06 ? 0 : OBS.WRECK, h: 6 + Math.floor(hs * 6) };
-      if (Math.abs(d - (R - 8)) < 4 && hs > 0.985) return { t: TER.RUST, o: OBS.PILLAR, h: 16 };
+      if (Math.abs(d - (R - 8)) < 4 && hs > 0.985) return { t: TER.RUST, o: OBS.PILLAR, h: 16, bld: { rx0: x, ry0: y, rx1: x, ry1: y, style: 'tower', v: Math.floor(hs * 1000), solid: true, o: OBS.PILLAR, h: 16 } };
       if (d < R * 0.25) return { t: TER.DIRT, o: hs < 0.01 ? OBS.WRECK : 0, h: 3 };
       const gx = Math.floor((x + 2000) / 11), gy = Math.floor((y + 2000) / 9);
       const lx = (x + 2000) % 11, ly = (y + 2000) % 9;
       const shack = hash2(gx, gy, seed + 91);
-      if (shack < 0.55 && lx >= 2 && lx < 9 && ly >= 2 && ly < 7 && (lx === 2 || lx === 8 || ly === 2 || ly === 6)) return { t: TER.RUST, o: OBS.RUIN, h: 3 + Math.floor(shack * 5) };
+      if (shack < 0.55 && lx >= 2 && lx < 9 && ly >= 2 && ly < 7) {
+        const bh = 3 + Math.floor(shack * 5);
+        const bld = lot(x, y, 2000, 11, 9, 2, 2, 8, 6, 'raidshack', Math.floor(shack * 40), true, OBS.RUIN, bh);
+        if (lx === 2 || lx === 8 || ly === 2 || ly === 6) return { t: TER.RUST, o: OBS.RUIN, h: bh, bld };
+        return { t: hs < 0.5 ? TER.DIRT : TER.RUST, o: 0, h: 2, bld };
+      }
       return { t: hs < 0.5 ? TER.DIRT : TER.RUST, o: hs < 0.012 ? OBS.WRECK : 0, h: 2 };
     }
     case 'lake': {
@@ -993,8 +1069,13 @@ function paintRegion(reg: Region, x: number, y: number, d: number, R: number, se
       const gx = Math.floor((x + 3000) / 24), gy = Math.floor((y + 3000) / 24);
       const lx = (x + 3000) % 24, ly = (y + 3000) % 24;
       const kind = hash2(gx, gy, seed + 31);
-      if (kind < 0.3 && lx >= 4 && lx < 20 && ly >= 4 && ly < 20 && (lx === 4 || lx === 19 || ly === 4 || ly === 19)) return { t: TER.METAL, o: OBS.RUIN, h: 8 + Math.floor(kind * 20) };
-      if (kind > 0.85 && lx === 12 && ly === 12) return { t: TER.METAL, o: OBS.PILLAR, h: 30 };
+      if (kind < 0.3 && lx >= 4 && lx < 20 && ly >= 4 && ly < 20) {
+        const bh = 8 + Math.floor(kind * 20);
+        const bld = lot(x, y, 3000, 24, 24, 4, 4, 19, 19, 'tanks', Math.floor(kind * 100), true, OBS.RUIN, bh);
+        if (lx === 4 || lx === 19 || ly === 4 || ly === 19) return { t: TER.METAL, o: OBS.RUIN, h: bh, bld };
+        return { t: TER.METAL, o: 0, h: 0, bld };
+      }
+      if (kind > 0.85 && lx === 12 && ly === 12) return { t: TER.METAL, o: OBS.PILLAR, h: 30, bld: { rx0: x, ry0: y, rx1: x, ry1: y, style: 'chimney', v: Math.floor(kind * 100), solid: true, o: OBS.PILLAR, h: 30 } };
       return { t: TER.METAL, o: 0, h: 0, keep: hs > 0.4 || k < 0.2 };
     }
     case 'spires': {
@@ -1010,9 +1091,10 @@ function paintRegion(reg: Region, x: number, y: number, d: number, R: number, se
       const kind = hash2(gx, gy, seed + 31);
       if (kind < 0.35 && lx >= 4 && lx < 24 && ly >= 4 && ly < 16) {
         const shell = lx === 4 || lx === 23 || ly === 4 || ly === 15;
-        return { t: TER.METAL, o: shell && !(ly === 15 && lx > 10 && lx < 18) ? OBS.RUIN : 0, h: 9 };
+        const bld = lot(x, y, 2000, 30, 22, 4, 4, 23, 15, 'hall', Math.floor(kind * 100), true, OBS.RUIN, 9);
+        return { t: TER.METAL, o: shell && !(ly === 15 && lx > 10 && lx < 18) ? OBS.RUIN : 0, h: 9, bld };
       }
-      if (kind > 0.9 && lx === 15 && ly === 11) return { t: TER.METAL, o: OBS.PILLAR, h: 16 };
+      if (kind > 0.9 && lx === 15 && ly === 11) return { t: TER.METAL, o: OBS.PILLAR, h: 16, bld: { rx0: x, ry0: y, rx1: x, ry1: y, style: 'stack', v: Math.floor(kind * 100), solid: true, o: OBS.PILLAR, h: 16 } };
       return { t: hs < 0.5 ? TER.CONCRETE : TER.METAL, o: hs < 0.015 ? OBS.WRECK : 0, h: 3 };
     }
     case 'town': {
@@ -1021,7 +1103,9 @@ function paintRegion(reg: Region, x: number, y: number, d: number, R: number, se
       const house = hash2(gx, gy, seed + 51);
       if (house < 0.55 && lx >= 3 && lx < 9 && ly >= 3 && ly < 8) {
         const shell = lx === 3 || lx === 8 || ly === 3 || ly === 7;
-        return { t: TER.CONCRETE, o: shell && hs > 0.15 ? OBS.RUIN : 0, h: 3 + Math.floor(house * 5) };
+        const bh = 3 + Math.floor(house * 5);
+        const bld = lot(x, y, 1000, 11, 11, 3, 3, 8, 7, townStyle(reg.zone), Math.floor(house * 100), true, OBS.RUIN, bh);
+        return { t: TER.CONCRETE, o: shell && hs > 0.15 ? OBS.RUIN : 0, h: bh, bld };
       }
       if (lx === 0 || ly === 0) return { t: TER.ROAD, o: hs < 0.03 ? OBS.WRECK : 0, h: 2 };
       return { t: TER.GRASS, o: hs < 0.01 ? OBS.WRECK : 0, h: 2, keep: true };
@@ -1032,8 +1116,13 @@ function paintRegion(reg: Region, x: number, y: number, d: number, R: number, se
         const gx = Math.floor((x + 1000) / 12), gy = Math.floor((y + 1000) / 9);
         const lx = (x + 1000) % 12, ly = (y + 1000) % 9;
         const barn = hash2(gx, gy, seed + 61);
-        if (barn < 0.5 && lx >= 2 && lx < 10 && ly >= 2 && ly < 7 && (lx === 2 || lx === 9 || ly === 2 || ly === 6)) return { t: TER.DIRT, o: OBS.RUIN, h: 4 + Math.floor(barn * 4) };
-        if (barn > 0.9 && lx === 6 && ly === 4) return { t: TER.DIRT, o: OBS.PILLAR, h: 12 };
+        if (barn < 0.5 && lx >= 2 && lx < 10 && ly >= 2 && ly < 7) {
+          const bh = 4 + Math.floor(barn * 4);
+          const bld = lot(x, y, 1000, 12, 9, 2, 2, 9, 6, 'barn', Math.floor(barn * 100), true, OBS.RUIN, bh);
+          if (lx === 2 || lx === 9 || ly === 2 || ly === 6) return { t: TER.DIRT, o: OBS.RUIN, h: bh, bld };
+          return { t: TER.DIRT, o: 0, h: 0, bld };
+        }
+        if (barn > 0.9 && lx === 6 && ly === 4) return { t: TER.DIRT, o: OBS.PILLAR, h: 12, bld: { rx0: x, ry0: y, rx1: x, ry1: y, style: 'silo', v: Math.floor(barn * 100), solid: true, o: OBS.PILLAR, h: 12 } };
         return { t: TER.DIRT, o: 0, h: 0 };
       }
       return { t: TER.GRASS, o: 0, h: 0, keep: true };
@@ -1042,15 +1131,24 @@ function paintRegion(reg: Region, x: number, y: number, d: number, R: number, se
       if (Math.abs(d - (R - 4)) < 1) return { t: TER.RUST, o: hs < 0.15 ? 0 : OBS.WRECK, h: 4 };
       const shack = hash2(Math.floor(x / 8), Math.floor(y / 8), seed + 71);
       const lx = ((x % 8) + 8) % 8, ly = ((y % 8) + 8) % 8;
-      if (shack < 0.4 && lx >= 1 && lx < 6 && ly >= 1 && ly < 5 && (lx === 1 || lx === 5 || ly === 1 || ly === 4)) return { t: TER.RUST, o: OBS.RUIN, h: 3 };
+      if (shack < 0.4 && lx >= 1 && lx < 6 && ly >= 1 && ly < 5) {
+        const bld = lot(x, y, 0, 8, 8, 1, 1, 5, 4, 'shack', Math.floor(shack * 100), true, OBS.RUIN, 3);
+        if (lx === 1 || lx === 5 || ly === 1 || ly === 4) return { t: TER.RUST, o: OBS.RUIN, h: 3, bld };
+        return { t: TER.DIRT, o: 0, h: 2, bld };
+      }
       return { t: TER.DIRT, o: hs < 0.01 ? OBS.WRECK : 0, h: 2 };
     }
     case 'ruins': {
       const gx = Math.floor((x + 1000) / 24), gy = Math.floor((y + 1000) / 24);
       const cx = (x + 1000) % 24, cy = (y + 1000) % 24;
       const crypt = hash2(gx, gy, seed + 61);
-      if (crypt < 0.35 && cx >= 6 && cx < 18 && cy >= 6 && cy < 18 && (cx === 6 || cx === 17 || cy === 6 || cy === 17) && !(cy === 17 && cx === 11)) return { t: TER.CONCRETE, o: OBS.RUIN, h: 4 + Math.floor(crypt * 10) };
-      if (crypt > 0.85 && cx === 12 && cy === 12) return { t: TER.CONCRETE, o: OBS.PILLAR, h: 18 };
+      if (crypt < 0.35 && cx >= 6 && cx < 18 && cy >= 6 && cy < 18) {
+        // A temple ruin: open to the sky, so its shell stays a shell.
+        const bld = lot(x, y, 1000, 24, 24, 6, 6, 17, 17, templeStyle(reg.zone), Math.floor(crypt * 100), false, OBS.RUIN, 0);
+        if ((cx === 6 || cx === 17 || cy === 6 || cy === 17) && !(cy === 17 && cx === 11)) return { t: TER.CONCRETE, o: OBS.RUIN, h: 4 + Math.floor(crypt * 10), bld };
+        return { t: TER.CONCRETE, o: 0, h: 0, bld };
+      }
+      if (crypt > 0.85 && cx === 12 && cy === 12) return { t: TER.CONCRETE, o: OBS.PILLAR, h: 18, bld: { rx0: x, ry0: y, rx1: x, ry1: y, style: 'obelisk', v: Math.floor(crypt * 100), solid: true, o: OBS.PILLAR, h: 18 } };
       return { t: TER.CONCRETE, o: 0, h: 0, keep: hs > 0.3 };
     }
     case 'hive':

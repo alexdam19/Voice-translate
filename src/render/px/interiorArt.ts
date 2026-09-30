@@ -25,6 +25,8 @@ export interface RoomArt {
   /** A job on it: progress 0-1 and whether a work crew is doing it. */
   job: { f: number; order: boolean } | null;
   accent: string;
+  /** The fuel plant (drill string depth 0-1, crude tank 0-1, refinery running). */
+  fuel?: { drill: number; crude: number; refining: boolean };
 }
 
 /** Where sleepers lie and diners sit in a room (filled in as the room draws its bunks and benches). */
@@ -455,6 +457,81 @@ export function drawRoom(a: RoomArt): Slots {
       slots.posts.push({ x: cx - 20, y: fl }, { x: cx + 20, y: fl });
       break;
     }
+    case 'fuel_drill': {
+      // The derrick: a lattice A-frame to the deckhead, the rotary table on the floor, the drill string going down
+      // through the keel (turning and sliding down while it bores), the mud pump thumping, crude in the pipe.
+      const fu = a.fuel ?? { drill: 0, crude: 0, refining: false };
+      const cx = x0 + Math.round(w * 0.42);
+      const top = y0 + 4;
+      for (let yy = top; yy < fl - 4; yy++) {
+        const k = (yy - top) / (fl - 4 - top);
+        const half = 3 + k * 9;
+        R(c, cx - half, yy, 1, 1, '#b8862a');
+        R(c, cx + half, yy, 1, 1, '#b8862a');
+        if ((yy - top) % 6 === 0) R(c, cx - half, yy, half * 2, 1, '#8a6420');
+        if ((yy - top) % 6 === 3) {
+          R(c, cx - half * 0.5, yy, 1, 1, '#6a4a18');
+          R(c, cx + half * 0.5, yy, 1, 1, '#6a4a18');
+        }
+      }
+      box(c, cx - 4, top - 2, 9, 3, '#6a707a');
+      // The string: segments sliding down while it bores.
+      const turning = fu.drill > 0 && fu.drill < 1 ? 1 : fu.drill >= 1 ? 0.3 : 0;
+      R(c, cx - 1, top + 1, 3, fl - top, '#8a929c');
+      for (let yy = top + 2; yy < fl; yy += 5) R(c, cx - 1, yy + Math.round((t * 8 * turning) % 5), 3, 1, '#4a4f58');
+      // Rotary table and the bore through the deck.
+      box(c, cx - 8, fl - 4, 17, 4, '#3a3632');
+      R(c, cx - 6 + Math.round(Math.sin(t * 10 * (turning + 0.05)) * 2 + 2), fl - 3, 3, 1, '#e0b020');
+      R(c, cx - 2, fl, 5, 3, '#050608');
+      // Mud pump with two pistons.
+      const px = x0 + w - 16;
+      box(c, px, fl - 12, 13, 12, '#4a3a5a');
+      for (let k = 0; k < 2; k++) {
+        const up = fu.drill >= 1 ? Math.round((Math.sin(t * 7 + k * Math.PI) + 1) * 1.5) : 0;
+        box(c, px + 2 + k * 6, fl - 17 + up, 3, 5, '#a0a8b4');
+      }
+      // Crude in the pipe to the tank, and the tank's sight glass.
+      R(c, cx + 10, fl - 20, px - cx - 10, 2, '#2a2420');
+      if (fu.drill >= 1) for (let k = 0; k < 4; k++) R(c, cx + 10 + ((t * 10 + k * 7) % Math.max(4, px - cx - 12)), fl - 20, 2, 2, '#7a5a30');
+      R(c, x0 + 3, y0 + 8, 4, fl - y0 - 10, '#0b0d11');
+      R(c, x0 + 4, fl - 2 - Math.round((fl - y0 - 12) * fu.crude), 2, Math.round((fl - y0 - 12) * fu.crude), '#3a2a14');
+      pxWarn(c, x0 + 3, y0 + 3, fu.drill >= 1 ? '#40ff60' : fu.drill > 0 ? '#ffb020' : '#ff3020', t);
+      slots.posts.push({ x: cx + 12, y: fl }, { x: px - 3, y: fl });
+      break;
+    }
+    case 'fuel_refinery': {
+      // Two distillation columns with their ladders, the furnace, pipework, the flare burning off the top.
+      const fu = a.fuel ?? { drill: 0, crude: 0, refining: false };
+      const run = fu.refining;
+      const cols = [x0 + Math.round(w * 0.22), x0 + Math.round(w * 0.5)];
+      cols.forEach((cx, k) => {
+        const top = y0 + 5 + k * 4;
+        box(c, cx - 5, top, 11, fl - top, k ? '#8a8e94' : '#9aa0a6');
+        for (let yy = top + 4; yy < fl - 2; yy += 7) R(c, cx - 5, yy, 11, 1, '#5a5e64');
+        for (let yy = top + 2; yy < fl - 1; yy += 2) R(c, cx + 6, yy, 2, 1, '#4a4f58');
+        R(c, cx - 1, top - 3, 3, 3, '#6a707a');
+        if (run && k === 0) {
+          const fh = 3 + Math.round((Math.sin(t * 13) + 1) * 1.5);
+          R(c, cx - 1, top - 3 - fh, 3, fh, Math.sin(t * 17) > 0 ? '#ffb040' : '#ff7020');
+          glowAt(c, cx, top - 5, 14, '#ff9030', 0.7);
+        }
+      });
+      // The furnace.
+      const fx = x0 + Math.round(w * 0.72);
+      box(c, fx, fl - 16, 14, 16, '#3a2a24');
+      R(c, fx + 3, fl - 9, 8, 5, run ? (Math.sin(t * 6) > 0 ? '#ffa030' : '#ff7010') : '#2a1a10');
+      if (run) glowAt(c, fx + 7, fl - 6, 20, '#ff9030', 0.5);
+      // Pipes from the columns to the furnace; product flowing when it runs.
+      R(c, cols[0] + 6, fl - 22, fx - cols[0] - 6, 2, '#4a5566');
+      R(c, cols[1] + 6, fl - 12, fx - cols[1] - 6, 2, '#4a5566');
+      if (run) for (let k = 0; k < 3; k++) R(c, cols[0] + 6 + ((t * 12 + k * 9) % Math.max(4, fx - cols[0] - 8)), fl - 22, 2, 2, '#ffd040');
+      // Crude level on the gauge.
+      discAt(c, x0 + w - 7, y0 + 12, 4, '#d8d0b8');
+      const an = -2.4 + fu.crude * 4.8;
+      R(c, x0 + w - 7 + Math.cos(an) * 3, y0 + 12 + Math.sin(an) * 3, 1, 1, '#c02010');
+      slots.posts.push({ x: fx - 4, y: fl }, { x: cols[1] + 10, y: fl });
+      break;
+    }
     case 'training_grounds': {
       for (let px = x0 + 6; px + 6 < x0 + w; px += 14) {
         discAt(c, px, fl - 16, 5, '#e04040');
@@ -505,4 +582,10 @@ export function drawCorridor(c: CanvasRenderingContext2D, x0: number, y0: number
   R(c, x0, y0 + h - 3, w, 3, FLOOR);
   R(c, x0, y0 + h - 3, w, 1, FLOOR_HI);
   void t;
+}
+
+/** A little status lamp (blinking when amber). */
+function pxWarn(c: CanvasRenderingContext2D, x: number, y: number, col: string, t: number): void {
+  R(c, x - 1, y - 1, 5, 5, '#0b0d11');
+  R(c, x, y, 3, 3, col === '#ffb020' && Math.floor(t * 4) % 2 ? '#5a3a08' : col);
 }

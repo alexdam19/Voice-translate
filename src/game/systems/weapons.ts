@@ -6,6 +6,7 @@ import type { Game, Target } from '../game';
 import type { ModuleInst, Tank } from '../tank';
 import { spawnJet } from './allies';
 import { damageEnemy, damageFriendly, damageTank, explode, type HitOpts } from './damage';
+import { MARK_RADIUS } from './orders';
 
 const HEIGHT = 1.2;
 
@@ -65,7 +66,13 @@ export function updateTankWeapons(g: Game, t: Tank, dt: number): void {
       m.recoil = Math.max(0, m.recoil - dt * 4);
       continue;
     }
-    const manned = need > 0 && m.crew < need ? 0.5 : 1;
+    // Wrecked by boarders: silent until a repair team gets to it; damaged, it's slower.
+    const wreck = m.wreck ?? 0;
+    if (wreck >= 1) {
+      m.recoil = Math.max(0, m.recoil - dt * 4);
+      continue;
+    }
+    const manned = (need > 0 && m.crew < need ? 0.5 : 1) * (1 - 0.5 * wreck);
     m.cd -= dt * rm * manned;
     m.cd2 -= dt * rm * manned;
     m.recoil = Math.max(0, m.recoil - dt * 4);
@@ -132,6 +139,22 @@ function pickTarget(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponStat
       }
     }
     if (best) return { id: best.id, x: best.x, y: best.y, r: 0.3, flying: true };
+  }
+  // A spot marked from the cabin's gunsight: the thing nearest it, or (heavy and lobbed guns) the spot itself.
+  if (t.aimPoint) {
+    const ap = t.aimPoint;
+    if (Math.hypot(ap.x - x, ap.y - y) <= s.range + MARK_RADIUS) {
+      let best: Target | null = null, bd = MARK_RADIUS;
+      for (const c of cands) {
+        const dd = Math.hypot(c.x - ap.x, c.y - ap.y);
+        if (dd < bd && Math.hypot(c.x - x, c.y - y) <= s.range + c.r) {
+          bd = dd;
+          best = c;
+        }
+      }
+      if (best) return best;
+      if ((d.size === 'heavy' || d.arc || s.sky > 0) && Math.hypot(ap.x - x, ap.y - y) <= s.range) return { id: 0, x: ap.x, y: ap.y, r: 4, flying: false };
+    }
   }
   // Focus target first.
   if (t.focusId) {

@@ -1,75 +1,138 @@
 import type { App } from '../app';
-import { ENGINE_MAX, ENGINE_PARTS, engineBlocked, engineCap, engineCost, engineReadout, upgradeEngine, type EngineParts, type EnginePart } from '../game/systems/engine';
+import { ENGINES, ENGINE_MAX, ENGINE_PARTS, engineBlocked, engineCap, engineCost, engineDef, engineReadout, engineWhy, installEngine, upgradeEngine, type EngineKey, type EngineParts, type EnginePart } from '../game/systems/engine';
+import { paintEngineRoom } from './engineArt';
 import { button, costHTML, esc, h } from './dom';
 
 /**
- * The Engine Workshop, a tab of the shop: the Titan's drive drawn on the bench (its block, turbochargers, gearbox,
- * nitro rack and radiators, each bigger or more numerous as you build it up), the numbers it makes, and a card per
- * part to fit the next mark. Hovering a card previews what the next mark would do to the numbers.
+ * The Engine Workshop, a tab of the shop. At the top, the engine room drawn to scale: whichever power plant you point
+ * at, on its bed under the crane, beside a 25 m blue whale. Then the engine catalog (every engine, its size, how long
+ * it takes to charge, its speed, thirst, overdrive stages and perks; buy one and the crane swaps it in), the numbers
+ * the drive makes now (and what the engine or part under the pointer would change), and a card per component, the
+ * engine's own and the running gear, to fit the next mark.
  */
 export function renderEngineShop(root: HTMLElement, app: App, rerender: () => void): void {
   const g = app.game;
   const p = g.player;
   const wrap = h('div', 'es');
+  const room = document.createElement('canvas');
+  room.className = 'es-room';
+  room.width = 720;
+  room.height = 230;
   const cv = document.createElement('canvas');
   cv.className = 'es-art';
   cv.width = 256;
   cv.height = 124;
   const read = h('div', 'es-read');
   const top = h('div', 'es-top');
-  top.append(cv, read);
+  const left = h('div', 'es-left');
+  left.append(room, cv);
+  top.append(left, read);
   wrap.appendChild(top);
   const cap = engineCap(p.stats.cc);
-  wrap.appendChild(h('div', 'd', `Bigger parts make her faster but hungrier. She is always slow off the mark and quick once rolling. Command Center L${p.stats.cc} fits parts up to Mk ${cap}.`));
-  const show = (hover: EnginePart | null): void => {
+  const show = (hover: EnginePart | null, eng: EngineKey | null = null): void => {
     const next: EngineParts = { ...p.engine };
     if (hover && next[hover] < ENGINE_MAX) next[hover]++;
+    paintEngineRoom(room, eng ?? p.engineKey);
     paintEngine(cv, p.engine, hover);
     const a = engineReadout(p, p.engine);
-    const b = hover ? engineReadout(p, next) : null;
+    const b = hover ? engineReadout(p, next) : eng && eng !== p.engineKey ? engineReadout(p, p.engine, eng) : null;
     const row = (k: string, v: number, w: number | undefined, unit: string, better: 'up' | 'down', dec = 0): string => {
       const f = (n: number): string => n.toFixed(dec);
       const diff = w === undefined || Math.abs(w - v) < 0.05 ? '' : `<i class="${(w > v) === (better === 'up') ? 'good' : 'bad'}">→ ${f(w)}</i>`;
       return `<div class="es-kv"><span>${k}</span><b>${f(v)}<small>${unit}</small></b>${diff}</div>`;
     };
-    read.innerHTML = `<div class="es-t">DRIVE</div>`
+    const cur = engineDef(p.engineKey);
+    const vs = eng && eng !== p.engineKey ? `<div class="es-vs">vs ${esc(engineDef(eng).name)}</div>` : '';
+    read.innerHTML = `<div class="es-t">DRIVE · ${esc(cur.name.toUpperCase())}</div>${vs}`
+      + row('CHARGE-UP', a.charge, b?.charge, ' s', 'down', 1)
       + row('TOP SPEED', a.top, b?.top, ' km/h', 'up')
       + row('0 → CRUISE', a.zeroTo, b?.zeroTo, ' s', 'down', 1)
-      + row('OVERDRIVE', a.od, b?.od, ' km/h', 'up')
+      + row('OVERDRIVE I', a.od, b?.od, ' km/h', 'up')
+      + row(`OVERDRIVE ${['I', 'II', 'III'][Math.max(0, a.stages - 1)]} (TOP)`, a.od3, b?.od3, ' km/h', 'up')
+      + row('OD STAGES', a.stages, b?.stages, '', 'up')
       + row('OVERDRIVE FOR', a.odTime, b?.odTime, ' s', 'up')
       + row('FUEL AT FULL', a.burn, b?.burn, ' /min', 'down', 1)
       + row('REACTOR DRAW', a.power, b?.power, ' pwr', 'down');
   };
-  const grid = h('div', 'es-parts');
-  for (const d of ENGINE_PARTS) {
-    const lvl = p.engine[d.key];
-    const why = engineBlocked(g, d.key);
-    const maxed = lvl >= ENGINE_MAX;
-    const el = h('div', `es-part ${maxed ? 'max' : why ? 'blocked' : ''}`);
-    const pips = Array.from({ length: ENGINE_MAX }, (_, i) => `<i class="${i < lvl ? 'on' : i < cap ? '' : 'lock'}"></i>`).join('');
-    el.innerHTML = `<div class="es-name"><span>${d.icon}</span> ${esc(d.name)} <small>Mk ${lvl}</small></div>
-      <div class="es-stat">${esc(d.stat)}</div>
-      <div class="es-pips">${pips}</div>
-      <div class="es-what">${esc(d.what)}</div>
-      <div class="es-per">${esc(d.per)} per mark</div>
-      ${maxed ? '<div class="es-why">Fully built.</div>' : `<div class="es-cost">${costHTML(engineCost(d.key, lvl), [p.cargo])}</div>`}`;
-    if (!maxed) {
-      const b = button(why && why !== 'Not enough materials.' ? esc(why) : `FIT MK ${lvl + 1}`, () => {
-        const r = upgradeEngine(g, d.key);
+
+  // The engine catalog.
+  wrap.appendChild(h('div', 'es-h', 'ENGINE ROOM · POWER PLANTS'));
+  wrap.appendChild(h('div', 'd', 'Every engine is the size of a whale. The bigger and stronger it is, the longer it takes to charge up (like a locomotive raising steam) and the bigger the flames out of the stern. Buy one and the yard crane swaps it in; engines you own can be swapped back for free. Your components (below) carry over to whichever engine is fitted.'));
+  const cat = h('div', 'es-cat');
+  for (const d of ENGINES) {
+    const owned = p.enginesOwned.includes(d.key);
+    const fitted = p.engineKey === d.key;
+    const why = engineWhy(g, d.key);
+    const locked = !owned && (g.commander.level < d.unlock || p.stats.cc < d.cc);
+    const el = h('div', `es-eng ${fitted ? 'fitted' : owned ? 'owned' : locked ? 'locked' : ''}`);
+    const chg = Math.min(1, d.charge / 20);
+    el.innerHTML = `<div class="es-name">${esc(d.name)} <small>${esc(d.kind)}</small></div>
+      <div class="es-dims">${d.len} m · ${d.mass.toLocaleString()} t · ${d.mw} MW · ${d.flame.jets} stacks</div>
+      <div class="es-bars">
+        <div><span>CHARGE</span><i style="--w:${Math.round(chg * 100)}%"></i><b>${d.charge} s</b></div>
+        <div><span>SPEED</span><i style="--w:${Math.round(Math.min(1, d.top / 1.5) * 100)}%"></i><b>${Math.round(d.top * 100)}%</b></div>
+        <div><span>FUEL</span><i class="hot" style="--w:${Math.round(Math.min(1, d.fuel / 2) * 100)}%"></i><b>${Math.round(d.fuel * 100)}%</b></div>
+        <div><span>OVERDRIVE</span><i style="--w:${Math.round((d.od / 3) * 100)}%"></i><b>${['I', 'I-II', 'I-III'][d.od - 1]}</b></div>
+      </div>
+      <ul class="es-perks">${d.perks.map((k) => `<li>${esc(k)}</li>`).join('')}</ul>
+      <div class="es-what">${esc(d.desc)}</div>
+      ${fitted ? '<div class="es-tag">INSTALLED</div>' : owned ? '<div class="es-tag own">OWNED · swap free</div>' : locked ? `<div class="es-why">Needs Commander L${d.unlock} and Command Center L${d.cc}.</div>` : `<div class="es-cost">${Object.keys(d.cost).length ? costHTML(d.cost, [p.cargo]) : 'Free'}</div>`}`;
+    if (!fitted && !locked) {
+      const label = why && why !== 'Not enough materials.' ? esc(why) : owned ? 'SWAP IN' : 'BUY & INSTALL';
+      el.appendChild(button(label, () => {
+        const r = installEngine(g, d.key);
         if (r) {
           app.hud.toast(r, '#ff8a80');
           app.sound('error');
           return;
         }
         rerender();
-      }, why ? 'small disabled' : 'small primary');
-      el.appendChild(b);
+      }, why ? 'small disabled' : 'small primary'));
     }
-    el.addEventListener('mouseenter', () => show(d.key));
+    el.addEventListener('mouseenter', () => show(null, d.key));
     el.addEventListener('mouseleave', () => show(null));
-    grid.appendChild(el);
+    cat.appendChild(el);
   }
-  wrap.appendChild(grid);
+  wrap.appendChild(cat);
+
+  // The components, the engine's own and the running gear.
+  for (const [grp, title, note] of [
+    ['engine', 'ENGINE COMPONENTS', `Bolted to whichever engine is fitted. Bigger parts make her faster but hungrier. Command Center L${p.stats.cc} fits parts up to Mk ${cap}.`],
+    ['gear', 'RUNNING GEAR', 'The crawler banks, their tracks, axles and differentials: grip, ride, turning and how hard she shoves.'],
+  ] as const) {
+    wrap.appendChild(h('div', 'es-h', title));
+    wrap.appendChild(h('div', 'd', note));
+    const grid = h('div', 'es-parts');
+    for (const d of ENGINE_PARTS.filter((k) => k.group === grp)) {
+      const lvl = p.engine[d.key];
+      const why = engineBlocked(g, d.key);
+      const maxed = lvl >= ENGINE_MAX;
+      const el = h('div', `es-part ${maxed ? 'max' : why ? 'blocked' : ''}`);
+      const pips = Array.from({ length: ENGINE_MAX }, (_, i) => `<i class="${i < lvl ? 'on' : i < cap ? '' : 'lock'}"></i>`).join('');
+      el.innerHTML = `<div class="es-name"><span>${d.icon}</span> ${esc(d.name)} <small>Mk ${lvl}</small></div>
+        <div class="es-stat">${esc(d.stat)}</div>
+        <div class="es-pips">${pips}</div>
+        <div class="es-what">${esc(d.what)}</div>
+        <div class="es-per">${esc(d.per)} per mark</div>
+        ${maxed ? '<div class="es-why">Fully built.</div>' : `<div class="es-cost">${costHTML(engineCost(d.key, lvl), [p.cargo])}</div>`}`;
+      if (!maxed) {
+        const b = button(why && why !== 'Not enough materials.' ? esc(why) : `FIT MK ${lvl + 1}`, () => {
+          const r = upgradeEngine(g, d.key);
+          if (r) {
+            app.hud.toast(r, '#ff8a80');
+            app.sound('error');
+            return;
+          }
+          rerender();
+        }, why ? 'small disabled' : 'small primary');
+        el.appendChild(b);
+      }
+      el.addEventListener('mouseenter', () => show(d.key));
+      el.addEventListener('mouseleave', () => show(null));
+      grid.appendChild(el);
+    }
+    wrap.appendChild(grid);
+  }
   root.appendChild(wrap);
   show(null);
 }

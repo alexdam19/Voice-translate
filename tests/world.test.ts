@@ -149,3 +149,30 @@ describe('motion', () => {
     void OBS;
   });
 });
+
+describe('buildings', () => {
+  it('registers every building in a settlement: roofed ones solid, the ones a highway cuts through left as ruins', () => {
+    const g = game(777);
+    const m = g.map;
+    const reg = g.gen.regions.find((r) => r.kind === 'settlement')!;
+    const seen = new Map<string, { x0: number; y0: number; x1: number; y1: number; style: string }>();
+    for (let cy = Math.floor((reg.y - 200) / CH); cy <= Math.floor((reg.y + 200) / CH); cy++) {
+      for (let cx = Math.floor((reg.x - 200) / CH); cx <= Math.floor((reg.x + 200) / CH); cx++) {
+        for (const b of m.chunk(cx, cy).buildings) seen.set(b.key, b);
+      }
+    }
+    const all = [...seen.values()];
+    const shops = all.filter((b) => b.style === 'shop');
+    expect(shops.length).toBeGreaterThan(10);
+    expect(all.some((k) => k.style === 'ruin')).toBe(true);
+    // A roofed shop is solid right through (nothing walks about inside it) until something smashes it.
+    const b = shops[0];
+    for (let ty = b.y0; ty < b.y1; ty++) for (let tx = b.x0; tx < b.x1; tx++) expect(m.getObs(tx, ty)).not.toBe(OBS.NONE);
+    expect(m.crush(b.x0 + 2, b.y0 + 2)).toBe(true);
+    expect(m.getObs(b.x0 + 2, b.y0 + 2)).toBe(OBS.NONE);
+    // Every building is registered in each chunk it covers, under the same key.
+    for (const s of shops.slice(0, 5)) {
+      for (const [tx, ty] of [[s.x0, s.y0], [s.x1 - 1, s.y1 - 1]]) expect(m.chunk(tx >> 5, ty >> 5).buildings.some((k) => k.key === [...seen].find(([, v]) => v === s)![0])).toBe(true);
+    }
+  });
+});

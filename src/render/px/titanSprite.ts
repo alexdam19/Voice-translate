@@ -3,35 +3,32 @@ import type { Game } from '../../game/game';
 import { compIndex, toroidOut } from '../../game/systems/titan';
 import { drawToroid, TOROID_FRAMES, TOROID_SHEET, toroidFrames } from './toroids';
 import type { ModuleInst, Tank } from '../../game/tank';
-import { hash2, makeCanvas } from './pixels';
-import { GUN_PX, scaledTo, shipArtFor, TOP_MARKS, TOP_PX, topScale, topToHull, type ShipArt } from './shipArt';
+import { hash2, makeCanvas, shade } from './pixels';
+import { GUN_PX, TOP_MARKS, TOP_PX, topScale, topToHull } from './shipArt';
+import { crawlerRects, nozzleSpots, stackSpots, titanSil, titanTop, topPalette, type TopPal } from './titanTop';
+import { engineDef } from '../../game/systems/engine';
 import type { HullLight } from './titan2d';
 import { TURRET_PIVOT, TURRET_R, TURRET_S, turretFamily, turretRing, turretSprite } from './turretArt';
 import { RARITIES } from '../../shared/rarity';
 import { WEAPONS } from '../../shared/weapons';
 
 /**
- * The Titan drawn from its design sheet: the top view as the hull, straight down, exactly as drawn; the main
- * battery lifted off it and turned to its target (barrels recoiling, red laser sights); the sheet's lamps and light
- * strips glowing and pulsing; engine pods glowing when she moves (white-hot in overdrive); scorch marks where the
- * armour has been hammered; fires through the deck; and whatever you've built on the roof (turrets on the pads,
- * nests, radar, tesla coils, shield emitters, hangar hatches).
+ * The Titan in the tactical view, painted from code (see titanTop.ts for the hull) so it's a whole ship at every
+ * zoom: the hull straight down; the crawler banks' tread links running at each side's speed (red-hot and broken
+ * where the horde has mauled a bank); the four toroids turning; the main batteries painted and turned to their
+ * targets (barrels recoiling, red laser sights); every gun you've mounted on the pads; nests, radar, coils, shield
+ * emitters and armour on the roof; crew walking the side walkways; the light strips pulsing; the exhaust stacks
+ * flaring and the engine pods throwing flames astern (longer for a bigger engine, far longer in overdrive); scorch
+ * marks where the armour has been hammered; fires through the deck.
  *
- * Everything is drawn straight into the view in hull metres (forward +x, starboard +y); nothing is repainted per
- * frame but the few things that move.
+ * Everything is drawn straight into the view in hull metres (forward +x, starboard +y).
  */
 
-/**
- * The crawler treads on the sheet (pixels: x, y, w, h on the port side; the starboard ones mirror them). Their links
- * repeat every TREAD_PITCH pixels, so sliding the picture by the tread's travel (modulo the pitch) runs them.
- */
-const TREADS: [number, number, number, number][] = [[437, 11, 150, 14], [528, 25, 58, 19], [11, 26, 38, 15]];
-const TREAD_PITCH = 5;
+/** Tread link pitch (m). */
+const TREAD_PITCH = 1.6;
 
 /** Per-hull animation state: last draw time, each side's tread offset, each toroid's spin. */
 const anim = new WeakMap<Tank, { t: number; tread: [number, number]; spin: number[] }>();
-
-const CLASS_GLOW: Record<string, string> = { juggernaut: '#3ab4ff', bastion: '#ffd740', ark: '#76ff03', nightrunner: '#b388ff', dredge: '#ffab40' };
 
 let scorchImg: HTMLCanvasElement | null = null;
 
@@ -70,42 +67,40 @@ const ZONE_BOX: Record<string, [number, number, number, number]> = {
 };
 
 /**
- * Draws a Titan from its sprite at screen position (sx, sy), turned to `a` (heading plus the view's turn), at
- * `ppm` screen pixels per metre. Returns the lights to glow, or null if the art hasn't loaded yet.
+ * Draws a Titan at screen position (sx, sy), turned to `a` (heading plus the view's turn), at `ppm` screen pixels per
+ * metre. Returns the lights to glow.
  */
 export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | null, time: number, sx: number, sy: number, a: number, ppm: number, shadow = true): HullLight[] | null {
-  const light = t.kind === 'main' ? CLASS_GLOW[t.klass] ?? null : null;
-  const art = shipArtFor(t.kind, light, t.dead);
-  if (!art) return null;
+  const pal = topPalette(t.kind, t.klass, t.dead);
   const L = t.stats.length, W = t.stats.width;
   const hl = L / 2, hw = W / 2;
   const { kx, ky } = topScale(L, W);
   const ca = Math.cos(a), sa = Math.sin(a);
   const lights: HullLight[] = [];
   const smooth = c.imageSmoothingEnabled;
-  // Sheet pixels on screen: grow them crisp, shrink them smooth (from a copy made at about the size shown).
-  const spx = kx * ppm;
-  c.imageSmoothingEnabled = spx < 1.6;
-  c.imageSmoothingQuality = 'low';
-  const hullImg = spx < 1 ? scaledTo(art.top, spx) : art.top;
-  const dw = TOP_PX.w * kx, dh = TOP_PX.h * ky;
-  const x0 = -TOP_PX.cx * kx, y0 = -TOP_PX.cy * ky;
+  const def = engineDef(t.engineKey);
+  const rear = t.modules.some((m) => m.key === 'main_gun' && m.cy > t.rows / 2);
+  const art = titanTop(L, W, pal, `${t.kind}|${t.klass}|${t.dead}`, def.flame.jets, rear, ppm);
+  const sil = titanSil(L, W);
 
   // Drop shadow to the south-east.
   if (shadow) {
     const off = Math.max(1, Math.round(6 * ppm));
     c.globalAlpha = 0.45;
+    c.imageSmoothingEnabled = true;
     c.setTransform(ca * ppm, sa * ppm, -sa * ppm, ca * ppm, sx + off, sy + off * 0.8);
-    c.drawImage(art.shadow, x0, y0, dw, dh);
+    c.drawImage(sil.shadow, sil.x0, sil.y0, sil.w, sil.h);
     c.globalAlpha = 1;
   }
 
-  // The hull.
+  // The hull (painted at about this zoom: shrunk smooth, never blown up by much).
   c.setTransform(ca * ppm, sa * ppm, -sa * ppm, ca * ppm, sx, sy);
-  c.drawImage(hullImg, x0, y0, dw, dh);
+  c.imageSmoothingEnabled = ppm < art.d * 0.98;
+  c.imageSmoothingQuality = 'medium';
+  c.drawImage(art.top, art.x0, art.y0, art.w, art.h);
 
-  // Running gear: each side's treads slide at that side's speed (capped where it would strobe), and the toroids
-  // spin up with their push.
+  // Running gear: each side's tread links travel at that side's speed (capped where they'd strobe); a crawler
+  // bank the horde or the guns have mauled shows it, red-hot and broken.
   let st = anim.get(t);
   if (!st) {
     st = { t: time, tread: [0, 0], spin: [0, 0, 0, 0] };
@@ -113,34 +108,46 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
   }
   const fdt = Math.max(0, Math.min(0.1, time - st.t));
   st.t = time;
+  const own = !!(g && t === g.player);
   if (!t.dead) {
     for (let s = 0; s < 2; s++) {
-      const v = Math.max(-110, Math.min(110, (t.sideSpeed[s] ?? t.speed) / kx));
+      const v = Math.max(-40, Math.min(40, t.sideSpeed[s] ?? t.speed));
       st.tread[s] = (((st.tread[s] + v * fdt) % TREAD_PITCH) + TREAD_PITCH) % TREAD_PITCH;
     }
-    if (spx >= 0.5) {
-      c.imageSmoothingEnabled = false;
-      for (const [rx, ry, rw, rh] of TREADS) {
-        for (let s = 0; s < 2; s++) {
-          const yy = s === 0 ? ry : TOP_PX.h - ry - rh;
-          const sh = Math.floor(st.tread[s]);
-          if (!sh) continue;
-          // Links travel toward the bow along the top run: the strip shifted aft by `sh`, wrapped.
-          c.drawImage(art.top, rx, yy, rw - sh, rh, x0 + (rx + sh) * kx, y0 + yy * ky, (rw - sh) * kx, rh * ky);
-          c.drawImage(art.top, rx + rw - sh, yy, sh, rh, x0 + rx * kx, y0 + yy * ky, sh * kx, rh * ky);
-        }
+  }
+  const linkPx = TREAD_PITCH * ppm;
+  for (const r of crawlerRects(L, W)) {
+    const hp = own ? g!.titan.crawlers[r.i] ?? 1 : 1;
+    const side = r.i < 4 ? 0 : 1;
+    const broken = hp <= 0.1;
+    if (linkPx >= 2.5) {
+      c.fillStyle = pal.d3;
+      const off = st.tread[side];
+      for (let q = r.x0 + off; q < r.x1; q += TREAD_PITCH) {
+        if (broken && hash2(Math.floor(q), r.i, 4) < 0.35) continue;
+        c.fillRect(q, r.ty0 + 0.3, TREAD_PITCH * 0.45, r.ty1 - r.ty0 - 0.6);
       }
-      c.imageSmoothingEnabled = spx < 1.6;
+      if (linkPx >= 6) {
+        c.fillStyle = pal.d6;
+        for (let q = r.x0 + off; q < r.x1; q += TREAD_PITCH) c.fillRect(q, r.ty0 + 0.3, TREAD_PITCH * 0.12, r.ty1 - r.ty0 - 0.6);
+      }
+    }
+    if (hp < 0.7) {
+      c.globalAlpha = Math.min(0.55, (0.7 - hp) * 0.9);
+      c.fillStyle = broken ? '#ff3d00' : '#ff8a3a';
+      c.fillRect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+      c.globalAlpha = 1;
+      if (broken) lights.push({ x: (r.x0 + r.x1) / 2, y: (r.y0 + r.y1) / 2, r: 10, color: '#ff5a1a', k: 0.35 + 0.15 * Math.sin(time * 9 + r.i) });
     }
   }
 
   // The four toroidal engines on their pylons, each spinning and glowing with its push.
-  const own = !!(g && t === g.player);
-  const core = light ?? (t.kind === 'rival' ? '#ff3b30' : '#18ffff');
+  const core = pal.glow === '#000000' ? '#18ffff' : t.kind === 'rival' ? '#ff3b30' : t.kind === 'main' ? pal.glow : '#18ffff';
   const turn = Math.max(-1, Math.min(1, t.yawRate / 0.08));
   const push = Math.max(Math.abs(t.throttle) * (own ? t.spool : 1), Math.min(1, Math.abs(t.speed) / 20));
   const thrust: number[] = [];
   const ringM = 28 * kx;
+  c.imageSmoothingEnabled = false;
   for (let i = 0; i < 4; i++) {
     const out = own ? toroidOut(g!.titan, g!.helm.toroids, i) : t.dead ? 0 : 1;
     const port = i % 2 === 0;
@@ -157,6 +164,7 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
   // Scorch marks where the armour's been hammered (your zones; anyone else's by their hull points).
   const burns: [string, number][] = g && t === g.player ? Object.entries(g.titan.zones) : [['roof', t.hp / Math.max(1, t.stats.maxHp)], ['port', t.hp / Math.max(1, t.stats.maxHp)], ['starboard', t.hp / Math.max(1, t.stats.maxHp)]];
   const sc = scorch();
+  c.imageSmoothingEnabled = true;
   burns.forEach(([z, v], zi) => {
     const box = ZONE_BOX[z];
     if (!box) return;
@@ -175,6 +183,9 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
   const cellX = (cy: number): number => (t.rows / 2 - cy) * cell;
   const cellY = (cx: number): number => (cx - t.cols / 2) * cell;
 
+  // Crew going about the deck along the walkways (close up).
+  if (!t.dead && !t.indoors && ppm >= 2.5) deckCrew(c, time, hl, hw, ppm);
+
   // What's built on the roof: guns on the pads and mounts, nests, masts, coils, emitters, hatches.
   c.imageSmoothingEnabled = false;
   for (const m of t.modules) {
@@ -187,44 +198,30 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
   }
 
   // The main batteries.
-  c.imageSmoothingEnabled = spx < 1.6;
-  const gunImg = spx < 1 ? scaledTo(art.gun, spx) : art.gun;
-  for (const m of t.modules) if (m.key === 'main_gun') battery(c, t, m, art, gunImg, kx, ky, ppm, lights);
+  for (const m of t.modules) if (m.key === 'main_gun') battery(c, t, m, pal, kx, ppm, lights);
 
-  // The sheet's lamps and light strips glow (a wreck's are out).
+  // The light strips glow (a wreck's are out).
   if (!t.dead) {
     c.globalCompositeOperation = 'lighter';
     c.imageSmoothingEnabled = true;
-    c.globalAlpha = 0.45 + 0.25 * pulse;
-    c.drawImage(art.glow, x0, y0, dw, dh);
+    c.globalAlpha = 0.55 + 0.3 * pulse;
+    c.drawImage(art.glow, art.x0, art.y0, art.w, art.h);
     c.globalAlpha = 1;
     c.globalCompositeOperation = 'source-over';
     for (const [px, py] of TOP_MARKS.lamps) {
       const [lx, ly] = topToHull(px, py, L, W);
-      lights.push({ x: lx, y: ly, r: 7, color: light ?? (t.kind === 'rival' ? '#ff3b30' : '#8fd8ff'), k: 0.45 * pulse + 0.2 });
+      lights.push({ x: lx, y: ly, r: 7, color: pal.glow, k: 0.3 * pulse + 0.15 });
     }
     // Headlights on the ground ahead.
     for (const s of [-1, 1]) lights.push({ x: hl + 22, y: s * 0.42 * hw, r: 26, color: '#fff3c4', k: 0.1 });
   }
 
-  // The engine pods: dark at rest, glowing as she gets going, white-hot in overdrive.
-  const moving = Math.min(1, Math.abs(t.speed) / 10);
-  const od = !!(g && t === g.player && g.helm.overdrive);
-  if (!t.dead && (moving > 0.1 || od)) {
-    for (const [px, py] of TOP_MARKS.nozzles) {
-      const [lx, ly] = topToHull(px, py, L, W);
-      const big = Math.abs(py - TOP_PX.cy) < 70;
-      const flick = 0.8 + 0.2 * Math.sin(time * 31 + py);
-      c.fillStyle = od ? (flick > 0.9 ? '#fff4c0' : '#ffb040') : '#ff7a1a';
-      c.globalAlpha = Math.min(1, (od ? 1 : moving) * flick);
-      const r = big ? 2.4 : 1.2;
-      c.fillRect(lx - r * 0.6, ly - r, r * 1.2, r * 2);
-      c.globalAlpha = 1;
-      lights.push({ x: lx - 2, y: ly, r: (big ? 9 : 5) * (od ? 1.6 : 0.6 + moving * 0.6), color: od ? '#ffb040' : '#ff7a1a', k: (od ? 0.95 : 0.35 + 0.35 * moving) * flick });
-    }
-  }
+  // Exhaust: the stacks glow and flare, the engine pods throw flames out astern, as long and as hot as the engine
+  // is big and hard-driven (and far longer in overdrive, stage by stage).
+  if (!t.dead) exhaust(c, t, g, time, push, def.flame, lights);
 
   // Toroid plumes: a neon wash streaming aft of each ring, as long as it pushes hard.
+  const od = own && g!.helm.overdrive;
   if (!t.dead) {
     c.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 4; i++) {
@@ -276,7 +273,8 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
   // Struck: the whole hull flashes.
   if (t.hitFlash > 0 && !t.dead) {
     c.globalAlpha = Math.min(0.4, t.hitFlash * 3);
-    c.drawImage(art.flash, x0, y0, dw, dh);
+    c.imageSmoothingEnabled = true;
+    c.drawImage(sil.flash, sil.x0, sil.y0, sil.w, sil.h);
     c.globalAlpha = 1;
   }
   c.setTransform(1, 0, 0, 1, 0, 0);
@@ -284,51 +282,271 @@ export function drawTitanSprite(c: CanvasRenderingContext2D, t: Tank, g: Game | 
   return t.dead ? [] : lights;
 }
 
-/** A main battery: the sheet's turret, turned to its aim, barrels recoiling, laser sights out ahead. */
-function battery(c: CanvasRenderingContext2D, t: Tank, m: ModuleInst, art: ShipArt, gun: HTMLCanvasElement, kx: number, ky: number, ppm: number, lights: HullLight[]): void {
+/** Crew walking the side walkways, up and back, in hi-vis and blue (drawn a little larger than life to read). */
+function deckCrew(c: CanvasRenderingContext2D, time: number, hl: number, hw: number, ppm: number): void {
+  const a0 = -hl * 0.88, a1 = hl * 0.6;
+  const n = 14;
+  const k = Math.max(1.4, Math.min(2.2, 12 / ppm));
+  for (let i = 0; i < n; i++) {
+    const s = i % 2 ? 1 : -1;
+    const sp = 1.1 + hash2(i, 3, 5) * 0.8;
+    const span = a1 - a0;
+    const u = ((time * sp + hash2(i, 1, 5) * span * 2) % (span * 2) + span * 2) % (span * 2);
+    const fwd = u < span;
+    const px = a0 + (fwd ? u : span * 2 - u);
+    const py = s * hw * 0.62 + (hash2(i, 2, 5) - 0.5) * 1.2;
+    const bob = Math.sin(time * 9 + i) * 0.06 * k;
+    const dir = fwd ? 1 : -1;
+    c.fillStyle = 'rgba(0,0,0,0.35)';
+    c.beginPath();
+    c.ellipse(px + 0.3 * k, py + 0.35 * k, 0.45 * k, 0.32 * k, 0, 0, Math.PI * 2);
+    c.fill();
+    // Shoulders, then the helmet; a tool or rifle carried ahead.
+    c.fillStyle = '#0a0c10';
+    c.beginPath();
+    c.ellipse(px, py + bob, 0.5 * k, 0.36 * k, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = i % 3 === 0 ? '#ff8a1a' : i % 3 === 1 ? '#2a5a9a' : '#d8a820';
+    c.beginPath();
+    c.ellipse(px, py + bob, 0.42 * k, 0.3 * k, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = i % 3 === 1 ? '#ffd740' : '#e8e8e0';
+    c.beginPath();
+    c.arc(px + 0.08 * k * dir, py + bob, 0.2 * k, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = '#1a1a1a';
+    c.fillRect(px + (dir > 0 ? 0.25 : -0.55) * k, py + bob - 0.05 * k, 0.3 * k, 0.1 * k);
+  }
+}
+
+/** Stack glow, heat and flame, and the engine pods' jets astern. */
+function exhaust(c: CanvasRenderingContext2D, t: Tank, g: Game | null, time: number, push: number, flame: { len: number; outer: string; core: string; jets: number }, lights: HullLight[]): void {
+  const L = t.stats.length, W = t.stats.width;
+  const own = !!(g && t === g.player);
+  const moving = Math.min(1, Math.abs(t.speed) / 10);
+  const stage = own && g!.helm.overdrive ? Math.max(1, g!.helm.odStage) : 0;
+  const k = own ? Math.max(0.12, push) : Math.max(0.1, moving);
+  const size = L / 200;
+  c.globalCompositeOperation = 'lighter';
+  // The stacks: a hot throat, and a flare from each that grows with the load (and leans aft as she picks up speed).
+  for (const s of stackSpots(L, W, flame.jets)) {
+    const flick = 0.75 + 0.25 * Math.sin(time * 23 + s.y * 3);
+    const r = (2 + 5 * k + 3 * stage) * flick * size;
+    const lean = Math.min(1, Math.abs(t.speed) / 25) * r * 1.2;
+    const gr = c.createRadialGradient(s.x - lean * 0.4, s.y, 0, s.x - lean * 0.4, s.y, r);
+    gr.addColorStop(0, flame.core);
+    gr.addColorStop(0.35, flame.outer);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    c.globalAlpha = Math.min(1, 0.35 + 0.65 * k);
+    c.fillStyle = gr;
+    c.beginPath();
+    c.ellipse(s.x - lean * 0.5, s.y, r + lean * 0.5, r, 0, 0, Math.PI * 2);
+    c.fill();
+    lights.push({ x: s.x, y: s.y, r: r * 1.8, color: flame.outer, k: 0.25 + 0.4 * k });
+  }
+  // The pods' jets: long flames out astern, a bright core, shock diamonds in overdrive II and III.
+  const noz = nozzleSpots(L, W).slice(0, Math.max(2, Math.min(4, flame.jets)));
+  for (const n of noz) {
+    const flick = 0.85 + 0.15 * Math.sin(time * 41 + n.y * 7);
+    const len = flame.len * size * (0.4 + 0.8 * k) * (1 + 0.55 * stage) * flick * (n.big ? 1 : 0.7);
+    const wdt = (n.big ? 3.2 : 2.3) * size * (1 + 0.15 * stage);
+    const gr = c.createLinearGradient(n.x, 0, n.x - len, 0);
+    gr.addColorStop(0, flame.outer);
+    gr.addColorStop(0.5, flame.outer + '88');
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    c.globalAlpha = Math.min(1, 0.3 + 0.7 * k);
+    c.fillStyle = gr;
+    c.beginPath();
+    c.moveTo(n.x, n.y - wdt);
+    c.quadraticCurveTo(n.x - len * 0.3, n.y - wdt * 1.35, n.x - len, n.y);
+    c.quadraticCurveTo(n.x - len * 0.3, n.y + wdt * 1.35, n.x, n.y + wdt);
+    c.closePath();
+    c.fill();
+    const cg = c.createLinearGradient(n.x, 0, n.x - len * 0.55, 0);
+    cg.addColorStop(0, flame.core);
+    cg.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = cg;
+    c.beginPath();
+    c.moveTo(n.x, n.y - wdt * 0.45);
+    c.lineTo(n.x - len * 0.55, n.y);
+    c.lineTo(n.x, n.y + wdt * 0.45);
+    c.closePath();
+    c.fill();
+    if (stage >= 2) {
+      c.fillStyle = flame.core;
+      for (let q = 1; q <= stage + 1; q++) {
+        const dx = n.x - (len * q) / (stage + 3);
+        c.globalAlpha = 0.5 * flick;
+        c.beginPath();
+        c.ellipse(dx, n.y, wdt * 0.5, wdt * 0.28, 0, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    lights.push({ x: n.x - len * 0.35, y: n.y, r: Math.max(8, len * 0.6), color: flame.outer, k: Math.min(0.95, 0.25 + 0.5 * k + 0.15 * stage) * flick });
+  }
+  c.globalAlpha = 1;
+  c.globalCompositeOperation = 'source-over';
+}
+
+/**
+ * A main battery, painted: the barbette ring it turns on, the long octagonal gunhouse (lit on its sunward facets),
+ * the rangefinder across its back, the commander's cupola and hatches, vents, a light strip in the hull's colour,
+ * the mantlet, and two long barrels with bore evacuators and muzzle brakes that slide back when it fires. Red laser
+ * sights run out ahead of the muzzles.
+ */
+function battery(c: CanvasRenderingContext2D, t: Tank, m: ModuleInst, P: TopPal, kx: number, ppm: number, lights: HullLight[]): void {
   const L = t.stats.length, W = t.stats.width;
   const rear = m.cy > t.rows / 2;
   const [px, py] = batteryLocal(L, W, rear);
-  const k = rear ? 0.72 : 1;
+  const u = kx * (rear ? 0.72 : 1);
   const ra = m.aim - t.rot;
-  const B = GUN_PX.band, gw = art.gun.width;
-  const gs = gun.width / gw;
-  const sxk = kx * k, syk = ky * k;
   const back = Math.min(0.35, m.recoil ?? 0) * 26;
-  // Its shadow on the deck (it stands a storey proud of it).
-  c.save();
-  c.translate(px + 1.6, py + 1.3);
-  c.rotate(ra);
-  c.globalAlpha = 0.35;
-  c.drawImage(art.gunShadow, 0, 0, gw, B, -GUN_PX.px * sxk, -GUN_PX.py * syk, gw * sxk, B * syk);
-  c.drawImage(art.gunShadow, 0, B, gw, B, -GUN_PX.px * sxk, -GUN_PX.py * syk, gw * sxk, B * syk);
-  c.globalAlpha = 1;
-  c.restore();
+  const muzzle = GUN_PX.muzzle - GUN_PX.px;
+  const fine = ppm * u;
+  const house: [number, number][] = [[-34, -18], [-26, -26], [14, -26], [30, -14], [30, 14], [14, 26], [-26, 26], [-34, 18]];
+  const polyP = (pts: [number, number][]): void => {
+    c.beginPath();
+    pts.forEach(([a, b], i) => (i ? c.lineTo(a, b) : c.moveTo(a, b)));
+    c.closePath();
+  };
   c.save();
   c.translate(px, py);
+  // Its shadow on the deck.
+  c.save();
+  c.translate(1.6, 1.3);
   c.rotate(ra);
-  // Barrels first (they slide back into the mantlet as they recoil), then the housing over their roots.
-  c.drawImage(gun, 0, B * gs, gw * gs, B * gs, (-GUN_PX.px - back) * sxk, -GUN_PX.py * syk, gw * sxk, B * syk);
-  c.drawImage(gun, 0, 0, gw * gs, B * gs, -GUN_PX.px * sxk, -GUN_PX.py * syk, gw * sxk, B * syk);
-  const reach = (GUN_PX.muzzle - GUN_PX.px - back) * sxk;
+  c.scale(u, u);
+  c.globalAlpha = 0.35;
+  c.fillStyle = '#000';
+  polyP(house);
+  c.fill();
+  for (const o of GUN_PX.twin) c.fillRect(20 - back, o - 3, muzzle - 20, 6);
+  c.globalAlpha = 1;
+  c.restore();
+  c.rotate(ra);
+  c.scale(u, u);
+  // Barrels first (they slide back into the mantlet as they recoil).
+  for (const o of GUN_PX.twin) {
+    const x0 = 20 - back, x1 = muzzle - back;
+    c.fillStyle = P.d0;
+    c.fillRect(x0, o - 3.3, x1 - x0, 6.6);
+    c.fillStyle = P.d5;
+    c.fillRect(x0, o - 2.8, 70, 5.6);
+    c.fillRect(x0 + 70, o - 2.3, x1 - x0 - 70, 4.6);
+    c.fillStyle = P.d7;
+    c.fillRect(x0, o - 2.8, 70, 1.4);
+    c.fillRect(x0 + 70, o - 2.3, x1 - x0 - 70, 1.1);
+    c.fillStyle = P.d3;
+    c.fillRect(x0, o + 1.4, x1 - x0, 1.2);
+    // Bore evacuator.
+    c.fillStyle = P.d6;
+    c.fillRect(x0 + 62, o - 3.5, 16, 7);
+    c.fillStyle = P.d7;
+    c.fillRect(x0 + 62, o - 3.5, 16, 1.5);
+    // Muzzle brake.
+    c.fillStyle = P.d0;
+    c.fillRect(x1 - 13, o - 4.2, 14, 8.4);
+    c.fillStyle = P.d5;
+    c.fillRect(x1 - 12.5, o - 3.7, 13, 7.4);
+    if (fine >= 0.35) {
+      c.fillStyle = P.d1;
+      for (const q of [x1 - 10, x1 - 6, x1 - 2]) c.fillRect(q, o - 3.7, 1.4, 7.4);
+    }
+  }
+  // The gunhouse.
+  c.fillStyle = P.d0;
+  c.save();
+  c.scale(1.04, 1.04);
+  polyP(house);
+  c.fill();
+  c.restore();
+  c.fillStyle = P.d4;
+  polyP(house);
+  c.fill();
+  // Sunward (port) facets lit, the far ones shaded, the roof plate raised in the middle.
+  c.fillStyle = P.d6;
+  polyP([[-26, -26], [14, -26], [30, -14], [20, -14], [8, -19], [-22, -19]]);
+  c.fill();
+  c.fillStyle = P.d2;
+  polyP([[-26, 26], [14, 26], [30, 14], [20, 14], [8, 19], [-22, 19]]);
+  c.fill();
+  c.fillStyle = P.d5;
+  polyP([[-28, -16], [-22, -19], [8, -19], [20, -14], [20, 14], [8, 19], [-22, 19], [-28, 16]]);
+  c.fill();
+  c.fillStyle = shade(P.d5, 0.12);
+  c.fillRect(-24, -16, 40, 3);
+  // Rangefinder across the back, its lenses out past the sides.
+  c.fillStyle = P.d0;
+  c.fillRect(-17, -33, 9, 66);
+  c.fillStyle = P.d4;
+  c.fillRect(-16.5, -32.5, 8, 65);
+  c.fillStyle = P.d6;
+  c.fillRect(-16.5, -32.5, 8, 2);
+  c.fillStyle = P.glass;
+  c.fillRect(-15, -33.5, 5, 2);
+  c.fillRect(-15, 31.5, 5, 2);
+  // Mantlet.
+  c.fillStyle = P.d0;
+  c.fillRect(22, -15, 11, 30);
+  c.fillStyle = P.d5;
+  c.fillRect(22.5, -14.5, 10, 29);
+  c.fillStyle = P.d6;
+  c.fillRect(22.5, -14.5, 10, 2);
+  if (fine >= 0.25) {
+    // Cupola, hatch, periscopes, rear vents, bolts.
+    c.fillStyle = P.d0;
+    c.beginPath();
+    c.arc(-4, 11, 6.5, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = P.d6;
+    c.beginPath();
+    c.arc(-4, 11, 5.8, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = P.d3;
+    c.beginPath();
+    c.arc(-4, 11, 3.2, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = P.glass;
+    for (let k = 0; k < 5; k++) {
+      const an = -Math.PI / 2 + (k - 2) * 0.55;
+      c.fillRect(-4 + Math.cos(an) * 5 - 0.8, 11 + Math.sin(an) * 5 - 0.8, 1.6, 1.6);
+    }
+    c.fillStyle = P.d0;
+    c.fillRect(-2, -14, 9, 9);
+    c.fillStyle = P.d6;
+    c.fillRect(-1.5, -13.5, 8, 8);
+    c.fillStyle = P.d3;
+    c.fillRect(0, -12, 5, 1);
+    c.fillStyle = P.d1;
+    for (let k = 0; k < 6; k++) c.fillRect(-31, -12 + k * 4.2, 6, 2);
+    c.fillStyle = P.d7;
+    for (let k = 0; k < 7; k++) {
+      c.fillRect(-22 + k * 6, -24.5, 1, 1);
+      c.fillRect(-22 + k * 6, 23.5, 1, 1);
+    }
+  }
+  // The light strip in the hull's colour.
+  if (!t.dead) {
+    c.fillStyle = P.glow;
+    c.fillRect(-22, -21.5, 36, 1.2);
+    c.fillRect(-22, 20.3, 36, 1.2);
+  }
+  const reach = muzzle - back;
   // Red laser sights off both muzzles.
   if (!t.dead && m.weapon) {
     c.strokeStyle = 'rgba(255,48,40,0.55)';
-    c.lineWidth = Math.max(0.12, 1 / ppm);
+    c.lineWidth = Math.max(0.12, 1 / ppm) / u;
     c.beginPath();
     for (const o of GUN_PX.twin) {
-      c.moveTo(reach, o * syk);
-      c.lineTo(reach + 70, o * syk);
+      c.moveTo(reach, o);
+      c.lineTo(reach + 70 / u, o);
     }
     c.stroke();
     c.fillStyle = '#ff5a4a';
-    for (const o of GUN_PX.twin) c.fillRect(reach - 0.3, o * syk - 0.3, 0.6, 0.6);
+    for (const o of GUN_PX.twin) c.fillRect(reach - 1, o - 1, 2, 2);
   }
   c.restore();
-  if ((m.recoil ?? 0) > 0.25) {
-    const ma = ra;
-    lights.push({ x: px + Math.cos(ma) * reach, y: py + Math.sin(ma) * reach, r: 12, color: '#fff3a0', k: 0.9 });
-  }
+  if ((m.recoil ?? 0) > 0.25) lights.push({ x: px + Math.cos(ra) * reach * u, y: py + Math.sin(ra) * reach * u, r: 12, color: '#fff3a0', k: 0.9 });
 }
 
 /** Something built on the roof that isn't a gun, drawn to sit on the sheet's plating rather than hide it. */
@@ -352,6 +570,27 @@ function roofThing(c: CanvasRenderingContext2D, t: Tank, m: ModuleInst, x0: numb
     return;
   }
   const d = MODULES[m.key];
+  if (m.key === 'armor' || m.key === 'heavy_armor') {
+    // Bolted armour: a thick slab with a bevel, its bolts, heavier plate doubled up.
+    const heavy = m.key === 'heavy_armor';
+    c.fillStyle = '#07090c';
+    c.fillRect(x0 + 0.2, y0 + 0.2, mw - 0.4, mh - 0.4);
+    c.fillStyle = heavy ? '#4a4f58' : '#40464f';
+    c.fillRect(x0 + 0.5, y0 + 0.5, mw - 1, mh - 1);
+    c.fillStyle = '#6a7482';
+    c.fillRect(x0 + 0.5, y0 + 0.5, mw - 1, 0.5);
+    c.fillStyle = '#23272e';
+    c.fillRect(x0 + 0.5, y0 + mh - 1, mw - 1, 0.5);
+    if (heavy) {
+      c.fillStyle = '#353a42';
+      c.fillRect(x0 + 1.4, y0 + 1.4, mw - 2.8, mh - 2.8);
+    }
+    if (ppm >= 2) {
+      c.fillStyle = '#9aa2ac';
+      for (const bx of [x0 + 1, x0 + mw - 1.4]) for (const by of [y0 + 1, y0 + mh - 1.4]) c.fillRect(bx, by, 0.4, 0.4);
+    }
+    return;
+  }
   if (d.nest) {
     // A ring of sandbags round a dark pit, its soldiers at the parapet.
     const rx = mw / 2 - 1.3, ry = mh / 2 - 1.3;

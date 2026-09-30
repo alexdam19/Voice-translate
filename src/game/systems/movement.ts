@@ -8,7 +8,7 @@ import { turnToward, wrapAngle } from '../../shared/types';
 import type { Game } from '../game';
 import type { Tank } from '../tank';
 import { damageEnemy } from './damage';
-import { engineSpec, pullCurve } from './engine';
+import { driveSpec, pullCurve } from './engine';
 
 export function tankNav(t: Tank): NavMode {
   return navModeFor(t.drive, t.crush);
@@ -224,7 +224,7 @@ export function crushUnder(g: Game, t: Tank, full = false): void {
 }
 
 /** Speed multiplier from the ground under the tank (worst of front/centre/back). */
-export function traction(g: Game, t: Tank): number {
+export function traction(g: Game, t: Tank, grip?: { rough: number; soft: number; grip: number }): number {
   const table = TRACTION[t.drive];
   const half = t.stats.length * 0.4;
   let worst = 2;
@@ -232,7 +232,8 @@ export function traction(g: Game, t: Tank): number {
     const p = t.toWorld(lx, 0);
     const ter = g.map.terAt(p.x, p.y);
     let v = table[ter] ?? 1;
-    if (t === g.player && t.crew.terrainImmune && (ter === TER.SAND || ter === TER.DUNE || ter === TER.ICE || ter === TER.SNOW || ter === TER.MUD)) v = Math.max(v, 1);
+    const soft = ter === TER.SAND || ter === TER.DUNE || ter === TER.ICE || ter === TER.SNOW || ter === TER.MUD;
+    if (t === g.player && t.crew.terrainImmune && soft) v = Math.max(v, 1);
     if (t.crush) {
       // Go-anywhere hulls wade through liquids the drive can't handle and climb cliffs, slowly.
       if (v <= 0) v = 0.35;
@@ -240,6 +241,8 @@ export function traction(g: Game, t: Tank): number {
       const o = g.map.inside(tx, ty) ? g.map.getObs(tx, ty) : 0;
       if (o && !crushable(o)) v *= 0.5;
     }
+    // The running gear and the helm's switches (tensioners in soft ground, suspension over rough, sand, diff lock).
+    if (grip && v < 1) v = Math.min(1, v + (soft ? grip.soft : grip.rough) + grip.grip);
     // Eight 30 m crawler banks spread the load: a Titan feels bad ground far less than a small hull does.
     if (t.fortress && v > 0 && v < 1) v = 0.5 + 0.5 * v;
     if (v <= 0) v = 0.15; // stuck in something it shouldn't be in; let it crawl out
@@ -327,7 +330,7 @@ export function arcThrottle(diff: number): number {
  * turns in wide differential arcs (a slow pivot only when nearly stopped, on firm ground). Heavy, but readable:
  * the HUD shows the throttle, both crawler sides and the predicted path.
  */
-export const TITAN = { accel: 2.4, brake: 1.8, coast: 0.4, reverseBrake: 2.8, yaw: 0.3, pivot: 0.12, cap: 125, carve: 22 } as const;
+export const TITAN = { accel: 2.4, brake: 1.8, coast: 0.4, reverseBrake: 2.8, yaw: 0.3, pivot: 0.12, cap: 125, carve: 22, helmLag: 1.6 } as const;
 /** Overdrive: this much more speed, for this much more fuel and wear. */
 export const OVERDRIVE = { speed: 1.45, fuel: 3, wear: 5 } as const;
 
@@ -386,7 +389,8 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   if (stunned) throttle = 0;
   t.throttle = throttle;
   // Ground changes ease in over a few tenths of a second instead of jolting the speed.
-  const raw = traction(g, t);
+  const ds = t.fortress ? driveSpec(g, t) : null;
+  const raw = traction(g, t, ds ?? undefined);
   t.trac = t.trac <= 0 ? raw : t.trac + (raw - t.trac) * (1 - Math.exp(-dt * 6));
   const trac = t.trac;
   const top = Math.min(t.fortress ? TITAN.cap : 99, t.stats.topSpeed) * trac * speedMult;
@@ -404,17 +408,28 @@ export function driveTank(g: Game, t: Tank, dt: number, speedMult = 1, manual?: 
   if (t.fortress) {
     // The engine spools toward the lever (winding down faster than up); she pulls weakly until it has, then harder
     // and harder as she gathers way.
-    const spec = engineSpec(t.engine);
-    const want = Math.abs(throttle);
-    t.spool = want > t.spool ? Math.min(want, t.spool + spec.spool * kick * dt) : Math.max(want, t.spool - 0.35 * dt);
+    // A preheated engine idles warm: it never drops below a third of its charge, so she moves off sooner.
+    const spec = ds!;
+    const warm = t === g.player && g.helm.preheat ? 0.35 : 0;
+    const want = Math.max(warm, Math.abs(throttle));
+    t.spool = want > t.spool ? Math.min(want, t.spool + spec.spool * kick * dt) : Math.max(want, t.spool - spec.decay * dt);
     if (gaining) rate *= pullCurve(spec, t.spool, Math.abs(t.speed) / Math.max(1, Math.abs(top))) * kick;
   }
   t.speed = up ? Math.min(target, t.speed + rate * dt) : Math.max(target, t.speed - rate * dt);
   const rot0 = t.rot;
   if (!stunned && t.fortress) {
-    const yaw = titanYaw(t, t.speed, trac > 0.7) * (speedMult > 1 ? 1.3 : 1) * (0.35 + 0.65 * t.titanMods.steering);
-    if (turnDir) t.rot = wrapAngle(t.rot + turnDir * yaw * (t.speed < -0.05 ? -1 : 1) * dt);
-    else t.rot = turnToward(t.rot, wantRot, yaw * dt);
+    const yaw = titanYaw(t, t.speed, trac > 0.7) * (speedMult > 1 ? 1.3 : 1) * (0.35 + 0.65 * t.titanMods.steering) * (ds?.turn ?? 1);
+    // Like a ship: the turn rate chases the helm slowly (it takes a couple of seconds to swing her head round, and
+    // she keeps turning a while after you let go). The autopilot eases off as it lines up so it doesn't overshoot.
+    let want: number;
+    if (turnDir) want = turnDir * yaw * (t.speed < -0.05 ? -1 : 1);
+    else {
+      const err = wrapAngle(wantRot - t.rot);
+      want = Math.max(-yaw, Math.min(yaw, err * 0.9 - t.turnVel * 0.6));
+    }
+    const lag = turnDir ? TITAN.helmLag : TITAN.helmLag * 0.5;
+    t.turnVel += (want - t.turnVel) * (1 - Math.exp(-dt / lag));
+    t.rot = wrapAngle(t.rot + t.turnVel * dt);
     // Lost crawlers on one side drag the hull round that way.
     t.rot = wrapAngle(t.rot + t.titanMods.pull * Math.min(1, Math.abs(t.speed) / 3) * dt);
   } else if (!stunned) {

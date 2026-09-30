@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { chewPart } from '../src/game/systems/titan';
+import { dispatchTeam, openJobs } from '../src/game/systems/crewops';
 import { damageTank } from '../src/game/systems/damage';
 import { deserialize, serialize } from '../src/game/save';
 import { stepWorld } from '../src/game/systems/step';
@@ -92,10 +94,39 @@ describe('Titan systems', () => {
     g.titan.fuel = 777;
     g.player.engine.block = 3;
     g.player.engine.nitro = 2;
+    g.player.engine.tracklinks = 4;
+    g.player.enginesOwned.push('orca');
+    g.player.engineKey = 'orca';
+    g.titan.crude = 321;
     const d = deserialize(JSON.parse(JSON.stringify(serialize(g))));
     expect(d.titan.crawlers[5]).toBeCloseTo(0.3);
     expect(d.titan.fire[compIndex(7, 2)]).toBeCloseTo(0.5);
     expect(d.titan.fuel).toBeCloseTo(777);
-    expect(d.player.engine).toEqual({ block: 3, turbo: 0, gearbox: 0, nitro: 2, radiator: 0 });
+    expect(d.titan.crude).toBeCloseTo(321);
+    expect(d.player.engine).toMatchObject({ block: 3, turbo: 0, gearbox: 0, nitro: 2, radiator: 0, tracklinks: 4, flywheel: 0 });
+    expect(d.player.engineKey).toBe('orca');
+    expect(d.player.enginesOwned).toContain('orca');
+  });
+});
+
+describe('boarders', () => {
+  it('chew on every part: a wrecked gun goes quiet until a repair team fixes it', { timeout: 60000 }, () => {
+    const g = game();
+    const p = g.player;
+    const gun = p.modules.find((m) => m.deck === 0 && m.weapon)!;
+    const l = p.moduleLocal(gun);
+    for (let i = 0; i < 1000 && (gun.wreck ?? 0) < 1; i++) chewPart(g, p, l.lx, l.lz, 20);
+    expect(gun.wreck).toBe(1);
+    expect(openJobs(g).some((j) => j.kind === 'gun')).toBe(true);
+    // The crawler guards along the edge, the toroid at a corner.
+    chewPart(g, p, p.stats.length * 0.22, -p.stats.width / 2 + 1, 400);
+    expect(g.titan.crawlers.some((v) => v < 1)).toBe(true);
+    chewPart(g, p, p.stats.length * 0.35, p.stats.width * 0.4, 400);
+    expect(g.titan.toroids.some((v) => v < 1)).toBe(true);
+    p.cargo.add('scrap', 400);
+    g.autoRepair = false;
+    expect(dispatchTeam(g, 'gun', String(gun.id))).toBeNull();
+    for (let t = 0; t < 90 && (gun.wreck ?? 0) > 0; t += 1 / 30) stepWorld(g, 1 / 30);
+    expect(gun.wreck ?? 0).toBe(0);
   });
 });

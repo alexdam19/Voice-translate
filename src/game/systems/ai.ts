@@ -8,6 +8,7 @@ import type { Tank } from '../tank';
 import { damageEnemy, damageFriendly, damageTank, explode } from './damage';
 import { driveTank, moveSmall, planPath } from './movement';
 import { troopCasualty } from './troops';
+import { chewPart } from './titan';
 
 function nearestFriendly(g: Game, e: Enemy, range: number, friends: Target[]): Target | null {
   let best: Target | null = null;
@@ -313,6 +314,8 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
   e.face = l.lz >= 0 ? -1 : 1;
   // On a Titan they're chewing at armour plate and hatches, not a thin deck.
   damageTank(g, t, e.dmg * (t.fortress ? 0.8 : 0.55) * dt * (e.elite ? 1.5 : 1), { silent: true, zone: 'roof' });
+  // And at whatever is under it: guns, crawler guards, toroids, the stacks, the masts.
+  if (t === g.player && t.titan && Math.random() < dt * 0.8) chewPart(g, t, l.lx, l.lz, e.dmg * (e.elite ? 2 : 1) * 1.25);
   // Boarders on the roof go for the soldiers standing there.
   if (t === g.player && Math.random() < dt * 0.012 * (e.elite ? 3 : 1)) troopCasualty(g, 'soldier', 'Boarders killed a soldier on the roof.');
   if (Math.random() < dt * 0.6) {
@@ -322,7 +325,7 @@ function updateLatched(g: Game, e: Enemy, dt: number): void {
   // Driving flat out shakes a few of them off (they hang on well; it's the guns and the soldiers that clear them).
   const od = t === g.player && g.helm.overdrive;
   const fast = Math.abs(t.speed) > t.stats.topSpeed * 0.75 || t.hasBuff('nitro') || od;
-  if (fast && Math.random() < dt * (t.hasBuff('nitro') ? 1.2 : od ? 0.5 : 0.2) * Math.sqrt(Math.max(1, t.ram * t.stats.crush))) {
+  if (fast && Math.random() < dt * (t.hasBuff('nitro') ? 1.2 : od ? 0.3 + 0.2 * g.helm.odStage : 0.2) * Math.sqrt(Math.max(1, t.ram * t.stats.crush * t.crushMul))) {
     e.latch = null;
     e.state = 'idle';
     e.z = 0;
@@ -894,7 +897,7 @@ function crushAndPush(g: Game, e: Enemy, dt: number, latched?: Map<number, numbe
     const v = Math.abs(t.speed);
     if (v < 1.5 || (e.bumpT ?? 0) > 0 || e.latch) continue;
     e.bumpT = 0.8;
-    const shove = Math.max(1, t.ram * t.stats.crush) * (t.hasBuff('nitro') ? 2 : 1);
+    const shove = Math.max(1, t.ram * t.stats.crush * t.crushMul) * (t.hasBuff('nitro') ? 2 : 1);
     // The quick ones get a grip and start to climb.
     if (latched && e.r <= 0.6 && !e.flying && (latched.get(t.id) ?? 0) < latchCap(t) && Math.random() < 0.45 / Math.sqrt(shove)) {
       const at = t.toLocal(e.x, e.y);

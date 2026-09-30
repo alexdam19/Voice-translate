@@ -101,3 +101,23 @@ export function updateInteract(g: Game): void {
     }
   } else g.interact = null;
 }
+
+/** How close to a marked spot a gun looks for something to shoot (m). */
+export const MARK_RADIUS = 45;
+
+/**
+ * The cabin's gunsight: marks a spot for every gun. For the next few seconds each gun in reach shoots whatever is
+ * nearest the mark (or, with nothing there, puts its shells onto the spot itself), and the main batteries fire at
+ * once if they're loaded. Returns the distance to the mark.
+ */
+export function markTarget(g: Game, x: number, y: number): number {
+  const p = g.player;
+  p.aimPoint = { x, y, t: 12 };
+  p.focusId = 0;
+  for (const m of p.modules) if (m.key === 'main_gun' && m.weapon) m.cd = Math.min(m.cd, 0.05);
+  return Math.hypot(x - p.x, y - p.y);
+}
+
+export function clearMark(g: Game): void {
+  g.player.aimPoint = null;
+}

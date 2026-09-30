@@ -1,5 +1,6 @@
 import { CH, OBS, OBS_COLOR, TER, TERRAIN, ZONE, type GameMap, type MapChunk, type Prop } from '../../shared/map';
 import { hash2, rgb, type RGB } from './pixels';
+import { paintBuildings } from './buildingArt';
 import { GROUND, loadWorldArt, NATURE, PROPS, propShare, type AtlasSprite } from './worldArt';
 
 /**
@@ -402,6 +403,7 @@ export class Terrain2D {
     out.height = S;
     const ctx = out.getContext('2d')!;
     ctx.putImageData(img, 0, 0);
+    paintBuildings(ctx, this.map, bx * BLOCK, by * BLOCK, BLOCK, f);
     this.stampSprites(ctx, bx, by, f);
     return out;
   }
@@ -662,7 +664,9 @@ export class Terrain2D {
     const out = document.createElement('canvas');
     out.width = BLOCK;
     out.height = BLOCK;
-    out.getContext('2d')!.putImageData(this.img, 0, 0);
+    const octx = out.getContext('2d')!;
+    octx.putImageData(this.img, 0, 0);
+    paintBuildings(octx, this.map, x0, y0, BLOCK, 1);
     // Keep what the high-resolution copies need: the colours, and the tiles with a one-tile border.
     const B2 = BLOCK + 2;
     const tb = new Uint8Array(B2 * B2), ob = new Uint8Array(B2 * B2);

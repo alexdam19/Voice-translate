@@ -811,6 +811,28 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 .es-what { color: #aab6c8; font-size: 11px; line-height: 1.3; }
 .es-per { color: #76ff03; font-size: 11px; }
 .es-why { color: #ffd740; font-size: 11px; }
+.es-left { display: flex; flex-direction: column; gap: 6px; flex: 2; min-width: 280px; }
+.es-room { width: 100%; max-width: 720px; height: auto; image-rendering: auto; border: 2px solid #2a3a50; background: #0c1016; }
+.es-left .es-art { width: 256px; }
+.es-vs { color: #ffd740; font-size: 11px; margin: -4px 0 4px; letter-spacing: 1px; }
+.es-h { color: #3ab4ff; font-weight: bold; letter-spacing: 3px; font-size: 13px; border-bottom: 2px solid #1c2838; padding: 6px 0 3px; margin-top: 4px; }
+.es-cat { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.es-eng { background: #121823; border: 2px solid #2e3c52; padding: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.es-eng:hover { border-color: #3ab4ff; box-shadow: 0 0 10px rgba(58, 180, 255, 0.35); }
+.es-eng.fitted { border-color: #76ff03; box-shadow: inset 0 0 12px rgba(118, 255, 3, 0.12); }
+.es-eng.owned { border-color: #5c7a9a; }
+.es-eng.locked { opacity: 0.55; }
+.es-eng .es-name small { color: #8fa3c2; font-weight: normal; }
+.es-dims { color: #ffd740; font-size: 11px; letter-spacing: 0.5px; }
+.es-bars { display: flex; flex-direction: column; gap: 2px; }
+.es-bars div { display: grid; grid-template-columns: 70px 1fr 44px; align-items: center; gap: 6px; font-size: 10px; }
+.es-bars span { color: #8fa3c2; letter-spacing: 1px; }
+.es-bars b { color: #e8f4ff; text-align: right; }
+.es-bars i { height: 6px; background: linear-gradient(90deg, #3ab4ff var(--w), #1c2430 var(--w)); border: 1px solid #0a0d12; }
+.es-bars i.hot { background: linear-gradient(90deg, #ff8a3a var(--w), #1c2430 var(--w)); }
+.es-perks { margin: 2px 0; padding-left: 16px; color: #b9f6ca; font-size: 11px; line-height: 1.35; }
+.es-tag { color: #76ff03; font-weight: bold; letter-spacing: 2px; font-size: 11px; }
+.es-tag.own { color: #8fc8ff; }
 
 .vs-item { background: #1a1c28; border: 2px solid #3a3e52; padding: 6px; text-align: center; cursor: pointer; font-size: 12px; display: flex; flex-direction: column; gap: 3px; align-items: center; }
 .vs-item:hover { border-color: #ffd740; }
@@ -1641,3 +1663,35 @@ html.touch .joy { display: block; }
     box-shadow: 0 0 0 2px #06101a, 0 0 22px rgba(64, 196, 255, 0.8);
   }
 }
+
+/* ---------------- The Mega Hangar intercom ---------------- */
+.comm-box {
+  position: absolute;
+  left: 50%;
+  bottom: 196px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  display: none;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  background: linear-gradient(#0c1420ee, #081018ee);
+  border: 2px solid #2a4a6a;
+  box-shadow: 0 0 0 1px #000, 0 0 18px rgba(64, 196, 255, 0.25);
+  pointer-events: none;
+  z-index: 6;
+  animation: comm-in 0.25s ease-out;
+}
+.comm-box img {
+  width: 64px;
+  height: 64px;
+  image-rendering: pixelated;
+  border: 2px solid #1a2a3a;
+  background: #04080c;
+  flex: none;
+}
+.comm-box b { font-family: var(--px); font-size: 10px; letter-spacing: 1px; }
+.comm-box small { margin-left: 8px; font-family: var(--px); font-size: 8px; color: #6f8494; }
+.comm-box p { margin: 4px 0 0; font-size: 12px; line-height: 1.35; color: #d8e8f0; }
+@keyframes comm-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (max-width: 700px) { .comm-box { bottom: 150px; } .comm-box img { width: 44px; height: 44px; } .comm-box p { font-size: 11px; } }

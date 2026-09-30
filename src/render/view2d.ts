@@ -20,6 +20,8 @@ import { BLOCK, Terrain2D } from './px/terrain2d';
 import { paintSmallTank, type HullLight } from './px/titan2d';
 import { paintTitanHD } from './px/titanhd';
 import { drawTitanSprite } from './px/titanSprite';
+import { stackSpots } from './px/titanTop';
+import { engineDef } from '../game/systems/engine';
 import { airshipSprite, altarSprite, gateSprite, nodeSprite, siteSprite } from './px/decorArt';
 import { drawOhv, ohvCanvas, ohvFlash, ohvFrame, ohvOneShot, ohvSheet, ohvSteps, preloadOhv } from './px/ohv';
 import { ohvLookFor } from './px/ohvLooks';
@@ -254,6 +256,11 @@ export class View2D {
     if (!this.terrain) this.terrain = new Terrain2D(g.map);
     else this.terrain.setMap(g.map);
     this.heading.clear();
+  }
+
+  /** The canvas the view is drawn into (the cabin's drone camera borrows it). */
+  get element(): HTMLCanvasElement {
+    return this.canvas;
   }
 
   resize(): void {
@@ -803,8 +810,9 @@ export class View2D {
     const od = g.helm.overdrive;
     // Exhaust.
     if (Math.random() < dt * (4 + v * 0.6)) {
-      const side = [-0.62, -0.22, 0.22, 0.62][Math.floor(Math.random() * 4)] * W * 0.345;
-      const w = t.toWorld(-L * 0.43, side);
+      const spots = stackSpots(L, W, engineDef(t.engineKey).flame.jets);
+      const st = spots[Math.floor(Math.random() * spots.length)];
+      const w = t.toWorld(st.x, st.y);
       const back = -(1 + v * 0.3);
       this.fx.emit(w.x, w.y, 4, Math.cos(t.rot) * back, Math.sin(t.rot) * back, 1.5, 2.5 + v * 0.05, 3, od ? '#546e7a' : '#2e2e30', { grow: 3, alpha: 0.6 });
       if (od) this.fx.emit(w.x, w.y, 4, Math.cos(t.rot) * back * 2, Math.sin(t.rot) * back * 2, 0.5, 0.25, 2, Math.random() < 0.5 ? '#ff9100' : '#40c4ff', { add: true });

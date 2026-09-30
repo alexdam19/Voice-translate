@@ -4,7 +4,8 @@ import { ZONES } from '../shared/zones';
 import type { Game } from '../game/game';
 import { hexToRgb } from './pixel';
 import type { View2D as View } from './view2d';
-import { shipArtFor, topScale, TOP_PX } from './px/shipArt';
+import { titanTop, topPalette } from './px/titanTop';
+import { engineDef } from '../game/systems/engine';
 import { nearestAAP } from './px/palette';
 
 /** The corner radar's default reach (metres each way from the fortress): a Titan sees a long way. */
@@ -339,16 +340,16 @@ export class Minimap {
       ring(ctx, x, y, 6, 'rgba(64,196,255,0.6)');
     }
     // Close in, your hull is drawn to scale from its sheet (farther out, an arrow).
-    const art = g.player.fortress ? shipArtFor('main', null, false) : null;
+    const pl = g.player;
+    const art = pl.fortress ? titanTop(pl.stats.length, pl.stats.width, topPalette('main', pl.klass, false), `main|${pl.klass}|false`, engineDef(pl.engineKey).flame.jets, false, 0.7) : null;
     const hullPx = g.player.stats.length * s;
     if (art && hullPx >= 16) {
       const [px, py] = P(g.player.x, g.player.y);
-      const { kx, ky } = topScale(g.player.stats.length, g.player.stats.width);
       ctx.save();
       ctx.translate(px, py);
       ctx.rotate(g.player.rot);
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(art.top, -TOP_PX.cx * kx * s, -TOP_PX.cy * ky * s, TOP_PX.w * kx * s, TOP_PX.h * ky * s);
+      ctx.drawImage(art.top, art.x0 * s, art.y0 * s, art.w * s, art.h * s);
       ctx.imageSmoothingEnabled = false;
       ctx.restore();
     } else arrow(ctx, ...P(g.player.x, g.player.y), g.player.rot, 1);

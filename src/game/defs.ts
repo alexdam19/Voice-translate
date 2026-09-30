@@ -57,6 +57,10 @@ export interface ModuleDef {
   shieldRegen?: number;
   vision?: number;
   drill?: number;
+  /** Fuel Drill: crude pumped per second on good ground (level 1). */
+  oilDrill?: number;
+  /** Automatic Refinery: crude cracked into fuel per second (level 1). */
+  crudeRefine?: number;
   harvest?: number;
   protects?: Hazard[];
   hardpoint?: WeaponSize;
@@ -144,6 +148,8 @@ add(M({ key: 'training_grounds', name: 'Training Grounds', w: 3, h: 4, cat: 'cre
 /* Resources */
 add(M({ key: 'cargo', name: 'Cargo Hold', w: 2, h: 2, cat: 'resource', cost: { scrap: 20, iron_plate: 4 }, height: 0.8, cargo: 12, limit: [2, 3, 4, 5, 6, 8], desc: '+12 cargo slots (more per level).' }));
 add(M({ key: 'refinery', name: 'Refinery', w: 3, h: 3, cat: 'resource', unique: true, unlock: 2, refinery: true, use: 1, cost: { scrap: 30, iron_plate: 6, copper_wire: 4 }, height: 1, desc: 'Turns ore into plates, wire, alloys and cores. Tap it to refine.' }));
+add(M({ key: 'fuel_drill', name: 'Fuel Drill', w: 2, h: 3, cat: 'resource', unique: true, oilDrill: 3, use: 1, cost: { scrap: 40, iron_plate: 8, copper_wire: 4 }, height: 1.3, desc: 'A deep bore through the keel. Stop the Titan and lower it (DRILL in the cabin or on the HUD) to pump crude oil into the crude tank: 3 a second on good ground, +40% per level, more on rich ground (the OIL survey). She cannot move while it is down, and the pumps draw creatures in. An Automatic Refinery turns the crude into fuel.' }));
+add(M({ key: 'fuel_refinery', name: 'Automatic Refinery', w: 3, h: 3, cat: 'resource', unique: true, crudeRefine: 2.4, use: 2, cost: { scrap: 50, iron_plate: 10, copper_wire: 8 }, height: 1.2, desc: 'Cracks crude oil from the crude tank into fuel on its own while its AUTO switch is on (cabin or HUD): 2.4 crude a second, +40% per level, at 85% yield. Draws 2 reactor power.' }));
 add(M({ key: 'drill_mk2', name: 'Drill Rig Mk2', w: 2, h: 2, cat: 'resource', unique: true, unlock: 7, cost: { iron_plate: 16, circuit: 4, explosive: 2 }, height: 0.8, drill: 2, harvest: 1.3, use: 1, desc: 'Harvests tier 2 nodes (titanium, uranium, cryo, sulfur). +30% harvest speed.' }));
 add(M({ key: 'drill_mk3', name: 'Drill Rig Mk3', w: 2, h: 2, cat: 'resource', unique: true, unlock: 16, cost: { titanium_alloy: 10, uranium_rod: 2, cryo_core: 2 }, height: 1, drill: 3, harvest: 1.6, use: 2, desc: 'Harvests Xenite. +60% harvest speed.' }));
 add(M({ key: 'vault', name: 'Secure Vault', w: 1, h: 1, cat: 'resource', unlock: 12, cost: { titanium_alloy: 3, circuit: 2 }, height: 0.7, vault: 4, maxLevel: 3, limit: [0, 1, 2, 3, 4, 5], desc: 'Protects 4 cargo slots from being lost in the Dead Zone.' }));
@@ -234,7 +240,7 @@ const DECK_OF: Record<string, number> = {
   quarters: 3, barracks: 3,
   mess_hall: 4, medbay: 4, workshop: 4, forge: 4, hydroponics: 4, repair_bay: 4, ammo_depot: 4,
   garage: 5, drone_bay: 5, jet_hangar: 5, mech_bay: 5, tank_bay: 5,
-  cargo: 6, vault: 6, refinery: 6, drill_mk2: 6, drill_mk3: 6,
+  cargo: 6, vault: 6, refinery: 6, drill_mk2: 6, drill_mk3: 6, fuel_drill: 7, fuel_refinery: 6,
   reactor: 7, fission: 7, engine: 7, ion_engine: 7, rad_baffles: 7, thermal: 7, sealant: 7,
 };
 
@@ -278,6 +284,7 @@ export const STAFF: Record<string, [Dept, number]> = {
   medbay: ['medical', 2], repair_bay: ['works', 1],
   hydroponics: ['galley', 1], mess_hall: ['galley', 2],
   workshop: ['works', 2], forge: ['works', 2], refinery: ['works', 1], drill_mk2: ['works', 1], drill_mk3: ['works', 1], ammo_depot: ['works', 1],
+  fuel_drill: ['works', 1], fuel_refinery: ['works', 1],
   science_lab: ['science', 2], arcane_sanctum: ['science', 1], training_grounds: ['science', 1],
   garage: ['hangar', 2], drone_bay: ['hangar', 1], jet_hangar: ['hangar', 2], mech_bay: ['hangar', 2], tank_bay: ['hangar', 2], barracks: ['command', 1],
 };

@@ -1,9 +1,10 @@
 import { TER, ZONE } from '../../shared/map';
-import { engineSpec } from './engine';
+import { driveSpec, specOf } from './engine';
 import { HANGAR } from '../../shared/mapgen';
 import { CREW_SCALE, TITAN_DECK_INFO } from '../defs';
 import type { Game } from '../game';
-import type { Tank } from '../tank';
+import type { ModuleInst, Tank } from '../tank';
+import { WEAPONS } from '../../shared/weapons';
 import { campBonus } from './camp';
 
 /**
@@ -91,6 +92,12 @@ export interface TitanState {
   warn: Record<string, number>;
   /** Fractional scrap owed for repairs. */
   owed: number;
+  /** Crude oil in the crude tank (see systems/fuel), the drill string's depth (0 up .. 1 at the seam) and whether
+   * it's going down, and the countdown to the pumps' noise drawing creatures in. */
+  crude: number;
+  drill: number;
+  drillWant: boolean;
+  drillNoise: number;
 }
 
 export const newTitanState = (): TitanState => ({
@@ -106,6 +113,10 @@ export const newTitanState = (): TitanState => ({
   temp: 21,
   warn: {},
   owed: 0,
+  crude: 0,
+  drill: 0,
+  drillWant: false,
+  drillNoise: 0,
 });
 
 /** Brings a saved state up to date (older saves had none). */
@@ -167,7 +178,7 @@ export function titanHit(g: Game, t: Tank, dmg: number, at?: { x: number; y: num
     const i = Math.max(0, Math.min(3, Math.floor((t.stats.length / 2 - l.lx) / (t.stats.length / 4))));
     const c = (z === 'port' ? 0 : 4) + i;
     const before = s.crawlers[c];
-    s.crawlers[c] = Math.max(0, s.crawlers[c] - k * 2.2 * (0.5 + Math.random()));
+    s.crawlers[c] = Math.max(0, s.crawlers[c] - k * 2.2 * (0.5 + Math.random()) * specOf(t).crawlerDmg);
     if (before > 0.1 && s.crawlers[c] <= 0.1) {
       g.hooks.toast(`CRAWLER ${z === 'port' ? 'L' : 'R'}${i + 1} DISABLED: the Titan slows and pulls to ${z}. The Works crew will get it moving again.`, '#ff1744');
       g.hooks.sound('alarm');
@@ -196,7 +207,7 @@ export function titanHit(g: Game, t: Tank, dmg: number, at?: { x: number; y: num
   return mult;
 }
 
-function hurtSystem(g: Game, key: SysKey, amount: number): void {
+export function hurtSystem(g: Game, key: SysKey, amount: number): void {
   const s = g.titan;
   const before = damageState(s.systems[key]);
   s.systems[key] = Math.max(0, s.systems[key] - amount);
@@ -341,7 +352,7 @@ export function updateTitan(g: Game, dt: number): void {
   // Fuel: the diesels burn it in proportion to how hard they work (a full tank is about 40 minutes flat out).
   const burnRate = fuelBurn(g);
   const hadFuel = s.fuel > 0;
-  s.fuel = Math.max(0, s.fuel - burnRate * dt);
+  s.fuel = Math.max(0, Math.min(FUEL_MAX, s.fuel - burnRate * dt));
   if (hadFuel && s.fuel <= 0) g.hooks.toast('OUT OF FUEL: running on the reactors alone at a crawl. Refinery, the Mothership, or burn scrap.', '#ff1744');
   // Refineries turn scrap into fuel; without one, the engineers burn scrap straight when it gets low.
   const refineries = p.modules.filter((m) => m.built && m.key === 'refinery').length;
@@ -384,9 +395,11 @@ export function updateTitan(g: Game, dt: number): void {
 
   // Wear: crawlers and the drive wear with every metre; everything else slowly.
   const metres = Math.abs(p.speed) * dt;
-  for (let i = 0; i < 8; i++) s.crawlers[i] = Math.max(0, s.crawlers[i] - metres * 0.000004 * (1 + Math.random()));
-  for (let i = 0; i < 4; i++) if (g.helm.toroids[i]) s.toroids[i] = Math.max(0, s.toroids[i] - metres * 0.0000025 * (g.helm.overdrive ? 4 : 1));
-  s.systems.propulsion = Math.max(0, s.systems.propulsion - metres * 0.000003 * (g.helm.overdrive ? 5 : 1) * engineSpec(g.player.engine).wear);
+  const ds = driveSpec(g, p);
+  const odWear = ds.od ? ds.od.wear : 1;
+  for (let i = 0; i < 8; i++) s.crawlers[i] = Math.max(0, s.crawlers[i] - metres * 0.000004 * (1 + Math.random()) * ds.crawlerWear);
+  for (let i = 0; i < 4; i++) if (g.helm.toroids[i]) s.toroids[i] = Math.max(0, s.toroids[i] - metres * 0.0000025 * (ds.od ? odWear * 0.8 : 1) * Math.pow(0.9, p.engine.governor));
+  s.systems.propulsion = Math.max(0, s.systems.propulsion - metres * 0.000003 * odWear * ds.wear);
   s.systems.power = Math.max(0, s.systems.power - dt * 0.00002);
   s.systems.steering = Math.max(0, s.systems.steering - Math.abs(p.yawRate) * dt * 0.0006);
 
@@ -437,12 +450,25 @@ export function updateTitan(g: Game, dt: number): void {
 /** Fuel burned per second right now: the diesels by load, overdrive, and the pumps and lights on the console. */
 export function fuelBurn(g: Game): number {
   const p = g.player;
+  const hm = g.helm;
   const load = Math.abs(p.speed) / Math.max(1, p.stats.topSpeed);
-  // A bigger engine block drinks more; nitro-fed overdrive drinks a lot more.
-  const spec = engineSpec(p.engine);
+  // The engine and its components, the drive mode; nitro-fed overdrive drinks a lot more, each stage far more again.
+  const ds = driveSpec(g, p);
   // Each toroid switched off saves a slice of the drive's burn.
-  const lit = g.helm.toroids.filter(Boolean).length / 4;
-  return ((p.anchored ? 0.02 : (0.08 + 0.75 * load) * spec.fuel * (0.7 + 0.3 * lit)) * (g.helm.overdrive ? spec.odFuel : 1) + (g.helm.pumps ? 0.12 : 0) + (g.helm.lights ? 0.02 : 0)) * g.statMods.fuel;
+  const lit = hm.toroids.filter(Boolean).length / 4;
+  let drive = p.anchored ? 0.02 : (0.08 + 0.75 * load) * ds.fuel * (0.7 + 0.3 * lit);
+  if (ds.def.cruiseEco && load > 0.8) drive *= 0.8;
+  // The preheater keeps the block warm while she idles.
+  if (hm.preheat && hm.lever === 0 && !p.anchored) drive += 0.06;
+  // The Salamander drinks the ground's heat on lava and ash.
+  if (ds.def.lavaFuel && onHotGround(g)) return -1.5;
+  return (drive * (ds.od ? ds.od.fuel : 1) + (hm.pumps ? 0.12 : 0) + (hm.lights ? 0.02 : 0)) * g.statMods.fuel;
+}
+
+/** Is the Titan standing on lava or ash? */
+export function onHotGround(g: Game): boolean {
+  const t = g.map.terAt(g.player.x, g.player.y);
+  return t === TER.LAVA || t === TER.ASH;
 }
 
 /** Water per second: what the condensers and a camp well bring in, and what the crew drink (life support recycles). */
@@ -478,4 +504,51 @@ export function titanAlerts(g: Game): { text: string; color: string }[] {
   if (s.fuel < FUEL_MAX * 0.15) out.push({ text: `⛽ Fuel ${Math.round((s.fuel / FUEL_MAX) * 100)}%`, color: s.fuel <= 0 ? '#ff1744' : '#ffab40' });
   if (s.water < WATER_MAX * 0.15) out.push({ text: `🚰 Water ${Math.round((s.water / WATER_MAX) * 100)}%`, color: s.water <= 0 ? '#ff1744' : '#ffab40' });
   return out.slice(0, 4);
+}
+
+/**
+ * A boarder chewing at whatever is under it on your Titan's roof: the nearest gun (knocked out at full damage until
+ * a team repairs it), the crawler guards along the edges, the toroid on its pylon at a corner, the engine intakes and
+ * stacks at the stern, the sensor masts and steering gear at the bow, the power runs anywhere else. `bite` is the
+ * creature's damage for this chew.
+ */
+export function chewPart(g: Game, t: Tank, lx: number, lz: number, bite: number): void {
+  const s = g.titan;
+  const L = t.stats.length / 2, W = t.stats.width / 2;
+  // Guns within reach.
+  let gun: ModuleInst | null = null, gd = 9;
+  for (const m of t.modules) {
+    if (m.deck !== 0 || !m.weapon || !m.built) continue;
+    const c = t.moduleLocal(m);
+    const d = Math.hypot(c.lx - lx, c.lz - lz);
+    if (d < gd) {
+      gd = d;
+      gun = m;
+    }
+  }
+  if (gun) {
+    const was = gun.wreck ?? 0;
+    gun.wreck = Math.min(1, was + bite * 0.004);
+    if (was < 1 && gun.wreck >= 1) {
+      g.hooks.toast(`GUN KNOCKED OUT: boarders wrecked the ${WEAPONS[gun.weapon!.key]?.name ?? 'gun'} on the roof. Send a repair team (VITALS or the cabin's damage control).`, '#ff5252');
+      g.hooks.sound('alarm');
+    }
+    return;
+  }
+  // A corner: the toroid out on its pylon.
+  if (Math.abs(lx) > L * 0.55 && Math.abs(lz) > W * 0.6) {
+    const i = (lx > 0 ? 0 : 2) + (lz < 0 ? 0 : 1);
+    s.toroids[i] = Math.max(0, s.toroids[i] - bite * 0.0008);
+    return;
+  }
+  // The edges: the crawler guards below them.
+  if (Math.abs(lz) > W - 6) {
+    const i = Math.max(0, Math.min(3, Math.floor((L - lx) / (t.stats.length / 4))));
+    const c = (lz < 0 ? 0 : 4) + i;
+    s.crawlers[c] = Math.max(0, s.crawlers[c] - bite * 0.0006);
+    return;
+  }
+  if (lx < -L + 30) hurtSystem(g, 'propulsion', bite * 0.0003);
+  else if (lx > L - 35) hurtSystem(g, Math.random() < 0.5 ? 'sensors' : 'steering', bite * 0.0003);
+  else hurtSystem(g, Math.random() < 0.7 ? 'power' : 'life', bite * 0.00015);
 }

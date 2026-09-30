@@ -5,7 +5,7 @@ import { emptyBonus, type CrewBonus } from './crew';
 import { classMods, type HullClass } from './classes';
 import { batteryLocal, batteryReach, chassisDef, CREW_SCALE, crewNeed, DECK_OPEN_CC, defaultDeck, deckAllows, fixedSpots, LEGACY_DIMS, levelMult, MODULES, ROOF, STAFF, titanReserved, type Dept, type ModuleDef } from './defs';
 import { hullMods, weaponMods, type HullMods } from './tech';
-import { engineSpec, newEngine, type EngineParts } from './systems/engine';
+import { ENGINES, engineSpec, newEngine, type EngineKey, type EngineParts } from './systems/engine';
 import type { RefitKey } from './systems/airlift';
 
 export type Team = 'player' | 'enemy';
@@ -67,6 +67,8 @@ export interface ModuleInst {
   deck: number;
   /** Troops manning it right now (guns need 1-2, nests hold their soldiers). */
   crew: number;
+  /** Damage from boarders (0 fine .. 1 knocked out: a gun won't fire until a repair team fixes it). */
+  wreck?: number;
 }
 
 export interface TankStats {
@@ -167,6 +169,8 @@ export class Tank {
   goal: { x: number; y: number } | null = null;
   /** Entity id this tank is ordered to attack (focus fire). */
   focusId = 0;
+  /** A spot marked from the cabin's gunsight: every gun in reach works the ground round it (seconds left). */
+  aimPoint: { x: number; y: number; t: number } | null = null;
   buffs = new Map<string, Buff>();
   anchored = false;
   dead = false;
@@ -217,6 +221,14 @@ export class Tank {
   indoors = false;
   /** The engine workshop's parts (Titans), and how far the engine has spooled up (0-1). */
   engine: EngineParts = newEngine();
+  /** The power plant in the engine room, and every one bought so far (they can be swapped back in for free). */
+  engineKey: EngineKey = 'leviathan';
+  /** Crush force from the drive (the helm's plough and crawl mode, the engine), set each step. */
+  crushMul = 1;
+  /** A Titan's turn rate (rad/s): like a ship's, it builds up slowly when you put the helm over and dies away slowly
+   * when you let go. */
+  turnVel = 0;
+  enginesOwned: EngineKey[] = ['leviathan'];
   spool = 0;
   /** Mega Hangar refits: a level in each track, with no ceiling. */
   refit: Partial<Record<RefitKey, number>> = {};
@@ -568,7 +580,7 @@ export class Tank {
     }
     power *= (1 + crew.power) * this.titanMods.power * (1 + 0.08 * rf('reactor'));
     // A bigger engine block draws on the reactors (the diesels themselves don't need it, but everything else feels it).
-    const es = engineSpec(this.engine);
+    const es = engineSpec(this.engine, this.engineKey);
     const driveRatio = use <= 0 ? 1 : Math.min(1, power / use);
     if (this.fortress) use += es.power;
     const powerRatio = use <= 0 ? 1 : Math.min(1, power / use);
@@ -791,6 +803,8 @@ export class Tank {
       modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, d: m.deck, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined, b: m.built ? undefined : false })),
       cargo: this.cargo.snapshot(),
       engine: Object.values(this.engine).some((v) => v > 0) ? { ...this.engine } : undefined,
+      engineKey: this.engineKey !== 'leviathan' ? this.engineKey : undefined,
+      engines: this.enginesOwned.length > 1 ? [...this.enginesOwned] : undefined,
       refit: Object.keys(this.refit).length ? { ...this.refit } : undefined,
     };
   }
@@ -804,6 +818,12 @@ export class Tank {
     t.troops = s.troops ?? 0;
     t.drive = s.drive;
     if (s.engine) for (const k of Object.keys(t.engine) as (keyof EngineParts)[]) t.engine[k] = Math.max(0, Math.min(8, Math.round(s.engine[k] ?? 0)));
+    const known = (k: unknown): k is EngineKey => ENGINES.some((e) => e.key === k);
+    if (s.engines) t.enginesOwned = ['leviathan', ...s.engines.filter((k) => known(k) && k !== 'leviathan')];
+    if (known(s.engineKey)) {
+      t.engineKey = s.engineKey;
+      if (!t.enginesOwned.includes(s.engineKey)) t.enginesOwned.push(s.engineKey);
+    }
     if (s.refit) for (const [k, v] of Object.entries(s.refit)) if (typeof v === 'number' && v > 0) t.refit[k as RefitKey] = Math.floor(v);
     t.x = s.x;
     t.y = s.y;
@@ -862,6 +882,9 @@ export interface TankSave {
   cargo: Slot[];
   /** The engine workshop's parts (v11+). */
   engine?: Partial<EngineParts>;
+  /** The engine room's power plant and the ones owned (v18+). */
+  engineKey?: EngineKey;
+  engines?: EngineKey[];
   /** Mega Hangar refit levels (v11+). */
   refit?: Partial<Record<RefitKey, number>>;
 }

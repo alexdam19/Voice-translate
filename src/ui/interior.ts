@@ -3,7 +3,8 @@ import { upgradeBlock } from '../game/actions';
 import { DECK_OPEN_CC, MODULES, ROOF, TITAN_DECK_INFO, TITAN_LIFTS } from '../game/defs';
 import type { Game } from '../game/game';
 import { crewSummary } from '../game/systems/crewops';
-import { compIndex } from '../game/systems/titan';
+import { compIndex, FUEL_MAX } from '../game/systems/titan';
+import { CRUDE_MAX, refineRate } from '../game/systems/fuel';
 import { armRoofOrder, cancelOrder, createOrder, MAX_ORDERS, mountKinds, planFetches, refitOrder, stepLabel, upgradeOrder, type OrderStep } from '../game/systems/workorders';
 import type { ModuleInst } from '../game/tank';
 import { HAIRS_HD, hatKindFor, personHD, type Look, type PoseHD } from '../render/px/people';
@@ -479,7 +480,7 @@ export class Interior {
         if (xb - xa < 6) continue;
         const d = MODULES[pl.m.key];
         const job = g.builds.find((b) => b.modId === pl.m.id);
-        const sl = drawRoom({ c, m: pl.m, x0: xa, y0, w: xb - xa, h: DH, t, speed: p.speed, job: job ? { f: job.t / job.total, order: !!job.order } : null, accent: CAT[d.cat] ?? '#78909c' });
+        const sl = drawRoom({ c, m: pl.m, x0: xa, y0, w: xb - xa, h: DH, t, speed: p.speed, job: job ? { f: job.t / job.total, order: !!job.order } : null, accent: CAT[d.cat] ?? '#78909c', fuel: { drill: g.titan.drill, crude: g.titan.crude / CRUDE_MAX, refining: refineRate(g) > 0 && g.titan.crude > 0 && g.titan.fuel < FUEL_MAX } });
         this.slots.set(pl.m.id, sl);
         // Door frames either side.
         c.fillStyle = '#0b0d11';

@@ -37,7 +37,7 @@ import { Panels } from './ui/panels';
 import { Title } from './ui/title';
 import { VillageUI } from './ui/village';
 import { DeadZoneClient } from './net/deadzone';
-import { engineSpec } from './game/systems/engine';
+import { cycleOverdrive } from './game/systems/helm';
 
 const STEP = 1 / 60;
 
@@ -144,6 +144,8 @@ export class App {
       camp: () => this.toggleCamp(),
       toast: (t, c) => this.hud.toast(t, c),
       sound: (n) => this.sound(n),
+      droneFeed: () => (this.cabin.glass === 'cam' ? { canvas: this.view.element, scale: this.view.pixelScale } : null),
+      drawWorldMap: (ctx, size) => this.minimap.draw(ctx, size, size, this.game, this.view, true),
     });
     this.hud.onToast = (t, c) => this.cabin.isOpen && this.cabin.message(t, c);
     this.interior = new Interior(uiRoot, {
@@ -286,7 +288,7 @@ export class App {
     const narrow = Math.max(1, Math.min(1.7, Math.sqrt(1.3 / aspect)));
     if (this.village) return (p.stats.length * 1.95 + 10) * this.villageZoomMul * narrow;
     // A Titan: far enough back to see the whole hull and the ground around it (the wheel zooms in and out).
-    if (p.fortress) return TITAN_ZOOM * this.zoomMul * narrow;
+    if (p.fortress) return TITAN_ZOOM * this.zoomMul * narrow * (this.cabin?.isOpen && this.cabin.glass === 'cam' ? this.cabin.camZoom : 1);
     return (18 + p.stats.length * 2.1) * this.zoomMul * narrow;
   }
 
@@ -558,7 +560,9 @@ export class App {
       return;
     }
     if (this.cabin.isOpen) {
-      // In the cab the world is drawn from the bow; the tactical view and its overlay rest.
+      // In the cab the world is drawn from the bow; the tactical view and its overlay rest (unless the glass is
+      // showing the spotter drone's feed, which is the tactical view from higher up).
+      if (this.cabin.glass === 'cam') this.view.render(g, paused ? 0 : dt);
       this.cabin.render(g, paused ? 0 : dt);
       this.hud.slowmo = false;
       this.hud.update(g, dt, this.village);
@@ -652,20 +656,9 @@ export class App {
   /** Overdrive: more speed for a lot more fuel and wear on the drive. */
   toggleOverdrive(): void {
     const g = this.game;
-    if (!g.player.titan || g.player.dead) return;
-    if (!g.helm.overdrive && g.titan.fuel <= 0) {
-      this.hud.toast('No fuel for overdrive.', '#ff8a80');
-      return;
-    }
-    if (!g.helm.overdrive && g.helm.overheat) {
-      this.hud.toast(`The engine is still too hot for overdrive (${Math.round(g.helm.heat * 100)}%).`, '#ff8a80');
-      this.sound('error');
-      return;
-    }
-    g.helm.overdrive = !g.helm.overdrive;
-    const spec = engineSpec(g.player.engine);
-    this.hud.toast(g.helm.overdrive ? `OVERDRIVE: +${Math.round((spec.odSpeed - 1) * 100)}% speed, ${spec.odFuel.toFixed(1)}x fuel burn, about ${Math.round((1 - g.helm.heat) / spec.heat)}s before it overheats.` : 'Overdrive off.', g.helm.overdrive ? '#ff9100' : '#b0bec5');
-    this.sound(g.helm.overdrive ? 'levelup' : 'ui');
+    const r = cycleOverdrive(g);
+    this.hud.toast(r.msg, r.ok ? (g.helm.overdrive ? '#ff9100' : '#b0bec5') : '#ff8a80');
+    this.sound(r.ok ? (g.helm.overdrive ? 'levelup' : 'ui') : 'error');
   }
 
   /** Cruise warp: 1x, 4x, 8x. Only while nothing hostile is near. */

@@ -2,36 +2,53 @@ import type { Game } from '../game/game';
 import { ENEMIES } from '../game/enemyDefs';
 import { isDocked } from '../game/campaign';
 import { CLASSES } from '../game/classes';
-import { dumpHalon, HALON_CD, HALON_WATER, HORN_CD, soundHorn } from '../game/systems/helm';
-import { COMPARTMENTS, crawlersUp, damageState, FUEL_MAX, outsideTemp, TOROIDS, toroidOut } from '../game/systems/titan';
+import { CREW_SCALE, MODULES } from '../game/defs';
+import { dumpHalon, fireSmoke, HALON_CD, HALON_WATER, HORN_CD, SAND_CD, setOverdrive, SMOKE_CD, soundHorn, throwSand } from '../game/systems/helm';
+import { COMPARTMENTS, compIndex, compName, crawlersUp, damageState, FUEL_MAX, outsideTemp, SYSTEMS, TOROIDS, toroidOut, ZONES as ARMOR, type ArmorZone } from '../game/systems/titan';
+import { DRIVE_MODES, driveSpec, specOf, type DriveMode } from '../game/systems/engine';
+import { CRUDE_MAX, drillRate, fuelDrill, fuelRefinery, oilHere, refineRate, setDrill } from '../game/systems/fuel';
+import { dispatchTeam, jobName, maxTeams, openJobs, stabilize, teamOn, type TeamKind } from '../game/systems/crewops';
+import { clearMark, markTarget, orderMove } from '../game/systems/orders';
+import { soldierSpots } from '../game/systems/soldiers';
+import { AGENTS } from '../game/systems/comms';
+import { mission } from '../game/campaign';
 import { archFor, creatureSprite, lookFor } from '../render/px/creatures2d';
 import { glowSprite } from '../render/px/fx2d';
 import { hash2, rgb } from '../render/px/pixels';
 import { paintTitan } from '../render/px/titan2d';
 import { paintTitanFlat } from '../render/px/titanSprite';
 import { shipView } from '../render/px/shipArt';
+import { personSprite } from '../render/px/people';
 import { OBS, OBS_COLOR, TER, TERRAIN } from '../shared/map';
 import type { OpenWorld } from '../shared/mapgen';
+import { oilWord } from '../shared/oil';
 import { ZONES } from '../shared/zones';
 import { h } from './dom';
 import { pxMini } from './pixfont';
 import { bevel, bracket, button, crack, dial, disc, makeNoise, plate, ringPx, rivet, shadeHex } from './cabinKit';
 import { dialsModule, drawScreen, PAGES, reactorModule, supplyModule, type Page } from './cabinScreens';
+import { buildHullShape, type HullShape } from './cabinHull';
+import { tipFor } from './cabinTips';
+import { agentImage } from './agents';
 
 /**
- * The captain's cabin: the forward cab at the Titan's bow, seen first person like the driving cab of a locomotive
- * or the inside of a tank. The top of the screen is the windscreen onto the wasteland (a voxel-space render of the
- * real map: ground, rocks, cliffs, buildings, your own hull behind you, creatures and shell bursts); the bottom is
- * the console, all pixel art and all of it live:
+ * The captain's cabin: the forward cab high on the Titan's bow, seen first person like the driving cab of a
+ * locomotive or the bridge of a ship. In the middle is the windscreen, and the glass can show four things:
  *
- *  - the THROTTLE lever (drag it: full ahead to full astern, with a detent at stop) and the STEER lever;
- *  - a radar scope, a speed dial, a readout block and six supply gauges;
- *  - a panel of warning lamps, toggle switches (floodlights, bilge pumps, master arm, shield power to the drive)
- *    and push buttons (air horn, halon dump, camp, cruise warp);
- *  - the guarded OVERDRIVE switch and the ALL STOP mushroom;
- *  - the four toroidal engine buttons, laid out like the ship (fore pair above, aft pair below; lamp green when lit,
- *    amber hurt, red dead, dark when switched off) and the train brake handle under them (drag it on; it stays set
- *    until you open the throttle).
+ *  - VIEW   the wasteland out of the window (a voxel-space render of the real map: ground, rocks, cliffs,
+ *           buildings, creatures, shell bursts, and your own ship round and below you: the deck, the turrets turning
+ *           to their targets, the soldiers in their nests, the stacks with their flames, the toroids on their
+ *           pylons). Drag to look round and to look down; with the GUNSIGHT armed a click marks a target.
+ *  - DRONE  the spotter drone's live feed from overhead.
+ *  - MAP    the whole Crater: zones, places, roads, the mission; click to plot a course.
+ *  - DAMAGE CONTROL  the Titan's schematic, every part green to red; click one to send a repair team.
+ *
+ * Either side of the glass the analytics screens (click to turn their pages) over the fuel plant (drill lever,
+ * refinery switch, crude and oil gauges) and the tactical box (glass mode, gunsight, smoke). Overhead: the compass,
+ * the lamps and breakers and small dials, and the drive row: the drive-mode selector, the preheater, sanders, diff
+ * lock and plough, the engine's CHARGE gauge and the INFO switch. Below: the console (radar, dials, systems panel,
+ * toroids and brake, the three overdrive stages and ALL STOP, the throttle, supplies, reactor) and the steering
+ * lever. Hovering anything (or tapping it with INFO on) puts a plate on the glass saying exactly what it does.
  *
  * At speed the cab shakes and the ground rushes past in streaks; the faster she goes the harder it rattles.
  */
@@ -45,6 +62,10 @@ export interface CabinActions {
   camp(): void;
   toast(text: string, color?: string): void;
   sound(name: string): void;
+  /** The tactical view rendered for the drone camera (and how many screen pixels one of its pixels covers). */
+  droneFeed(): { canvas: HTMLCanvasElement; scale: number } | null;
+  /** Paints the whole Crater map into a square of `size` pixels. */
+  drawWorldMap?(c: CanvasRenderingContext2D, size: number): void;
 }
 
 interface Hit {
@@ -67,10 +88,16 @@ interface Flash {
 
 const LIP = 16;
 const MOD_H = 102;
-/** The overhead panel: the compass and buttons, then status lamps, breakers and small dials. */
-const HEAD = 28;
+/** The overhead panel: the compass and buttons, then status lamps, breakers and small dials, then the drive row. */
+const HEAD = 44;
 /** Console modules and their widths, in the order they're laid out (they wrap onto more rows on narrow screens). */
-const MODS: [string, number][] = [['radar', 88], ['dials', 128], ['panel', 112], ['engines', 50], ['drive', 36], ['throttle', 48], ['supply', 84], ['reactor', 68]];
+const MODS: [string, number][] = [['radar', 88], ['dials', 128], ['panel', 112], ['engines', 50], ['drive', 56], ['throttle', 48], ['supply', 84], ['reactor', 68]];
+/** The fuel plant and tactical boxes: in the side wings, or among the modules when there are no wings. */
+const BOXES: [string, number][] = [['fuel', 84], ['tact', 76]];
+const SCR_H = 56;
+const BOX_H = 82;
+
+export type GlassMode = 'view' | 'cam' | 'map' | 'dc';
 
 interface Layout {
   rows: [string, number][][];
@@ -78,14 +105,16 @@ interface Layout {
   screens: number;
   scrH: number;
   dashH: number;
+  /** Width of each side wing (0: no wings, the screens sit above the console). */
+  wing: number;
+  perWing: number;
 }
 
-/** Lays the console out for a canvas W x H: module rows, then how many screens fit above them. */
-function layoutFor(W: number, H: number): Layout | null {
+function rowsFor(mods: [string, number][], W: number): { rows: [string, number][][]; rowW: number } | null {
   const rows: [string, number][][] = [];
   let cur: [string, number][] = [];
   let cw = 0;
-  for (const m of MODS) {
+  for (const m of mods) {
     const add = (cur.length ? 2 : 0) + m[1];
     if (cur.length && cw + add > W - 8) {
       rows.push(cur);
@@ -98,10 +127,28 @@ function layoutFor(W: number, H: number): Layout | null {
   rows.push(cur);
   const widths = rows.map((r) => r.reduce((a, [, w]) => a + w, 0) + (r.length - 1) * 2);
   const rowW = Math.max(...widths);
-  if (rowW > W - 8) return null;
-  const screens = Math.max(1, Math.min(4, Math.floor((rowW + 2) / 118)));
+  return rowW > W - 8 ? null : { rows, rowW };
+}
+
+/**
+ * Lays the cab out for a canvas W x H. Wide enough: side wings either side of the glass (screens stacked over the
+ * fuel and tactical boxes) and one console row, so the glass is tall. Otherwise the screen bank sits over the
+ * console and the boxes go in with the modules.
+ */
+function layoutFor(W: number, H: number): Layout | null {
+  const bottom = rowsFor(MODS, W);
+  if (bottom && bottom.rows.length === 1) {
+    const dashH = LIP + MOD_H;
+    const winH = H - HEAD - dashH;
+    const wing = W >= 900 ? 150 : W >= 620 ? 124 : 0;
+    const perWing = wing ? Math.floor((winH - BOX_H - 4) / (SCR_H + 3)) : 0;
+    if (wing && perWing >= 1 && W - wing * 2 >= 300 && winH >= 170) return { rows: bottom.rows, rowW: bottom.rowW, screens: perWing * 2, scrH: SCR_H, dashH, wing, perWing };
+  }
+  const all = rowsFor([...MODS, ...BOXES], W);
+  if (!all) return null;
+  const screens = Math.max(1, Math.min(4, Math.floor((all.rowW + 2) / 118)));
   const scrH = H >= 400 ? 78 : 66;
-  return { rows, rowW, screens, scrH, dashH: LIP + scrH + rows.length * MOD_H };
+  return { rows: all.rows, rowW: all.rowW, screens, scrH, dashH: LIP + scrH + all.rows.length * MOD_H, wing: 0, perWing: 0 };
 }
 /** How far the windscreen sees (m). */
 const ZFAR = 1500;
@@ -135,11 +182,11 @@ export class Cabin {
   private H = 0;
   private lay: Layout = layoutFor(640, 400)!;
   /** The page each screen shows (click to turn it). */
-  private pages: Page[] = [...PAGES.slice(0, 4)];
+  private pages: Page[] = [...PAGES];
   /** The lucky charm hanging from the roof: its swing (radians) and swing rate. */
   private charm = { a: 0, w: 0, lastSpeed: 0, lastYaw: 0 };
   private hits: Hit[] = [];
-  private drag: { id: string; pid: number; x0: number; v0: number } | null = null;
+  private drag: { id: string; pid: number; x0: number; y0: number; v0: number; p0: number; moved: boolean } | null = null;
   private hoverId = '';
   /** Looking around from the cab (radians off the bow). */
   private look = 0;
@@ -161,6 +208,26 @@ export class Cabin {
   private spriteData = new WeakMap<HTMLCanvasElement, ImageData>();
   private hitT = 0;
   private lastHp = -1;
+  /** What the glass shows: the view out, the drone camera, the map, damage control. */
+  glass: GlassMode = 'view';
+  /** The gunsight: armed, a click on the glass marks a target. */
+  aimOn = false;
+  /** INFO switch: taps explain the controls instead of working them. */
+  infoOn = false;
+  /** The drone camera's zoom (multiplies the tactical view's distance). */
+  camZoom = 1.6;
+  /** Looking down (px the horizon has risen). */
+  private pitch = 0;
+  private mouse = { x: -1, y: -1 };
+  private hoverT = 0;
+  /** An explanation plate put up by an INFO tap, and how long it stays. */
+  private tipLock: { id: string; t: number } | null = null;
+  private shape: HullShape | null = null;
+  private shapeT = -1;
+  /** CSS pixels per canvas pixel. */
+  private scaleK = 1;
+  private mapCanvas: HTMLCanvasElement | null = null;
+  private mapT = -1;
 
   constructor(parent: HTMLElement, private act: CabinActions) {
     this.root = h('div', 'cabin');
@@ -173,7 +240,10 @@ export class Cabin {
     this.cv.addEventListener('pointermove', (e) => this.move(e));
     for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) this.cv.addEventListener(ev, (e) => this.up(e as PointerEvent));
     this.cv.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.cv.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+    this.cv.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (this.glass === 'cam') this.camZoom = Math.max(0.6, Math.min(4, this.camZoom * (e.deltaY > 0 ? 1.12 : 1 / 1.12)));
+    }, { passive: false });
     window.addEventListener('resize', () => this.isOpen && this.resize());
   }
 
@@ -213,8 +283,9 @@ export class Cabin {
         break;
       }
     }
-    if (!lay) lay = layoutFor(Math.ceil(w), Math.ceil(hh)) ?? { rows: [MODS], rowW: 628, screens: 0, scrH: 0, dashH: LIP + MOD_H };
+    if (!lay) lay = layoutFor(Math.ceil(w), Math.ceil(hh)) ?? { rows: [MODS], rowW: 628, screens: 0, scrH: 0, dashH: LIP + MOD_H, wing: 0, perWing: 0 };
     this.lay = lay;
+    this.scaleK = s;
     this.W = Math.ceil(w / s);
     this.H = Math.ceil(hh / s);
     this.cv.width = this.W;
@@ -222,11 +293,20 @@ export class Cabin {
     this.cv.style.width = `${this.W * s}px`;
     this.cv.style.height = `${this.H * s}px`;
     const wh = Math.max(20, this.winB - HEAD);
-    this.win.width = this.W;
+    this.win.width = this.VW;
     this.win.height = wh;
-    this.img = this.wx.createImageData(this.W, wh);
+    this.img = this.wx.createImageData(this.VW, wh);
     this.buf = new Uint32Array(this.img.data.buffer);
-    this.depth = new Float32Array(this.W * wh);
+    this.depth = new Float32Array(this.VW * wh);
+  }
+
+  /** The glass: its left edge and width (between the side wings). */
+  private get VX(): number {
+    return this.lay.wing;
+  }
+
+  private get VW(): number {
+    return this.W - this.lay.wing * 2;
   }
 
   private get dashH(): number {
@@ -265,10 +345,16 @@ export class Cabin {
     const k = this.hitAt(px, py);
     if (!k) return;
     this.press[k.id] = 0.18;
-    if (k.id === 'throttle' || k.id === 'steer' || k.id === 'glass' || k.id === 'brake') {
+    // INFO on: a tap explains the control instead of working it.
+    if (this.infoOn && k.id !== 'info' && k.id !== 'glass') {
+      this.tipLock = { id: k.id, t: 7 };
+      this.act.sound('ui');
+      return;
+    }
+    if (k.id === 'throttle' || k.id === 'steer' || k.id === 'brake' || k.id === 'glass') {
       this.cv.setPointerCapture(e.pointerId);
-      this.drag = { id: k.id, pid: e.pointerId, x0: px, v0: k.id === 'glass' ? this.look : 0 };
-      this.dragTo(px, py);
+      this.drag = { id: k.id, pid: e.pointerId, x0: px, y0: py, v0: this.look, p0: this.pitch, moved: false };
+      if (k.id !== 'glass') this.dragTo(px, py);
       if (k.id === 'throttle') this.act.sound('ui');
       return;
     }
@@ -277,6 +363,7 @@ export class Cabin {
 
   private move(e: PointerEvent): void {
     const [px, py] = this.pt(e);
+    this.mouse = { x: px, y: py };
     if (this.drag && this.drag.pid === e.pointerId) {
       this.dragTo(px, py);
       return;
@@ -285,14 +372,17 @@ export class Cabin {
     const id = k?.id ?? '';
     if (id !== this.hoverId) {
       this.hoverId = id;
-      this.cv.style.cursor = !id ? 'default' : id === 'glass' ? 'grab' : 'pointer';
+      this.hoverT = 0;
+      this.cv.style.cursor = !id ? 'default' : id === 'glass' ? (this.aimOn && this.glass === 'view' ? 'crosshair' : this.glass === 'map' ? 'pointer' : 'grab') : 'pointer';
     }
   }
 
   private up(e: PointerEvent): void {
     if (!this.drag || this.drag.pid !== e.pointerId) return;
-    if (this.drag.id === 'steer') this.steer = 0;
+    const d = this.drag;
+    if (d.id === 'steer') this.steer = 0;
     this.drag = null;
+    if (d.id === 'glass' && !d.moved && this.game) this.glassClick(this.game, d.x0, d.y0);
   }
 
   private dragTo(px: number, py: number): void {
@@ -328,8 +418,13 @@ export class Cabin {
       this.steer = Math.max(-1, Math.min(1, ((px - (r.x + r.w / 2)) / (r.w / 2)) * 1.15));
       if (Math.abs(this.steer) < 0.08) this.steer = 0;
     } else if (d.id === 'glass') {
-      this.look = d.v0 - ((px - d.x0) / this.W) * 2.2;
+      // Drag to look round (sideways) and up or down.
+      if (Math.abs(px - d.x0) + Math.abs(py - d.y0) > 4) d.moved = true;
+      if (!d.moved || this.glass !== 'view') return;
+      this.look = d.v0 - ((px - d.x0) / this.VW) * 2.2;
       this.look = Math.atan2(Math.sin(this.look), Math.cos(this.look));
+      const wh = this.winB - HEAD;
+      this.pitch = Math.max(-wh * 0.12, Math.min(wh * 0.6, d.p0 - (py - d.y0)));
     }
   }
 
@@ -410,9 +505,102 @@ export class Cabin {
       case 'warp':
         this.act.warp();
         return;
-      case 'odrive':
-        this.act.overdrive();
+      case 'od1':
+      case 'od2':
+      case 'od3': {
+        const n = Number(id.slice(2));
+        const r = setOverdrive(g, hm.overdrive && hm.odStage === n ? 0 : n);
+        this.act.toast(r.msg, r.ok ? (hm.overdrive ? '#ff9100' : '#b0bec5') : '#ff8a80');
+        this.act.sound(r.ok ? (hm.overdrive ? 'levelup' : 'ui') : 'nope');
         return;
+      }
+      case 'mode_eco':
+      case 'mode_normal':
+      case 'mode_sport':
+      case 'mode_crawl': {
+        hm.mode = id.slice(5) as DriveMode;
+        if (hm.overdrive && driveSpec(g, p).odStages <= 0) hm.overdrive = false;
+        const m = DRIVE_MODES.find((k) => k.key === hm.mode)!;
+        this.message(`DRIVE MODE ${m.name}`, '#ffd740');
+        break;
+      }
+      case 'preheat':
+        hm.preheat = !hm.preheat;
+        this.message(hm.preheat ? 'PREHEATER ON: THE BLOCK STAYS WARM' : 'PREHEATER OFF', hm.preheat ? '#ffb040' : '#b0bec5');
+        break;
+      case 'sand': {
+        const r = throwSand(g);
+        if (r < 0) this.act.toast(`The sand hoppers are refilling (${Math.ceil(hm.sandCd)}s).`, '#ff8a80');
+        else this.message('SANDERS: SAND UNDER THE CRAWLERS', '#e0c080');
+        break;
+      }
+      case 'diff':
+        hm.diffLock = !hm.diffLock;
+        this.message(hm.diffLock ? 'DIFF LOCK ON: MORE GRIP, WIDER TURNS' : 'DIFF LOCK OFF', '#ffd740');
+        break;
+      case 'plow':
+        hm.plow = !hm.plow;
+        this.message(hm.plow ? 'DOZER PLOUGH DOWN' : 'DOZER PLOUGH UP', '#ffd740');
+        break;
+      case 'smoke': {
+        const n = fireSmoke(g);
+        if (n < 0) this.act.toast(`Smoke dischargers reloading (${Math.ceil(hm.smokeCd)}s).`, '#ff8a80');
+        else this.message(`SMOKE! ${n} LOST TRACK OF US`, '#cfd8dc');
+        return;
+      }
+      case 'info':
+        this.infoOn = !this.infoOn;
+        this.tipLock = this.infoOn ? { id: 'info', t: 5 } : null;
+        break;
+      case 'aim':
+        this.aimOn = !this.aimOn;
+        if (this.aimOn) this.glass = 'view';
+        this.message(this.aimOn ? 'GUNSIGHT ARMED: CLICK THE GLASS TO MARK A TARGET' : 'GUNSIGHT SAFE', this.aimOn ? '#ff5252' : '#b0bec5');
+        break;
+      case 'g_view':
+      case 'g_cam':
+      case 'g_map':
+      case 'g_dc':
+        this.glass = id.slice(2) as GlassMode;
+        if (this.glass !== 'view') this.aimOn = false;
+        this.mapT = -1;
+        break;
+      case 'camin':
+        this.camZoom = Math.max(0.6, this.camZoom / 1.25);
+        break;
+      case 'camout':
+        this.camZoom = Math.min(4, this.camZoom * 1.25);
+        break;
+      case 'clear':
+        clearMark(g);
+        break;
+      case 'drill': {
+        const r = setDrill(g, !g.titan.drillWant);
+        this.act.toast(r.msg, r.ok ? '#ffd740' : '#ff8a80');
+        if (!r.ok) {
+          this.act.sound('nope');
+          return;
+        }
+        break;
+      }
+      case 'refine':
+        if (!fuelRefinery(g)) {
+          this.act.toast('No Automatic Refinery aboard: build one in BASE > Shop > Resources.', '#ff8a80');
+          this.act.sound('nope');
+          return;
+        }
+        hm.refine = !hm.refine;
+        this.message(hm.refine ? 'REFINERY AUTO: CRACKING CRUDE' : 'REFINERY OFF', '#ffd740');
+        break;
+      case 'dc_auto':
+        g.autoRepair = !g.autoRepair;
+        this.message(g.autoRepair ? 'DAMAGE CONTROL AUTO' : 'DAMAGE CONTROL MANUAL', '#b2ff59');
+        break;
+      case 'dc_stab': {
+        const n = stabilize(g);
+        this.act.toast(n ? `STABILIZE: ${n} team${n > 1 ? 's' : ''} sent.` : 'No teams free, or nothing to fix.', n ? '#b2ff59' : '#ff8a80');
+        break;
+      }
       case 'tor0':
       case 'tor1':
       case 'tor2':
@@ -426,9 +614,61 @@ export class Cabin {
         this.act.stop();
         this.act.sound('alarm');
         return;
+      default:
+        if (id.startsWith('dc:')) {
+          const [, kind, key] = id.split(':');
+          const why = dispatchTeam(g, kind as TeamKind, key);
+          const name = jobName(kind as TeamKind, key, g);
+          this.act.toast(why ? `${name}: ${why}` : `Damage control: team sent to ${name}.`, why ? '#ff8a80' : '#b2ff59');
+          if (why) this.act.sound('nope');
+          return;
+        }
     }
     this.act.sound('ui');
   }
+
+  /** A click on the glass (not a drag): mark a target through the gunsight, or plot a course on the map. */
+  private glassClick(g: Game, px: number, py: number): void {
+    if (this.glass === 'view' && this.aimOn) {
+      const pt = this.pickGround(g, px, py);
+      if (!pt) {
+        this.act.sound('nope');
+        return;
+      }
+      const d = markTarget(g, pt.x, pt.y);
+      this.message(`TARGET MARKED ${Math.round(d)}M: ALL GUNS ON IT`, '#ff5252');
+      this.act.sound('ui');
+      return;
+    }
+    if (this.glass === 'map' && this.mapRect) {
+      const r = this.mapRect;
+      if (px < r.x || py < r.y || px >= r.x + r.s || py >= r.y + r.s) return;
+      const size = g.map.size;
+      const x = ((px - r.x) / r.s) * size, y = ((py - r.y) / r.s) * size;
+      if (orderMove(g, x, y)) {
+        this.message(`COURSE PLOTTED: ${Math.round(Math.hypot(x - g.player.x, y - g.player.y) / 100) / 10} KM`, '#40c4ff');
+        this.act.sound('ui');
+      }
+    }
+  }
+
+  /** The world point behind a pixel of the glass (from the depth buffer), or null for sky and your own deck. */
+  private pickGround(g: Game, px: number, py: number): { x: number; y: number } | null {
+    const lx = Math.floor(px - this.VX), ly = Math.floor(py - HEAD);
+    const WH = this.win.height;
+    if (lx < 0 || ly < 0 || lx >= this.VW || ly >= WH) return null;
+    const z = this.depth[ly * this.VW + lx];
+    if (!(z < 1e8)) return null;
+    const cam = this.camera(g);
+    const f = this.focal();
+    const k = (lx + 0.5 - this.VW / 2) / f;
+    const fx = Math.cos(cam.yaw), fy = Math.sin(cam.yaw);
+    const x = cam.x + (fx - fy * k) * z, y = cam.y + (fy + fx * k) * z;
+    if (g.player.hits(x, y, 2)) return null;
+    return { x, y };
+  }
+
+  private mapRect: { x: number; y: number; s: number } | null = null;
 
   /* ---------------------------------------------------------------- */
   /* Frame                                                             */
@@ -441,9 +681,11 @@ export class Cabin {
     if (this.game !== g) this.game = g;
     if (!this.img || this.cv.width !== this.W) this.resize();
     this.time += dt;
+    this.hoverT += dt;
     for (const k of Object.keys(this.press)) this.press[k] -= dt;
     for (const m of this.ticker) m.t -= dt;
     this.ticker = this.ticker.filter((m) => m.t > 0);
+    if (this.tipLock && (this.tipLock.t -= dt) <= 0) this.tipLock = null;
     // Take a hit: the cab lights flash red.
     const p = g.player;
     if (this.lastHp >= 0 && p.hp < this.lastHp - p.stats.maxHp * 0.004) this.hitT = 0.35;
@@ -454,23 +696,45 @@ export class Cabin {
     this.rects = {};
     const c = this.x;
     c.imageSmoothingEnabled = false;
-    this.drawWorld(g);
-    // At speed the cab rattles (more over rough ground) and the ground streams past.
-    const v = Math.abs(p.speed);
-    const rough = v > 3 ? Math.min(2, (v / 40) * (1.4 - Math.min(1, p.trac))) : 0;
-    const shake = Math.round(Math.sin(this.time * 31) * rough + Math.sin(this.time * 13.3) * rough * 0.5);
-    c.drawImage(this.win, 0, HEAD + shake);
-    if (shake > 0) {
-      c.fillStyle = '#000';
-      c.fillRect(0, HEAD, this.W, shake);
-    }
-    if (v > 18 && Math.abs(this.look) < 0.6) this.streaks(v);
-    this.drawNose(g);
-    this.drawFlashes(g);
-    this.drawGlassHud(g);
+    c.fillStyle = '#000';
+    c.fillRect(0, 0, this.W, this.H);
+    const VX = this.VX, VW = this.VW, B = this.winB;
+    // The glass first (its click target under everything drawn on it).
+    this.hit('glass', VX, HEAD, VW, B - HEAD);
+    c.save();
+    c.beginPath();
+    c.rect(VX, HEAD, VW, B - HEAD);
+    c.clip();
+    if (this.glass === 'view') {
+      this.drawWorld(g);
+      // At speed the cab rattles (more over rough ground) and the ground streams past.
+      const v = Math.abs(p.speed);
+      const rough = v > 3 ? Math.min(2, (v / 40) * (1.4 - Math.min(1, p.trac))) : 0;
+      const shake = Math.round(Math.sin(this.time * 31) * rough + Math.sin(this.time * 13.3) * rough * 0.5);
+      c.drawImage(this.win, VX, HEAD + shake);
+      c.translate(VX, 0);
+      if (v > 18 && Math.abs(this.look) < 0.6 && this.pitch < 40) this.streaks(v);
+      this.drawNose(g);
+      this.drawExhaust(g);
+      this.drawFlashes(g);
+      this.drawGlassHud(g);
+      c.translate(-VX, 0);
+      if (this.aimOn) this.drawReticle(g);
+    } else if (this.glass === 'cam') this.drawDrone(g);
+    else if (this.glass === 'map') this.drawMap(g);
+    else this.drawDC(g);
+    c.restore();
     this.drawFrame(g);
-    this.cabDetails(g, dt);
+    this.drawComm(g);
+    if (this.glass === 'view') {
+      c.save();
+      c.translate(VX, 0);
+      this.cabDetails(g, dt);
+      c.restore();
+    }
+    this.drawWings(g);
     this.drawDash(g);
+    this.drawTip(g);
     if (this.hitT > 0) {
       c.fillStyle = `rgba(255,20,0,${(this.hitT / 0.35) * 0.22})`;
       c.fillRect(0, 0, this.W, this.H);
@@ -480,7 +744,7 @@ export class Cabin {
   /** Speed streaks: dashes flying out from the vanishing point along the ground, faster and thicker with speed. */
   private streaks(v: number): void {
     const c = this.x;
-    const W = this.W;
+    const W = this.VW;
     const hz = this.horizon() + HEAD;
     const k = Math.min(1, (v - 18) / 50);
     const n = Math.round(10 + 26 * k);
@@ -528,15 +792,15 @@ export class Cabin {
     const lx = p.stats.length / 2 - 3;
     const c = p.toWorld(lx, 0);
     const roof = p.deckY(0);
-    return { x: c.x, y: c.y, h: roof + 5, yaw: p.rot + this.look, lx, roof };
+    return { x: c.x, y: c.y, h: roof + 7, yaw: p.rot + this.look, lx, roof };
   }
 
   private focal(): number {
-    return this.W / 2 / Math.tan((50 * Math.PI) / 180);
+    return this.VW / 2 / Math.tan((47 * Math.PI) / 180);
   }
 
   private horizon(): number {
-    return Math.round(this.win.height * 0.3);
+    return Math.round(this.win.height * 0.3) - Math.round(this.pitch);
   }
 
   /** Rebuilds the colour tables when the zone (sky, haze) or the weather changes. */
@@ -592,7 +856,7 @@ export class Cabin {
 
   private drawWorld(g: Game): void {
     const p = g.player;
-    const W = this.W, WH = this.win.height;
+    const W = this.VW, WH = this.win.height;
     const buf = this.buf, dep = this.depth;
     this.palette(g);
     const cam = this.camera(g);
@@ -642,8 +906,13 @@ export class Cabin {
     // The ground, column by column, front to back.
     const map = g.map;
     const pc = Math.cos(p.rot), ps = Math.sin(p.rot);
-    const L2 = p.stats.length / 2, W2 = p.stats.width / 2;
     const hull = this.hullImage(g);
+    if (!this.shape || this.time - this.shapeT > 0.25) {
+      this.shapeT = this.time;
+      this.shape = buildHullShape(g, hull, pack, cam.lx, this.time);
+    }
+    const shp = this.shape;
+    const roofLo = cam.roof - 0.1, roofHi = cam.roof + 0.1;
     const pal = this.pal;
     const lights = g.helm.lights;
     let gen = 3;
@@ -655,16 +924,29 @@ export class Cabin {
       while (z < ZFAR && ybuf > 0) {
         const wx = cam.x + dx * z, wy = cam.y + dy * z;
         let hgt = 0, col = 0, face = 0;
-        // Your own hull.
+        // Your own ship: the deck, what's built on it, the stacks, the toroids (a height field, see cabinHull).
         const ox = wx - p.x, oy = wy - p.y;
         const lx = ox * pc + oy * ps, lz = -ox * ps + oy * pc;
-        if (lx > -L2 && lx < L2 && lz > -W2 && lz < W2) {
-          hgt = lx > cam.lx ? cam.roof - 3 - (lx - cam.lx) * 4 : cam.roof;
-          const hx = Math.round(hull.cx + lx * hull.ppm), hy = Math.round(hull.cy + lz * hull.ppm);
-          const q = (hy * hull.w + hx) * 4;
-          const lit = lights && z < 90 ? 1.25 : 1;
-          if (hx >= 0 && hy >= 0 && hx < hull.w && hy < hull.h && hull.d[q + 3] > 0) col = pack(hull.d[q] * lit, hull.d[q + 1] * lit, hull.d[q + 2] * lit);
-          else col = pack(70, 72, 76);
+        const six = Math.floor(lx - shp.x0), siz = Math.floor(lz - shp.z0);
+        const sq = six >= 0 && siz >= 0 && six < shp.w && siz < shp.d ? siz * shp.w + six : -1;
+        if (sq >= 0 && shp.h[sq] > 0) {
+          hgt = shp.h[sq];
+          col = shp.col[sq];
+          // The bare deck close up: the paint job at full resolution, plate seams every 5 m, a little grain.
+          if (hgt > roofLo && hgt < roofHi && z < 140) {
+            const hx = Math.round(hull.cx + lx * hull.ppm), hy = Math.round(hull.cy + lz * hull.ppm);
+            const q = (hy * hull.w + hx) * 4;
+            if (hx >= 0 && hy >= 0 && hx < hull.w && hy < hull.h && hull.d[q + 3] > 0) {
+              const gr = 0.94 + ((Math.imul(Math.floor(lx * 2), 73856093) ^ Math.imul(Math.floor(lz * 2), 19349663)) & 15) / 128;
+              const seam = z < 70 && ((((lx % 5) + 5) % 5) < 0.14 || (((lz % 5) + 5) % 5) < 0.14) ? 0.7 : 1;
+              col = pack(hull.d[q] * gr * seam, hull.d[q + 1] * gr * seam, hull.d[q + 2] * gr * seam);
+            }
+          }
+          if (lights && z < 90) col = lighten(col);
+          if (hgt > prevH + 0.6) {
+            face = 3;
+            col = darken(col);
+          }
         } else {
           const tx = Math.floor(wx), ty = Math.floor(wy);
           let ch = map.peek(tx >> 5, ty >> 5);
@@ -702,7 +984,7 @@ export class Cabin {
             dep[q] = z;
           }
           if (face) {
-            // The lip of a rock or roof catches the light; building fronts get windows.
+            // The lip of a rock, roof or turret catches the light; building fronts get windows.
             if (y0 < ybuf && y0 === sy) buf[y0 * W + i] = lighten(col);
             if (face === 2 && z < 500) {
               const tx = Math.floor(wx), ty = Math.floor(wy);
@@ -725,7 +1007,7 @@ export class Cabin {
   private hullImage(g: Game): { d: Uint8ClampedArray; w: number; h: number; cx: number; cy: number; ppm: number } {
     const hl = this.hull;
     if (hl && this.time - hl.t < 0.4) return hl;
-    const ppm = 1.5;
+    const ppm = 3;
     const pt = paintTitanFlat(g.player, ppm, g, this.time) ?? paintTitan(g.player, ppm, g, this.time);
     const c = pt.canvas;
     const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
@@ -743,7 +1025,7 @@ export class Cabin {
   }
 
   private drawSprites(g: Game, cam: { x: number; y: number; h: number; yaw: number }, f: number, hz: number): void {
-    const W = this.W, WH = this.win.height;
+    const W = this.VW, WH = this.win.height;
     const fx = Math.cos(cam.yaw), fy = Math.sin(cam.yaw);
     const list: { z: number; sx: number; base: number; hpx: number; img: HTMLCanvasElement; flip: boolean }[] = [];
     for (const e of g.enemies) {
@@ -788,6 +1070,36 @@ export class Cabin {
       if (sx < -hpx || sx > W + hpx) continue;
       list.push({ z, sx, base: hz + (cam.h * f) / z, hpx, img: view ?? tankSprite(t.kind === 'rival' ? '#5a2a2a' : '#4a4038', Math.min(128, Math.round(hpx))), flip });
     }
+    // Your people on the deck below the cab: soldiers in the nests, a gunner by every manned gun.
+    const p = g.player;
+    if (!p.indoors) {
+      const roof = p.deckY(0);
+      for (const m of p.modules) {
+        if (m.deck !== 0 || !m.built || m.crew <= 0) continue;
+        const d = MODULES[m.key];
+        const l = p.moduleLocal(m);
+        const spots: { x: number; y: number; aim: boolean }[] = [];
+        if (d.nest) {
+          const n = Math.min(4, Math.max(1, Math.round(m.crew / CREW_SCALE)));
+          for (let i = 0; i < n; i++) {
+            const w = p.toWorld(l.lx + (i % 2 ? -2.4 : 2.4), l.lz + (i < 2 ? -1.8 : 1.8));
+            spots.push({ ...w, aim: true });
+          }
+          void soldierSpots;
+        } else if (m.weapon) spots.push({ ...p.toWorld(l.lx - 5, l.lz + 3.5), aim: false });
+        for (const sp of spots) {
+          const dx = sp.x - cam.x, dy = sp.y - cam.y;
+          const z = dx * fx + dy * fy;
+          if (z < 3 || z > 400) continue;
+          const side = -dx * fy + dy * fx;
+          const sx = W / 2 + (side * f) / z;
+          const hpx = Math.max(2, (1.3 * f) / z);
+          if (sx < -hpx || sx > W + hpx) continue;
+          const pose = sp.aim ? (Math.floor(this.time * 2 + sp.x) % 5 === 0 ? 'stand' : 'aim') : Math.floor(this.time + sp.y) % 4 === 0 ? 'work' : 'stand';
+          list.push({ z, sx, base: hz + ((cam.h - roof) * f) / z, hpx, img: personSprite(pose, d.nest ? '#4a5a3a' : '#5a6a7a', d.nest ? '#3a4a2a' : '#ffd740', m.id % 5, '#6a6a70'), flip: side > 0 });
+        }
+      }
+    }
     list.sort((a, b) => b.z - a.z);
     const buf = this.buf, dep = this.depth;
     for (const s of list) {
@@ -818,9 +1130,9 @@ export class Cabin {
   private drawNose(g: Game): void {
     const f = this.focal();
     const off = Math.tan(this.look) * f;
-    if (Math.abs(this.look) > 0.9) return;
+    if (Math.abs(this.look) > 0.9 || this.pitch > (this.winB - HEAD) * 0.5) return;
     const c = this.x;
-    const W = this.W, B = this.winB;
+    const W = this.VW, B = this.winB + Math.round(this.pitch * 0.9);
     const nh = Math.max(8, Math.round((B - HEAD) * 0.12));
     const cx = Math.round(W / 2 - off);
     const strip = CLASS_COL[g.player.klass] ?? '#38c8ff';
@@ -876,11 +1188,11 @@ export class Cabin {
       const z = dx * fx + dy * fy;
       if (z < 3) return null;
       const side = -dx * fy + dy * fx;
-      return [this.W / 2 + (side * f) / z, hz + ((cam.h - hh) * f) / z, z];
+      return [this.VW / 2 + (side * f) / z, hz + ((cam.h - hh) * f) / z, z];
     };
     c.save();
     c.beginPath();
-    c.rect(0, HEAD, this.W, this.winB - HEAD);
+    c.rect(0, HEAD, this.VW, this.winB - HEAD);
     c.clip();
     c.globalCompositeOperation = 'lighter';
     for (const fl of this.flashes) {
@@ -905,11 +1217,11 @@ export class Cabin {
     c.globalCompositeOperation = 'source-over';
     // Floodlights: two pools of light on the ground ahead.
     if (g.helm.lights && Math.abs(this.look) < 1.2) {
-      const gl = glowSprite('#fff8d0', this.W * 0.5);
+      const gl = glowSprite('#fff8d0', this.VW * 0.5);
       c.globalAlpha = 0.16;
       c.globalCompositeOperation = 'lighter';
-      c.drawImage(gl, this.W * 0.3 - gl.width / 2, this.winB - gl.height * 0.35);
-      c.drawImage(gl, this.W * 0.7 - gl.width / 2, this.winB - gl.height * 0.35);
+      c.drawImage(gl, this.VW * 0.3 - gl.width / 2, this.winB - gl.height * 0.35);
+      c.drawImage(gl, this.VW * 0.7 - gl.width / 2, this.winB - gl.height * 0.35);
       c.globalCompositeOperation = 'source-over';
       c.globalAlpha = 1;
     }
@@ -918,7 +1230,7 @@ export class Cabin {
       c.fillStyle = 'rgba(210,220,230,0.35)';
       const n = 60;
       for (let i = 0; i < n; i++) {
-        const x = (hash2(i, Math.floor(this.time * 20), 9) * this.W) | 0;
+        const x = (hash2(i, Math.floor(this.time * 20), 9) * this.VW) | 0;
         const y = HEAD + ((hash2(i, 3, Math.floor(this.time * 20)) * (this.winB - HEAD)) | 0);
         c.fillRect(x, y, 1, 3);
       }
@@ -934,7 +1246,7 @@ export class Cabin {
     const f = this.focal();
     const hz = this.horizon() + HEAD;
     const fx = Math.cos(cam.yaw), fy = Math.sin(cam.yaw);
-    const W = this.W;
+    const W = this.VW;
     // Threat brackets: the biggest and nearest few things ahead.
     const threats = g.enemies
       .filter((e) => e.hp > 0 && !e.burrowed && (e.titan || e.boss || e.elite) && (g.isVisible(e.x, e.y) || e.boss))
@@ -984,6 +1296,398 @@ export class Cabin {
   }
 
   /* ---------------------------------------------------------------- */
+  /* On the glass                                                      */
+  /* ---------------------------------------------------------------- */
+
+  /** Flames from the stacks (straight up) and glow from the stern nozzles, when the engine is running. */
+  private drawExhaust(g: Game): void {
+    const shp = this.shape;
+    const p = g.player;
+    if (!shp) return;
+    const c = this.x;
+    const cam = this.camera(g);
+    const f = this.focal();
+    const hz = this.horizon() + HEAD;
+    const fx = Math.cos(cam.yaw), fy = Math.sin(cam.yaw);
+    const ds = driveSpec(g, p);
+    const power = Math.max(0.12, p.spool * (0.3 + 0.7 * Math.abs(g.helm.lever)));
+    const stage = ds.od ? ds.od.stage : 0;
+    const WH = this.win.height;
+    c.globalCompositeOperation = 'lighter';
+    const flame = (lx: number, lz: number, z0: number, up: boolean): void => {
+      const w = p.toWorld(lx, lz);
+      const dx = w.x - cam.x, dy = w.y - cam.y;
+      const zz = dx * fx + dy * fy;
+      if (zz < 3) return;
+      const sx = this.VW / 2 + ((-dx * fy + dy * fx) * f) / zz, sy = hz + ((cam.h - z0) * f) / zz;
+      const ix = Math.round(sx), iy = Math.round(sy - HEAD);
+      if (ix < 0 || ix >= this.VW || iy < 0 || iy >= WH) return;
+      if (this.depth[iy * this.VW + ix] < zz - 4) return;
+      const len = ds.flame.len * (up ? 0.45 : 0.3) * power * (1 + 0.6 * stage);
+      const px = Math.max(3, (len * f) / zz);
+      for (let k = 0; k < 4; k++) {
+        const t = k / 4;
+        const flick = 0.8 + 0.4 * Math.sin(this.time * 31 + k * 2 + lx);
+        const r = px * (0.55 - t * 0.35) * flick;
+        const gl = glowSprite(k < 2 ? ds.flame.core : ds.flame.outer, Math.max(2, r * 2));
+        c.globalAlpha = 0.75 - t * 0.15;
+        c.drawImage(gl, sx - gl.width / 2, (up ? sy - px * t : sy) - gl.height / 2);
+      }
+    };
+    for (const st of shp.stacks) flame(st.lx, st.lz, st.z, true);
+    for (const nz of shp.nozzles) flame(nz.lx, nz.lz, nz.z, false);
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = 'source-over';
+  }
+
+  /** The gunsight: a crosshair under the pointer with the range to what's under it, and the marked target. */
+  private drawReticle(g: Game): void {
+    const c = this.x;
+    const { x, y } = this.mouse;
+    const p = g.player;
+    if (x >= this.VX && x < this.VX + this.VW && y >= HEAD && y < this.winB) {
+      const pt = this.pickGround(g, x, y);
+      const col = pt ? '#ff5252' : '#7a3a3a';
+      c.fillStyle = col;
+      c.fillRect(Math.round(x) - 9, Math.round(y), 6, 1);
+      c.fillRect(Math.round(x) + 4, Math.round(y), 6, 1);
+      c.fillRect(Math.round(x), Math.round(y) - 9, 1, 6);
+      c.fillRect(Math.round(x), Math.round(y) + 4, 1, 6);
+      ringPx(c, Math.round(x), Math.round(y), 12, col);
+      pxMini(c, pt ? `${Math.round(Math.hypot(pt.x - p.x, pt.y - p.y))}M` : 'NO RANGE', x + 14, y - 12, col, 'left');
+    }
+    // The mark, where it is.
+    const ap = p.aimPoint;
+    if (ap) {
+      const cam = this.camera(g);
+      const f = this.focal();
+      const fx = Math.cos(cam.yaw), fy = Math.sin(cam.yaw);
+      const dx = ap.x - cam.x, dy = ap.y - cam.y;
+      const z = dx * fx + dy * fy;
+      if (z > 5) {
+        const sx = this.VX + this.VW / 2 + ((-dx * fy + dy * fx) * f) / z, sy = this.horizon() + HEAD + (cam.h * f) / z;
+        const r = 5 + Math.sin(this.time * 8) * 2;
+        c.strokeStyle = '#ff3030';
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(sx, sy - r);
+        c.lineTo(sx + r, sy);
+        c.lineTo(sx, sy + r);
+        c.lineTo(sx - r, sy);
+        c.closePath();
+        c.stroke();
+        pxMini(c, `MARK ${Math.round(Math.hypot(dx, dy))}M ${Math.ceil(ap.t)}S`, sx, sy + r + 3, '#ff3030', 'center');
+      }
+    }
+  }
+
+  /** The spotter drone's feed: the tactical view from overhead, with the drone's HUD on top. */
+  private drawDrone(g: Game): void {
+    const c = this.x;
+    const VX = this.VX, VW = this.VW, B = this.winB, H = B - HEAD;
+    const feed = this.act.droneFeed();
+    if (!feed) {
+      c.fillStyle = '#050805';
+      c.fillRect(VX, HEAD, VW, H);
+      pxMini(c, 'NO SIGNAL', VX + VW / 2, HEAD + H / 2, '#6aff7a', 'center');
+      return;
+    }
+    const k = this.scaleK / feed.scale;
+    const sw = VW * k, sh = H * k;
+    const cx = feed.canvas.width / 2, cy = feed.canvas.height / 2;
+    c.imageSmoothingEnabled = false;
+    c.drawImage(feed.canvas, cx - sw / 2, cy - sh / 2, sw, sh, VX, HEAD, VW, H);
+    // The drone's HUD: frame brackets, crosshair, altitude, REC, zoom buttons.
+    const col = '#6aff7a';
+    c.fillStyle = 'rgba(0,0,0,0.12)';
+    for (let y = HEAD; y < B; y += 3) c.fillRect(VX, y, VW, 1);
+    for (const [bx, by, sx, sy] of [[VX + 6, HEAD + 6, 1, 1], [VX + VW - 7, HEAD + 6, -1, 1], [VX + 6, B - 7, 1, -1], [VX + VW - 7, B - 7, -1, -1]]) {
+      c.fillStyle = col;
+      c.fillRect(Math.min(bx, bx + sx * 12), by, 12, 1);
+      c.fillRect(bx, Math.min(by, by + sy * 12), 1, 12);
+    }
+    const mx = VX + VW / 2, my = HEAD + H / 2;
+    c.fillStyle = 'rgba(106,255,122,0.6)';
+    c.fillRect(mx - 14, my, 10, 1);
+    c.fillRect(mx + 5, my, 10, 1);
+    c.fillRect(mx, my - 14, 1, 10);
+    c.fillRect(mx, my + 5, 1, 10);
+    pxMini(c, `SPOTTER DRONE  ALT ${Math.round(420 * this.camZoom)}M`, VX + 12, HEAD + 12, col);
+    if (Math.floor(this.time * 2) % 2) {
+      disc(c, VX + VW - 40, HEAD + 14, 2, '#ff3030');
+      pxMini(c, 'REC', VX + VW - 35, HEAD + 12, '#ff3030');
+    }
+    button(c, VX + VW - 44, B - 20, 16, 12, '+', '#243a24', this.press.camin > 0, '#b0ffb0');
+    this.hit('camin', VX + VW - 46, B - 22, 20, 16);
+    button(c, VX + VW - 24, B - 20, 16, 12, '-', '#243a24', this.press.camout > 0, '#b0ffb0');
+    this.hit('camout', VX + VW - 26, B - 22, 20, 16);
+  }
+
+  /** The whole Crater: the map, your course and the mission; click to plot a course there. */
+  private drawMap(g: Game): void {
+    const c = this.x;
+    const VX = this.VX, VW = this.VW, B = this.winB, H = B - HEAD;
+    c.fillStyle = '#060a10';
+    c.fillRect(VX, HEAD, VW, H);
+    const size = Math.max(40, Math.min(VW - 16, H - 16));
+    if (!this.mapCanvas || this.mapCanvas.width !== size) {
+      this.mapCanvas = document.createElement('canvas');
+      this.mapCanvas.width = size;
+      this.mapCanvas.height = size;
+      this.mapT = -1;
+    }
+    if (this.mapT < 0 || this.time - this.mapT > 0.5) {
+      this.mapT = this.time;
+      this.act.drawWorldMap?.(this.mapCanvas.getContext('2d')!, size);
+    }
+    const x0 = Math.round(VX + (VW - size) / 2), y0 = Math.round(HEAD + (H - size) / 2);
+    this.mapRect = { x: x0, y: y0, s: size };
+    c.drawImage(this.mapCanvas, x0, y0);
+    c.strokeStyle = '#2a4a6a';
+    c.strokeRect(x0 - 0.5, y0 - 0.5, size + 1, size + 1);
+    // The course plotted, the pointer's position in km.
+    const p = g.player;
+    const k = size / g.map.size;
+    if (p.path.length) {
+      c.strokeStyle = '#40c4ff';
+      c.beginPath();
+      c.moveTo(x0 + p.x * k, y0 + p.y * k);
+      for (const wp of p.path) c.lineTo(x0 + wp.x * k, y0 + wp.y * k);
+      c.stroke();
+    }
+    const { x, y } = this.mouse;
+    if (x >= x0 && y >= y0 && x < x0 + size && y < y0 + size) {
+      const wx = (x - x0) / k, wy = (y - y0) / k;
+      c.fillStyle = '#ffd740';
+      c.fillRect(Math.round(x) - 3, Math.round(y), 7, 1);
+      c.fillRect(Math.round(x), Math.round(y) - 3, 1, 7);
+      pxMini(c, `${(Math.hypot(wx - p.x, wy - p.y) / 1000).toFixed(1)} KM  CLICK: PLOT COURSE`, x + 6, y + 4, '#ffd740');
+    }
+    const m = mission(g);
+    pxMini(c, `THE CRATER · ${m.title.toUpperCase().slice(0, 40)}`, VX + 8, HEAD + 6, '#ffb030');
+  }
+
+  /** Damage control: the Titan from above, every part green to red; click one to send a repair team. */
+  private drawDC(g: Game): void {
+    const c = this.x;
+    const VX = this.VX, VW = this.VW, B = this.winB, H = B - HEAD;
+    const s = g.titan;
+    const p = g.player;
+    const blink = Math.floor(this.time * 3) % 2 === 0;
+    // Blueprint paper.
+    c.fillStyle = '#071424';
+    c.fillRect(VX, HEAD, VW, H);
+    c.fillStyle = '#0c2238';
+    for (let x = VX; x < VX + VW; x += 10) c.fillRect(x, HEAD, 1, H);
+    for (let y = HEAD; y < B; y += 10) c.fillRect(VX, y, VW, 1);
+    const col = (v: number): string => (v <= 0.1 ? (blink ? '#ff2010' : '#600808') : v < 0.35 ? '#ff5020' : v < 0.6 ? '#ffb020' : v < 0.85 ? '#d0e040' : '#40ff60');
+    const teamRing = (kind: TeamKind, key: string, x: number, y: number, r: number): void => {
+      const t = teamOn(g, kind, key);
+      if (!t) return;
+      c.strokeStyle = t.phase === 'working' ? '#ffffff' : '#80c0ff';
+      c.lineWidth = 1;
+      c.beginPath();
+      c.arc(x, y, r + 2 + Math.sin(this.time * 6) * 1, 0, Math.PI * 2);
+      c.stroke();
+      pxMini(c, t.phase === 'working' ? `${Math.round(t.done * 100)}%` : 'EN ROUTE', x, y + r + 4, '#ffffff', 'center');
+    };
+    // The hull, bow to the right, sized to the glass (the side panel takes the right third).
+    const sideW = Math.min(150, Math.floor(VW * 0.34));
+    const aw = VW - sideW - 24, ah = H - 34;
+    const L = p.stats.length, Wd = p.stats.width;
+    const k = Math.min(aw / (L * 1.12), ah / (Wd * 1.9));
+    const cx = VX + 12 + aw / 2, cy = HEAD + 18 + ah / 2;
+    const X = (lx: number): number => cx + lx * k, Y = (lz: number): number => cy + lz * k;
+    pxMini(c, 'DAMAGE CONTROL · CLICK A PART TO SEND A TEAM', VX + 8, HEAD + 5, '#80c0ff');
+    // Armour zones as the hull's outline: bow, stern, port and starboard sides, the roof in the middle.
+    const zc = (z: ArmorZone): string => col(s.zones[z]);
+    const hx0 = X(-L / 2), hx1 = X(L / 2), hy0 = Y(-Wd / 2), hy1 = Y(Wd / 2);
+    const edge = Math.max(3, Math.round(Wd * k * 0.14));
+    c.fillStyle = shadeHex(zc('roof'), 0.35);
+    c.fillRect(hx0 + edge, hy0 + edge, hx1 - hx0 - edge * 2, hy1 - hy0 - edge * 2);
+    c.fillStyle = zc('port');
+    c.fillRect(hx0 + edge, hy0, hx1 - hx0 - edge * 2, edge);
+    c.fillStyle = zc('starboard');
+    c.fillRect(hx0 + edge, hy1 - edge, hx1 - hx0 - edge * 2, edge);
+    c.fillStyle = zc('stern');
+    c.fillRect(hx0, hy0, edge, hy1 - hy0);
+    c.fillStyle = zc('bow');
+    c.beginPath();
+    c.moveTo(hx1 - edge, hy0);
+    c.lineTo(hx1 + edge * 2, (hy0 + hy1) / 2);
+    c.lineTo(hx1 - edge, hy1);
+    c.closePath();
+    c.fill();
+    for (const z of ARMOR) {
+      const zx = z.key === 'bow' ? hx1 : z.key === 'stern' ? hx0 : (hx0 + hx1) / 2;
+      const zy = z.key === 'port' ? hy0 : z.key === 'starboard' ? hy1 : (hy0 + hy1) / 2;
+      const hw = z.key === 'port' || z.key === 'starboard' ? 30 : z.key === 'roof' ? 24 : 10;
+      this.hit(`dc:zone:${z.key}`, zx - hw, zy - 6, hw * 2, 12);
+      if (z.key !== 'roof') pxMini(c, `${z.name.toUpperCase().slice(0, 5)} ${Math.round(s.zones[z.key] * 100)}%`, zx, z.key === 'port' ? hy0 - 8 : z.key === 'starboard' ? hy1 + 3 : zx === hx1 ? zy - 12 : zy - 12, '#c0d8f0', 'center');
+      teamRing('zone', z.key, zx, zy, 6);
+    }
+    // The eight crawlers along the sides.
+    const cw = (hx1 - hx0) / 4 - 3, chh = Math.max(4, edge + 2);
+    for (let i = 0; i < 8; i++) {
+      const side = i < 4 ? -1 : 1, n = i % 4;
+      const x = hx1 - (n + 1) * ((hx1 - hx0) / 4) + 1.5, y = side < 0 ? hy0 - chh - 2 : hy1 + 2;
+      c.fillStyle = '#0a0c10';
+      c.fillRect(x - 1, y - 1, cw + 2, chh + 2);
+      c.fillStyle = col(s.crawlers[i]);
+      c.fillRect(x, y, cw, chh);
+      c.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let t = 2; t < cw; t += 4) c.fillRect(x + t, y, 1, chh);
+      this.hit(`dc:crawler:${i}`, x, y - 2, cw, chh + 4);
+      teamRing('crawler', String(i), x + cw / 2, y + chh / 2, 5);
+    }
+    // The toroids at the corners.
+    for (let i = 0; i < 4; i++) {
+      const fore = TOROIDS[i].fore, port = TOROIDS[i].port;
+      const x = fore ? hx1 - 12 : hx0 + 12, y = port ? hy0 - chh - 14 : hy1 + chh + 14;
+      disc(c, x, y, 7, '#0a0c10');
+      disc(c, x, y, 6, col(g.helm.toroids[i] ? s.toroids[i] : Math.min(s.toroids[i], 0.5)));
+      disc(c, x, y, 3, '#071424');
+      pxMini(c, TOROIDS[i].short, x, y - 2, '#ffffff', 'center', null);
+      this.hit(`dc:toroid:${i}`, x - 8, y - 8, 16, 16);
+      teamRing('toroid', String(i), x, y, 7);
+    }
+    // Every gun on the roof where it stands.
+    for (const m of p.modules) {
+      if (m.deck !== 0 || !m.weapon) continue;
+      const l = p.moduleLocal(m);
+      const x = X(l.lx), y = Y(l.lz);
+      const v = 1 - (m.wreck ?? 0);
+      const r = m.key === 'main_gun' ? 6 : 3.5;
+      disc(c, x, y, r + 1, '#0a0c10');
+      disc(c, x, y, r, col(v));
+      const a = m.aim - p.rot;
+      c.fillStyle = '#0a0c10';
+      for (let d = r; d < r + 5; d++) c.fillRect(Math.round(x + Math.cos(a) * d), Math.round(y + Math.sin(a) * d), 1, 1);
+      if (v < 1) this.hit(`dc:gun:${m.id}`, x - r - 2, y - r - 2, r * 2 + 4, r * 2 + 4);
+      teamRing('gun', String(m.id), x, y, r);
+    }
+    // The side panel: subsystems, compartments burning or flooding, teams.
+    const px0 = VX + VW - sideW - 6;
+    let y = HEAD + 16;
+    pxMini(c, 'SYSTEMS', px0, y, '#80c0ff');
+    y += 8;
+    for (const k2 of SYSTEMS) {
+      const v = s.systems[k2.key];
+      c.fillStyle = '#0a0c10';
+      c.fillRect(px0, y, sideW, 9);
+      c.fillStyle = col(v);
+      c.fillRect(px0 + 1, y + 1, Math.round((sideW - 2) * v), 7);
+      pxMini(c, `${k2.name.toUpperCase().slice(0, 14)} ${Math.round(v * 100)}%`, px0 + 3, y + 2, '#081018', 'left', null);
+      this.hit(`dc:system:${k2.key}`, px0, y, sideW, 9);
+      if (teamOn(g, 'system', k2.key)) pxMini(c, '⚒', px0 + sideW - 6, y + 2, '#ffffff', 'left', null);
+      y += 11;
+    }
+    y += 2;
+    pxMini(c, 'DECKS  BOW MID STERN', px0, y, '#80c0ff');
+    y += 8;
+    const cell = Math.max(6, Math.min(12, Math.floor((B - y - 30) / 7)));
+    for (let d = 0; d < 7; d++) {
+      for (let sec = 0; sec < 3; sec++) {
+        const i = compIndex(d + 1, sec);
+        const fi = s.fire[i] ?? 0, fl = s.flood[i] ?? 0;
+        const x = px0 + 28 + sec * (cell + 10), yy = y + d * (cell + 1);
+        c.fillStyle = fi > 0 ? (blink ? '#ff5020' : '#a02010') : fl > 0.05 ? '#2060c0' : '#1a3a2a';
+        c.fillRect(x, yy, cell + 8, cell);
+        if (fi > 0) this.hit(`dc:fire:${i}`, x, yy, cell + 8, cell);
+        else if (fl > 0.05) this.hit(`dc:flood:${i}`, x, yy, cell + 8, cell);
+        if (sec === 0) pxMini(c, `${3 - d > 0 ? '+' : ''}${3 - d}`, px0, yy + 1, '#6a8aa8', 'left', null);
+      }
+    }
+    y += 7 * (cell + 1) + 4;
+    const out = g.teams.filter((t) => t.phase !== 'back').length;
+    pxMini(c, `TEAMS ${out}/${maxTeams(g)}  JOBS ${openJobs(g).length}`, px0, y, '#c0d8f0');
+    button(c, px0, B - 18, 60, 12, g.autoRepair ? 'AUTO ON' : 'AUTO OFF', g.autoRepair ? '#206030' : '#403020', this.press.dc_auto > 0, '#ffffff');
+    this.hit('dc_auto', px0, B - 20, 60, 16);
+    button(c, px0 + 64, B - 18, 70, 12, 'STABILIZE', '#204060', this.press.dc_stab > 0, '#ffffff');
+    this.hit('dc_stab', px0 + 64, B - 20, 70, 16);
+    void compName;
+  }
+
+  /** The intercom: the Mega Hangar agent on the line, face and words, top left of the glass. */
+  private drawComm(g: Game): void {
+    const cm = g.comms.current;
+    if (!cm) return;
+    const c = this.x;
+    const a = AGENTS[cm.agent];
+    // Over the map and damage control: one line along the bottom of the glass, so it doesn't hide anything.
+    if (this.glass === 'map' || this.glass === 'dc') {
+      const y = this.winB - 11;
+      c.fillStyle = 'rgba(4,10,16,0.9)';
+      c.fillRect(this.VX + 4, y - 2, this.VW - 8, 10);
+      const im = agentImage(cm.agent);
+      if (im.complete && im.naturalWidth) c.drawImage(im, this.VX + 5, y - 2, 10, 10);
+      const line = `${a.post}: ${cm.text.toUpperCase()}`.replace(/[^A-Z0-9%./:+\-<>!?()=#,' ]/g, '');
+      pxMini(c, line.slice(0, Math.floor((this.VW - 30) / 4)), this.VX + 18, y, a.color, 'left', null);
+      return;
+    }
+    const w = Math.min(230, this.VW - 20), x0 = this.VX + 8, y0 = HEAD + 16;
+    const words = cm.text.toUpperCase().replace(/[^A-Z0-9%./:+\-<>!?()=#,' ]/g, '').split(' ');
+    const lines: string[] = [];
+    const maxc = Math.floor((w - 52) / 4);
+    let cur = '';
+    for (const wd of words) {
+      if ((cur + ' ' + wd).trim().length > maxc) {
+        lines.push(cur);
+        cur = wd;
+      } else cur = (cur + ' ' + wd).trim();
+    }
+    if (cur) lines.push(cur);
+    const shown = lines.slice(0, 6);
+    const hh = Math.max(46, 14 + shown.length * 7);
+    c.fillStyle = 'rgba(4,10,16,0.88)';
+    c.fillRect(x0, y0, w, hh);
+    c.strokeStyle = a.color;
+    c.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, hh - 1);
+    const im = agentImage(cm.agent);
+    c.fillStyle = '#02060a';
+    c.fillRect(x0 + 3, y0 + 3, 40, 40);
+    if (im.complete && im.naturalWidth) {
+      c.imageSmoothingEnabled = false;
+      c.drawImage(im, x0 + 3, y0 + 3, 40, 40);
+    }
+    // Scanlines over the face, a talk light.
+    c.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let yy = y0 + 3; yy < y0 + 43; yy += 2) c.fillRect(x0 + 3, yy, 40, 1);
+    disc(c, x0 + 40, y0 + 6, 1.5, Math.floor(this.time * 5) % 2 ? a.color : '#102030');
+    pxMini(c, `${a.post} · ${a.name}`.slice(0, maxc + 8), x0 + 47, y0 + 4, a.color, 'left', null);
+    shown.forEach((ln, i) => pxMini(c, ln, x0 + 47, y0 + 12 + i * 7, '#d8e8f0', 'left', null));
+  }
+
+  /** The explanation plate: what the hovered control does (or the one tapped with INFO on). */
+  private drawTip(g: Game): void {
+    const id = this.tipLock?.id ?? (this.hoverT > 0.35 && this.hoverId && this.hoverId !== 'glass' ? this.hoverId : '');
+    if (!id) return;
+    const tip = tipFor(id, g);
+    if (!tip) return;
+    const c = this.x;
+    const w = Math.min(this.VW - 16, 330);
+    const maxc = Math.floor((w - 8) / 4);
+    const lines: string[] = [];
+    let cur = '';
+    for (const wd of tip.body.toUpperCase().replace(/[^A-Z0-9%./:+\-<>!?()=#,' ]/g, '').split(' ')) {
+      if ((cur + ' ' + wd).trim().length > maxc) {
+        lines.push(cur);
+        cur = wd;
+      } else cur = (cur + ' ' + wd).trim();
+    }
+    if (cur) lines.push(cur);
+    const shown = lines.slice(0, 8);
+    const hh = 14 + shown.length * 7;
+    const x0 = Math.round(this.VX + this.VW / 2 - w / 2), y0 = this.winB - hh - 30;
+    c.fillStyle = 'rgba(10,8,4,0.92)';
+    c.fillRect(x0, y0, w, hh);
+    c.strokeStyle = '#ffb030';
+    c.strokeRect(x0 + 0.5, y0 + 0.5, w - 1, hh - 1);
+    pxMini(c, tip.title.toUpperCase().slice(0, maxc), x0 + 4, y0 + 4, '#ffb030', 'left', null);
+    shown.forEach((ln, i) => pxMini(c, ln, x0 + 4, y0 + 12 + i * 7, '#e8e0d0', 'left', null));
+  }
+
+  /* ---------------------------------------------------------------- */
   /* The cab itself                                                    */
   /* ---------------------------------------------------------------- */
 
@@ -995,37 +1699,41 @@ export class Cabin {
 
   private drawFrame(g: Game): void {
     const c = this.x;
-    const W = this.W, B = this.winB;
-    this.hit('glass', 0, HEAD, W, B - HEAD);
-    // Pillars between the three panes.
-    for (const px of [Math.round(W * 0.26), Math.round(W * 0.74)]) {
-      plate(c, px - 3, HEAD, 7, B - HEAD, '#34322e', this.noise);
-      c.fillStyle = '#56534c';
-      c.fillRect(px - 3, HEAD, 1, B - HEAD);
-      c.fillStyle = '#1a1916';
-      c.fillRect(px + 3, HEAD, 1, B - HEAD);
-      for (let y = HEAD + 6; y < B - 4; y += 12) rivet(c, px, y);
+    const W = this.W, B = this.winB, VX = this.VX, VW = this.VW;
+    // Pillars between the three panes (only over the view out).
+    if (this.glass === 'view') {
+      for (const px of [Math.round(VX + VW * 0.26), Math.round(VX + VW * 0.74)]) {
+        plate(c, px - 3, HEAD, 7, B - HEAD, '#34322e', this.noise);
+        c.fillStyle = '#56534c';
+        c.fillRect(px - 3, HEAD, 1, B - HEAD);
+        c.fillStyle = '#1a1916';
+        c.fillRect(px + 3, HEAD, 1, B - HEAD);
+        for (let y = HEAD + 6; y < B - 4; y += 12) rivet(c, px, y);
+      }
+      // Glass: faint reflections.
+      c.fillStyle = 'rgba(255,255,255,0.05)';
+      for (let i = 0; i < 3; i++) {
+        const x0 = Math.round(VX + VW * (0.08 + i * 0.3));
+        for (let k = 0; k < 18; k++) c.fillRect(x0 + k, HEAD + 4 + k * 2, 2, 2);
+      }
     }
-    // Side frames and the sill.
-    plate(c, 0, HEAD, 4, B - HEAD, '#34322e', this.noise);
-    plate(c, W - 4, HEAD, 4, B - HEAD, '#34322e', this.noise);
-    // Glass: faint reflections.
-    c.fillStyle = 'rgba(255,255,255,0.05)';
-    for (let i = 0; i < 3; i++) {
-      const x0 = Math.round(W * (0.08 + i * 0.3));
-      for (let k = 0; k < 18; k++) c.fillRect(x0 + k, HEAD + 4 + k * 2, 2, 2);
-    }
+    // Side frames round the glass.
+    plate(c, VX, HEAD, 4, B - HEAD, '#34322e', this.noise);
+    plate(c, VX + VW - 4, HEAD, 4, B - HEAD, '#34322e', this.noise);
     // A battered hull cracks the glass.
     const hp = g.player.hp / Math.max(1, g.player.stats.maxHp);
-    if (hp < 0.35) crack(c, Math.round(W * 0.84), HEAD + 8, hp < 0.15 ? 5 : 3);
-    // The overhead panel: the compass tape, the clock, the exit and vitals buttons; then lamps, breakers, dials.
+    if (hp < 0.35) crack(c, Math.round(VX + VW * 0.84), HEAD + 8, hp < 0.15 ? 5 : 3);
+    // The overhead panel: the compass tape, the clock, the exit and vitals buttons; then lamps, breakers, dials;
+    // then the drive row.
     plate(c, 0, 0, W, HEAD, '#2e2c28', this.noise);
     c.fillStyle = '#141311';
     c.fillRect(0, HEAD - 1, W, 1);
     c.fillStyle = '#1c1b18';
     c.fillRect(0, 12, W, 1);
+    c.fillRect(0, 27, W, 1);
     c.fillStyle = '#46433c';
     c.fillRect(0, 13, W, 1);
+    c.fillRect(0, 28, W, 1);
     this.compass(g, Math.round(W / 2 - 70), 2, 140, 8);
     button(c, W - 52, 1, 48, 10, 'EXIT  F', '#7a2a20', this.press.exit > 0, '#ffd0c0');
     this.hit('exit', W - 52, 0, 52, 12);
@@ -1036,15 +1744,225 @@ export class Cabin {
       pxMini(c, `${String(Math.floor(t / 3600)).padStart(2, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`, W - 58, 4, '#ffb030', 'right');
     }
     this.overhead(g, 16);
+    this.modesRow(g, 30);
     // Look buttons at the bottom corners of the glass.
-    button(c, 8, B - 22, 14, 10, '<', '#2a2a30', this.press.lookL > 0, '#c0c8ff');
-    this.hit('lookL', 6, B - 24, 18, 14);
-    button(c, W - 22, B - 22, 14, 10, '>', '#2a2a30', this.press.lookR > 0, '#c0c8ff');
-    this.hit('lookR', W - 24, B - 24, 18, 14);
-    if (Math.abs(this.look) > 0.05) {
-      button(c, W / 2 - 14, B - 22, 28, 10, 'FWD', '#2a2a30', this.press.lookF > 0, '#c0c8ff');
-      this.hit('lookF', W / 2 - 16, B - 24, 32, 14);
+    if (this.glass === 'view') {
+      button(c, VX + 8, B - 22, 14, 10, '<', '#2a2a30', this.press.lookL > 0, '#c0c8ff');
+      this.hit('lookL', VX + 6, B - 24, 18, 14);
+      button(c, VX + VW - 22, B - 22, 14, 10, '>', '#2a2a30', this.press.lookR > 0, '#c0c8ff');
+      this.hit('lookR', VX + VW - 24, B - 24, 18, 14);
+      if (Math.abs(this.look) > 0.05 || Math.abs(this.pitch) > 4) {
+        button(c, VX + VW / 2 - 14, B - 22, 28, 10, 'FWD', '#2a2a30', this.press.lookF > 0, '#c0c8ff');
+        this.hit('lookF', VX + VW / 2 - 16, B - 24, 32, 14);
+      }
     }
+  }
+
+  /**
+   * The overhead drive row: the drive-mode selector, the preheater, sanders, diff lock and plough switches, the
+   * engine's CHARGE gauge (how full, and how long to full) and the INFO switch.
+   */
+  private modesRow(g: Game, y: number): void {
+    const c = this.x;
+    const W = this.W;
+    const hm = g.helm;
+    const p = g.player;
+    let x = 4;
+    pxMini(c, 'DRIVE', x, y + 3, '#c0b8a8', 'left', null);
+    x += 22;
+    for (const m of DRIVE_MODES) {
+      const on = hm.mode === m.key;
+      const lab = m.key === 'normal' ? 'NORM' : m.name;
+      const bw = lab.length * 4 + 6;
+      c.fillStyle = '#0c0c0c';
+      c.fillRect(x, y, bw, 11);
+      c.fillStyle = on ? '#e0a020' : '#34322c';
+      c.fillRect(x + 1, y + 1, bw - 2, 9);
+      if (on) {
+        c.fillStyle = '#ffe080';
+        c.fillRect(x + 1, y + 1, bw - 2, 1);
+      }
+      pxMini(c, lab, x + bw / 2, y + 3, on ? '#1a1000' : '#9a927c', 'center', null);
+      this.hit(`mode_${m.key}`, x, y - 1, bw, 13);
+      x += bw + 1;
+    }
+    x += 6;
+    const sw: [string, string, boolean, string, number][] = [
+      ['preheat', 'PREHT', hm.preheat, '#ffb040', 0],
+      ['sand', 'SAND', hm.sandT > 0, '#e0c080', hm.sandT > 0 ? 0 : hm.sandCd / SAND_CD],
+      ['diff', 'DIFF', hm.diffLock, '#ffd740', 0],
+      ['plow', 'PLOW', hm.plow, '#ff9040', 0],
+    ];
+    for (const [id, lab, on, col, cd] of sw) {
+      const bw = 26;
+      c.fillStyle = on ? col : '#1a1a1a';
+      c.fillRect(x + 1, y + 1, 3, 3);
+      c.fillStyle = '#141414';
+      c.fillRect(x + 6, y, 8, 11);
+      c.fillStyle = '#6a675f';
+      c.fillRect(x + 7, y + 1, 6, 9);
+      c.fillStyle = '#d8d0c0';
+      c.fillRect(x + 9, on ? y + 1 : y + 6, 2, 4);
+      if (cd > 0) {
+        c.fillStyle = 'rgba(0,0,0,0.6)';
+        c.fillRect(x + 6, y, 8, Math.round(11 * cd));
+      }
+      pxMini(c, lab, x + 16, y + 3, on ? col : '#9a927c', 'left', null);
+      this.hit(id, x, y - 1, bw + 10, 13);
+      x += bw + 12;
+    }
+    // CHARGE: the engine's charge like a boiler gauge, with seconds to full.
+    const ds = driveSpec(g, p);
+    const want = Math.max(hm.preheat ? 0.35 : 0, Math.abs(hm.lever));
+    const secs = p.spool < want ? (want - p.spool) / Math.max(0.001, ds.spool) : 0;
+    const gw = Math.min(110, W - x - 60);
+    if (gw > 40) {
+      pxMini(c, 'CHARGE', x, y + 3, '#c0b8a8', 'left', null);
+      x += 26;
+      c.fillStyle = '#0a0a0a';
+      c.fillRect(x, y + 1, gw, 9);
+      const fill = Math.round((gw - 2) * p.spool);
+      for (let i = 0; i < fill; i++) {
+        const k = i / (gw - 2);
+        c.fillStyle = k < 0.5 ? '#3a8a3a' : k < 0.8 ? '#8ac040' : '#e0c030';
+        c.fillRect(x + 1 + i, y + 2, 1, 7);
+      }
+      for (let i = 1; i < 10; i++) {
+        c.fillStyle = '#0a0a0a';
+        c.fillRect(x + Math.round(((gw - 2) * i) / 10), y + 2, 1, 7);
+      }
+      c.fillStyle = '#ff5030';
+      c.fillRect(x + 1 + Math.round((gw - 2) * 0.8), y, 1, 11);
+      pxMini(c, secs > 0.05 ? `${secs.toFixed(1)}S` : `${Math.round(p.spool * 100)}%`, x + gw + 3, y + 3, secs > 0.05 ? '#ffd740' : '#6aff7a', 'left', null);
+      this.hit('charge', x - 26, y - 1, gw + 50, 13);
+    }
+    button(c, W - 18, y, 14, 11, '?', this.infoOn ? '#a07010' : '#2a2a30', this.infoOn || this.press.info > 0, '#ffffff');
+    this.hit('info', W - 20, y - 1, 18, 13);
+  }
+
+  /** The side wings: analytics screens stacked over the fuel plant (left) and the tactical box (right). */
+  private drawWings(g: Game): void {
+    const L = this.lay;
+    if (!L.wing) return;
+    const c = this.x;
+    const B = this.winB;
+    for (const side of [0, 1]) {
+      const x0 = side ? this.W - L.wing : 0;
+      plate(c, x0, HEAD, L.wing, B - HEAD, '#3a3732', this.noise);
+      c.fillStyle = '#1c1b18';
+      c.fillRect(side ? x0 : x0 + L.wing - 1, HEAD, 1, B - HEAD);
+      for (let i = 0; i < L.perWing; i++) {
+        const idx = side * L.perWing + i;
+        const sy = HEAD + 3 + i * (L.scrH + 3);
+        drawScreen(c, g, this.pages[idx % this.pages.length], x0 + 3, sy, L.wing - 6, L.scrH, this.time, idx);
+        this.hit(`scr${idx}`, x0 + 3, sy, L.wing - 6, L.scrH);
+      }
+      const by = B - BOX_H - 2;
+      plate(c, x0 + 2, by, L.wing - 4, BOX_H, '#44423c', this.noise);
+      bevel(c, x0 + 2, by, L.wing - 4, BOX_H);
+      if (side === 0) this.fuelBox(g, x0 + 2, by, L.wing - 4, BOX_H);
+      else this.tactBox(g, x0 + 2, by, L.wing - 4, BOX_H);
+    }
+  }
+
+  /** The fuel plant: the drill lever, the crude and fuel tanks, the oil survey needle, the refinery's AUTO switch. */
+  private fuelBox(g: Game, x0: number, y0: number, w: number, hh: number): void {
+    const c = this.x;
+    const s = g.titan;
+    pxMini(c, 'FUEL PLANT', x0 + w / 2, y0 + 3, '#c0b8a8', 'center');
+    const has = !!fuelDrill(g);
+    // The drill lever: a slot, the handle down while it bores.
+    const lx = x0 + 10, ly = y0 + 13, lh = hh - 30;
+    c.fillStyle = '#0c0c0c';
+    c.fillRect(lx - 2, ly, 5, lh);
+    const hy = Math.round(ly + (s.drillWant ? 1 : 0) * (lh - 8) * Math.max(s.drill, 0.15) + (s.drillWant ? 0 : 0));
+    c.fillStyle = '#0a0a0a';
+    c.fillRect(lx - 6, hy - 1, 13, 9);
+    c.fillStyle = has ? (s.drill >= 1 ? '#40a040' : s.drill > 0 ? '#c09020' : '#8a3a2a') : '#3a3a3a';
+    c.fillRect(lx - 5, hy, 11, 7);
+    c.fillStyle = 'rgba(255,255,255,0.3)';
+    c.fillRect(lx - 5, hy, 11, 1);
+    pxMini(c, 'DRILL', lx, y0 + hh - 14, has ? '#c0b8a8' : '#6a665e', 'center');
+    const st = !has ? 'NONE' : s.drillWant ? (s.drill >= 1 ? 'PUMP' : 'DOWN') : s.drill > 0 ? 'RAISE' : 'UP';
+    pxMini(c, st, lx, y0 + hh - 7, s.drill >= 1 ? '#6aff7a' : '#ffb030', 'center');
+    this.hit('drill', x0, y0 + 10, 22, hh - 10);
+    // Tanks: crude and fuel.
+    const tanks: [string, number, string][] = [['CRD', s.crude / CRUDE_MAX, '#a07840'], ['FUL', s.fuel / FUEL_MAX, '#ffb030']];
+    tanks.forEach(([lab, v, col], i) => {
+      const tx = x0 + 26 + i * 14, ty = y0 + 13, th = hh - 30;
+      c.fillStyle = '#0a0a0a';
+      c.fillRect(tx, ty, 9, th);
+      c.fillStyle = col;
+      c.fillRect(tx + 1, ty + th - 1 - Math.round((th - 2) * v), 7, Math.round((th - 2) * v));
+      for (let k = 1; k < 4; k++) {
+        c.fillStyle = '#0a0a0a';
+        c.fillRect(tx + 1, ty + Math.round((th * k) / 4), 3, 1);
+      }
+      pxMini(c, lab, tx + 5, y0 + hh - 14, '#c0b8a8', 'center');
+    });
+    // Oil survey needle.
+    const oil = oilHere(g);
+    const dx = x0 + w - 24, dy = y0 + 26;
+    dial(c, dx, dy, 11, Math.min(1, oil / 1.6), 'OIL', { ticks: 4, red: 0, face: '#e8e0c8' });
+    pxMini(c, oilWord(oil), dx, dy + 14, oil >= 1 ? '#6aff7a' : oil >= 0.4 ? '#ffb030' : '#ff6040', 'center');
+    // Rates.
+    const dr = drillRate(g), rr = refineRate(g);
+    pxMini(c, dr > 0 ? `+${dr.toFixed(1)}` : '', x0 + 58, y0 + 14, '#6aff7a');
+    // Refinery AUTO switch.
+    const ref = !!fuelRefinery(g);
+    const on = ref && g.helm.refine;
+    const sx = x0 + w - 36, sy = y0 + hh - 18;
+    c.fillStyle = on && rr > 0 && s.crude > 0 && s.fuel < FUEL_MAX ? (Math.floor(this.time * 3) % 2 ? '#6aff7a' : '#2a6a30') : on ? '#3a8a3a' : '#202020';
+    c.fillRect(sx, sy + 2, 3, 3);
+    c.fillStyle = '#141414';
+    c.fillRect(sx + 5, sy, 8, 12);
+    c.fillStyle = '#6a675f';
+    c.fillRect(sx + 6, sy + 1, 6, 10);
+    c.fillStyle = '#d8d0c0';
+    c.fillRect(sx + 8, on ? sy + 1 : sy + 6, 2, 5);
+    pxMini(c, ref ? 'REFN' : 'NO RF', sx + 15, sy + 3, ref ? '#c0b8a8' : '#6a665e', 'left', null);
+    this.hit('refine', sx - 2, sy - 2, 36, 16);
+  }
+
+  /** The tactical box: what the glass shows (view, drone, map, damage control), the gunsight, smoke, clear mark. */
+  private tactBox(g: Game, x0: number, y0: number, w: number, hh: number): void {
+    const c = this.x;
+    const hm = g.helm;
+    pxMini(c, 'GLASS', x0 + 4, y0 + 3, '#c0b8a8');
+    const modes: [GlassMode, string][] = [['view', 'VIEW'], ['cam', 'DRONE'], ['map', 'MAP'], ['dc', 'DMG']];
+    const bw = Math.floor((w - 10) / 2);
+    modes.forEach(([m, lab], i) => {
+      const bx = x0 + 4 + (i % 2) * (bw + 2), by = y0 + 11 + Math.floor(i / 2) * 14;
+      const on = this.glass === m;
+      button(c, bx, by, bw, 12, lab, on ? '#2a5a7a' : '#2a2a30', on || this.press[`g_${m}`] > 0, on ? '#e0f8ff' : '#a0a8b8');
+      if (m === 'dc' && openJobs(g).length && Math.floor(this.time * 2) % 2) {
+        c.fillStyle = '#ff4030';
+        c.fillRect(bx + bw - 4, by + 1, 3, 3);
+      }
+      this.hit(`g_${m}`, bx, by, bw, 12);
+    });
+    const ry = y0 + 42;
+    const sw = Math.floor((w - 12) / 3);
+    const smokeCd = hm.smokeT > 0 ? 0 : hm.smokeCd / SMOKE_CD;
+    const btns: [string, string, string, boolean, number][] = [
+      ['aim', 'AIM', '#7a2020', this.aimOn, 0],
+      ['smoke', 'SMOK', '#4a5058', hm.smokeT > 0, smokeCd],
+      ['clear', 'CLR', '#3a3a30', false, 0],
+    ];
+    btns.forEach(([id, lab, col, on, cd], i) => {
+      const bx = x0 + 4 + i * (sw + 2);
+      button(c, bx, ry, sw, 13, lab, col, on || this.press[id] > 0, on ? '#ffffff' : '#d0d0d0');
+      if (cd > 0) {
+        c.fillStyle = 'rgba(0,0,0,0.6)';
+        c.fillRect(bx, ry, Math.round(sw * cd), 13);
+      }
+      this.hit(id, bx, ry, sw, 13);
+    });
+    const ap = g.player.aimPoint;
+    const p = g.player;
+    pxMini(c, ap ? `MARK ${Math.round(Math.hypot(ap.x - p.x, ap.y - p.y))}M ${Math.ceil(ap.t)}S` : this.aimOn ? 'SIGHT ARMED' : 'NO MARK', x0 + w / 2, y0 + hh - 20, ap ? '#ff5252' : this.aimOn ? '#ffb030' : '#6a665e', 'center');
+    const out = g.teams.filter((t) => t.phase !== 'back').length;
+    pxMini(c, `TEAMS ${out}/${maxTeams(g)}`, x0 + w / 2, y0 + hh - 11, '#b2ff59', 'center');
   }
 
   private compass(g: Game, x0: number, y0: number, w: number, hh: number): void {
@@ -1093,8 +2011,8 @@ export class Cabin {
     if (W > 300) pxMini(c, `TITAN CRAWLER ${CLASSES[g.player.klass]?.name.toUpperCase() ?? ''}`.slice(0, 28), 6, y0 + 6, '#8a8272');
     const x0 = Math.round((W - L.rowW) / 2);
     let y = y0 + LIP;
-    // The screen bank on its glare shield: click a screen to turn its page.
-    if (L.screens > 0) {
+    // The screen bank on its glare shield (when there are no side wings): click a screen to turn its page.
+    if (L.screens > 0 && !L.wing) {
       plate(c, x0 - 4, y, L.rowW + 8, L.scrH, '#22211d', this.noise);
       c.fillStyle = '#12110f';
       c.fillRect(x0 - 4, y + L.scrH - 1, L.rowW + 8, 1);
@@ -1126,12 +2044,15 @@ export class Cabin {
           case 'throttle': this.throttle(g, x, y + 1, w); break;
           case 'supply': supplyModule(c, g, x, y + 1, w, MOD_H - 3, this.time); break;
           case 'reactor': reactorModule(c, g, x, y + 1, w, MOD_H - 3, this.time); break;
+          case 'fuel': this.fuelBox(g, x, y + 1, w, MOD_H - 3); break;
+          case 'tact': this.tactBox(g, x, y + 1, w, MOD_H - 3); break;
         }
         x += w + 2;
       }
       y += MOD_H;
     }
     this.cabWalls(g, y0, x0 - 6, x0 + L.rowW + 6);
+    void specOf;
   }
 
   /** Either side of the console, where there's room: pipes, the radio handset, a clipboard, a mug, the extinguisher. */
@@ -1253,7 +2174,7 @@ export class Cabin {
   /** The cab around the glass: sun visors, the wiper (it runs in a storm), the lucky charm swinging from the roof. */
   private cabDetails(g: Game, dt: number): void {
     const c = this.x;
-    const W = this.W, B = this.winB;
+    const W = this.VW, B = this.winB;
     // Sun visors over the side panes, one flipped down.
     for (const [x0, x1, down] of [[4, Math.round(W * 0.26) - 3, true], [Math.round(W * 0.74) + 4, W - 4, false]] as [number, number, boolean][]) {
       const vw = Math.round((x1 - x0) * 0.7), vx = x0 + Math.round((x1 - x0 - vw) / 2);
@@ -1493,39 +2414,47 @@ export class Cabin {
     void COMPARTMENTS;
   }
 
+  /** The three overdrive stages (guarded push buttons, lit when running) and the ALL STOP mushroom. */
   private driveBox(g: Game, x0: number, y0: number, w: number): void {
     const c = this.x;
-    const on = g.helm.overdrive;
+    const hm = g.helm;
+    const ds = driveSpec(g, g.player);
     const cx = Math.round(x0 + w / 2);
-    pxMini(c, 'O-DRV', cx, y0 + 38, '#ffa020', 'center');
-    // A guarded switch: hazard-striped base, red flip cover (open when armed).
-    for (let i = 0; i < 6; i++) {
-      c.fillStyle = i % 2 ? '#141414' : '#e0b020';
-      c.fillRect(cx - 12 + i * 4, y0 + 11, 4, 22);
+    pxMini(c, 'OVERDRV', cx, y0 + 2, '#ffa020', 'center');
+    for (let n = 1; n <= 3; n++) {
+      const by = y0 + 10 + (n - 1) * 14;
+      const lit = hm.overdrive && hm.odStage === n;
+      const avail = n <= ds.odStages;
+      // Hazard-striped guard, the button, its lamp.
+      for (let i = 0; i < Math.floor((w - 6) / 4); i++) {
+        c.fillStyle = i % 2 ? '#141414' : avail ? '#c09020' : '#4a4030';
+        c.fillRect(x0 + 3 + i * 4, by, 4, 12);
+      }
+      const col = !avail ? '#2a2826' : lit ? (Math.floor(this.time * 6) % 2 ? '#ff6020' : '#ffb040') : '#5a2010';
+      c.fillStyle = '#0a0a0a';
+      c.fillRect(x0 + 6, by + 1, w - 12, 10);
+      c.fillStyle = col;
+      c.fillRect(x0 + 7, by + 2, w - 14, 8);
+      pxMini(c, ['I', 'II', 'III'][n - 1], cx, by + 3, lit ? '#1a0800' : avail ? '#ffb080' : '#5a544c', 'center', null);
+      this.hit(`od${n}`, x0 + 3, by, w - 6, 12);
     }
-    c.fillStyle = '#1a1a1a';
-    c.fillRect(cx - 7, y0 + 14, 14, 16);
-    c.fillStyle = on ? '#ffd0a0' : '#8a8a8a';
-    if (on) c.fillRect(cx - 1, y0 + 15, 3, 8);
-    else c.fillRect(cx - 1, y0 + 21, 3, 8);
-    c.fillStyle = on ? 'rgba(200,30,20,0.45)' : 'rgba(200,30,20,0.85)';
-    if (on) c.fillRect(cx - 8, y0 + 8, 16, 4);
-    else c.fillRect(cx - 8, y0 + 13, 16, 18);
-    c.fillStyle = on && Math.floor(this.time * 4) % 2 ? '#ffa020' : '#301a08';
-    c.fillRect(cx - 2, y0 + 4, 5, 3);
-    this.hit('odrive', x0, y0, w, 42);
+    // Engine heat under the buttons.
+    c.fillStyle = '#0a0a0a';
+    c.fillRect(x0 + 4, y0 + 53, w - 8, 3);
+    c.fillStyle = hm.overheat ? '#ff3020' : hm.heat > 0.7 ? '#ffa020' : '#60c040';
+    c.fillRect(x0 + 4, y0 + 53, Math.round((w - 8) * hm.heat), 3);
     // ALL STOP: the big red mushroom.
     const pr = this.press.stop > 0;
-    const by = y0 + 50;
+    const by = y0 + 62;
     c.fillStyle = '#e0b020';
     c.fillRect(cx - 14, by + 16, 28, 6);
     c.fillStyle = '#141414';
     c.fillRect(cx - 5, by + 12, 10, 8);
-    disc(c, cx, by + 8 + (pr ? 2 : 0), 12, '#5a0a06');
-    disc(c, cx, by + 7 + (pr ? 2 : 0), 11, '#d01a10');
-    disc(c, cx - 3, by + 4 + (pr ? 2 : 0), 4, '#ff6a50');
-    pxMini(c, 'STOP', cx, by + 26, '#ffd0c0', 'center');
-    this.hit('stop', x0, by - 6, w, 42);
+    disc(c, cx, by + 8 + (pr ? 2 : 0), 11, '#5a0a06');
+    disc(c, cx, by + 7 + (pr ? 2 : 0), 10, '#d01a10');
+    disc(c, cx - 3, by + 4 + (pr ? 2 : 0), 3.5, '#ff6a50');
+    pxMini(c, 'STOP', cx, by + 25, '#ffd0c0', 'center');
+    this.hit('stop', x0, by - 4, w, 36);
   }
 
   /** The toroid buttons (as the ship: fore pair on top) and the brake handle. */
@@ -1631,6 +2560,11 @@ export class Cabin {
 /* ---------------------------------------------------------------------- */
 /* Pixel helpers                                                           */
 /* ---------------------------------------------------------------------- */
+
+function darken(c: number): number {
+  const r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;
+  return pack(r * 0.62, g * 0.62, b * 0.66);
+}
 
 function lighten(c: number): number {
   const r = c & 255, g = (c >> 8) & 255, b = (c >> 16) & 255;

@@ -1,6 +1,8 @@
 import { MODULES } from '../defs';
 import type { Game } from '../game';
 import { COMPARTMENTS, compName, SYSTEMS, TOROIDS, ZONES, type ArmorZone, type SysKey } from './titan';
+import type { ModuleInst } from '../tank';
+import { WEAPONS } from '../../shared/weapons';
 
 /**
  * Crew operations: the reserve in the Barracks, and repair teams you send from the vitals screen.
@@ -12,7 +14,7 @@ import { COMPARTMENTS, compName, SYSTEMS, TOROIDS, ZONES, type ArmorZone, type S
  * cost nothing but time; crawlers, systems and armour take scrap.
  */
 
-export type TeamKind = 'fire' | 'flood' | 'crawler' | 'toroid' | 'system' | 'zone';
+export type TeamKind = 'fire' | 'flood' | 'crawler' | 'toroid' | 'system' | 'zone' | 'gun';
 
 export interface RepairTeam {
   id: number;
@@ -39,9 +41,9 @@ export const TEAM_SIZE = 6;
 /** Where people bunk (Residential): every walk starts there. */
 const HOME_DECK = 3;
 /** Fire and water knocked back, and repair done, per second by a full team. */
-const RATE: Record<TeamKind, number> = { fire: 0.1, flood: 0.07, crawler: 0.025, toroid: 0.022, system: 0.02, zone: 0.015 };
+const RATE: Record<TeamKind, number> = { fire: 0.1, flood: 0.07, crawler: 0.025, toroid: 0.022, system: 0.02, zone: 0.015, gun: 0.035 };
 /** Scrap per whole point repaired. */
-const SCRAP: Record<TeamKind, number> = { fire: 0, flood: 0, crawler: 20, toroid: 25, system: 20, zone: 30 };
+const SCRAP: Record<TeamKind, number> = { fire: 0, flood: 0, crawler: 20, toroid: 25, system: 20, zone: 30, gun: 18 };
 let nextTeam = 1;
 
 /** Reserve places: every Barracks keeps 16 people per level in reserve. */
@@ -89,10 +91,15 @@ export function jobPlace(kind: TeamKind, key: string): { deck: number; sec: numb
     }
     case 'zone':
       return { deck: key === 'roof' ? 0 : 4, sec: key === 'bow' ? 0 : key === 'stern' ? 2 : 1 };
+    case 'gun':
+      return { deck: 0, sec: 1 };
   }
 }
 
-export function jobName(kind: TeamKind, key: string): string {
+/** A gun module by id (for gun repair jobs). */
+const gunMod = (g: Game, key: string): ModuleInst | undefined => g.player.modules.find((m) => m.id === Number(key));
+
+export function jobName(kind: TeamKind, key: string, g?: Game): string {
   switch (kind) {
     case 'fire':
       return `Fire, ${compName(Number(key))}`;
@@ -108,6 +115,10 @@ export function jobName(kind: TeamKind, key: string): string {
       return SYSTEMS.find((k) => k.key === key)?.name ?? key;
     case 'zone':
       return `${ZONES.find((z) => z.key === key)?.name ?? key} armour`;
+    case 'gun': {
+      const m = g ? gunMod(g, key) : undefined;
+      return m?.weapon ? `${WEAPONS[m.weapon.key]?.name ?? 'Gun'} (roof)` : 'Roof gun';
+    }
   }
 }
 
@@ -127,6 +138,8 @@ function level(g: Game, kind: TeamKind, key: string): number {
       return s.systems[key as SysKey] ?? 1;
     case 'zone':
       return s.zones[key as ArmorZone] ?? 1;
+    case 'gun':
+      return 1 - (gunMod(g, key)?.wreck ?? 0);
   }
 }
 
@@ -151,6 +164,11 @@ function setLevel(g: Game, kind: TeamKind, key: string, v: number): void {
     case 'zone':
       s.zones[key as ArmorZone] = v;
       break;
+    case 'gun': {
+      const m = gunMod(g, key);
+      if (m) m.wreck = Math.max(0, 1 - v);
+      break;
+    }
   }
 }
 
@@ -200,6 +218,7 @@ export function openJobs(g: Game): { kind: TeamKind; key: string; sev: number }[
   s.toroids.forEach((v, i) => v < 0.97 && out.push({ kind: 'toroid', key: String(i), sev: v <= 0.1 ? 2.4 : (1 - v) * 1.4 }));
   for (const k of SYSTEMS) if (s.systems[k.key] < 0.97) out.push({ kind: 'system', key: k.key, sev: (1 - s.systems[k.key]) * 1.6 });
   for (const z of ZONES) if (s.zones[z.key] < 0.97) out.push({ kind: 'zone', key: z.key, sev: (1 - s.zones[z.key]) * 1.2 });
+  for (const m of g.player.modules) if ((m.wreck ?? 0) > 0.03) out.push({ kind: 'gun', key: String(m.id), sev: (m.wreck ?? 0) >= 1 ? 2.2 : (m.wreck ?? 0) * 1.5 });
   return out.sort((a, b) => b.sev - a.sev);
 }
 
@@ -237,7 +256,7 @@ export function autoDispatch(g: Game, dt: number): string | null {
     // Scuffed armour (above 85%) isn't worth a team while there's worse.
     if (j.kind === 'zone' && (g.titan.zones[j.key as ArmorZone] ?? 1) > 0.85) continue;
     if (!dispatchTeam(g, j.kind, j.key)) {
-      const name = jobName(j.kind, j.key);
+      const name = jobName(j.kind, j.key, g);
       g.hooks.toast(`Damage control: team sent to ${name}.`, '#b2ff59');
       return name;
     }
@@ -292,14 +311,14 @@ export function updateTeams(g: Game, dt: number): void {
         g.titan.owed -= 1;
       }
       if (g.titan.owed >= 1) {
-        finish(g, t, `${jobName(t.kind, t.key)}: out of scrap, the team is coming back.`);
+        finish(g, t, `${jobName(t.kind, t.key, g)}: out of scrap, the team is coming back.`);
         continue;
       }
       setLevel(g, t.kind, t.key, v + fix);
       t.done = t.start < 1 ? (v + fix - t.start) / (1 - t.start) : 1;
       if (v + fix >= 0.999) {
         setLevel(g, t.kind, t.key, 1);
-        finish(g, t, `${jobName(t.kind, t.key)} repaired.`);
+        finish(g, t, `${jobName(t.kind, t.key, g)} repaired.`);
       }
     }
   }
