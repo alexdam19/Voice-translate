@@ -1,3 +1,4 @@
+import { applyDev, DEV } from './game/dev';
 import { requestClearance } from './game/systems/compound';
 import type { CrewMember } from './game/crew';
 import { KIT_KEY } from './shared/constants';
@@ -197,6 +198,13 @@ export class App {
   start(g: Game): void {
     this.game = g;
     installHandlers(g);
+    applyDev(g);
+    if (DEV && !document.querySelector('.dev-badge')) {
+      const b = document.createElement('div');
+      b.className = 'dev-badge';
+      b.textContent = 'DEV BUILD · everything unlocked · free · builds x40';
+      document.body.appendChild(b);
+    }
     g.hooks = {
       toast: (t, c) => this.hud.toast(t, c),
       sound: (n, x, y, v) => this.sound(n, x, y, v),

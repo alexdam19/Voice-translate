@@ -1,3 +1,4 @@
+import { DEV, DEV_BUILD_SPEED } from '../devFlag';
 import { chassisForCC, MODULES } from '../defs';
 import type { BuildJob, Game } from '../game';
 import { campBonus } from './camp';
@@ -25,7 +26,7 @@ export function updateBuilds(g: Game, dt: number): void {
       continue;
     }
     // A work order's crew works at full strength; the builders at however many turned up.
-    job.t += dt * k * (job.order ? 1 : crew);
+    job.t += dt * k * (job.order ? 1 : crew) * (DEV ? DEV_BUILD_SPEED : 1);
     if (job.t < job.total) continue;
     g.builds.splice(i, 1);
     completeJob(g, job);

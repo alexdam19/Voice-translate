@@ -1,3 +1,4 @@
+import { DEV } from './devFlag';
 import { Inventory, type Slot } from '../shared/inventory';
 import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
@@ -702,7 +703,7 @@ export class Tank {
 
   /** Whether a deck is open for building yet (a Titan opens its decks as it's refitted). */
   deckOpen(deck: number): boolean {
-    if (!this.titan || deck === ROOF) return true;
+    if (!this.titan || deck === ROOF || DEV) return true;
     return this.ccLevel >= (DECK_OPEN_CC[deck] ?? 1);
   }
 

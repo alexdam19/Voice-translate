@@ -252,6 +252,7 @@ export class Hud {
     });
     for (const m of MENU) {
       const b = h('div', `menu-btn ${m.key} ${m.cls ?? ''}`, `<b>${m.label}</b><small>${m.sub}</small>`);
+      b.title = `${m.label === '?' ? 'HELP' : m.label === '☰' ? 'MENU' : m.label} (${m.sub})`;
       const badge = h('span', 'badge');
       b.appendChild(badge);
       this.badges.set(m.key, b);
@@ -532,6 +533,8 @@ export class Hud {
     this.game = g;
     this.village = village;
     const p = g.player;
+    // Under way, the panels down the left fade back so they don't sit over her (they come back under the pointer).
+    this.root.classList.toggle('moving', g.mode === 'world' && !village && Math.abs(p.speed) > 5);
     // The main gate's clearance button.
     const gp = g.compound.prompt;
     this.gateBtn.style.display = gp && !village ? 'block' : 'none';

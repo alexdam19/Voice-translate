@@ -1,3 +1,4 @@
+import { DEV } from './devFlag';
 import { newCompound, type CompoundState } from './systems/compound';
 import { newComms, type Comms } from './systems/comms';
 import type { Nav } from './systems/nav';
@@ -643,10 +644,11 @@ export class Game {
   /* ---------------------------------------------------------------- */
 
   canPay(cost: Cost): boolean {
-    return canAfford([this.player.cargo], cost);
+    return DEV || canAfford([this.player.cargo], cost);
   }
 
   pay(cost: Cost): boolean {
+    if (DEV) return true;
     if (!this.canPay(cost)) return false;
     payCost([this.player.cargo], cost);
     return true;

@@ -1,3 +1,4 @@
+import { DEV, DEV_BUILD_SPEED } from '../devFlag';
 import type { Game } from '../game';
 
 /**
@@ -37,7 +38,7 @@ export function buildRobot(g: Game): string | null {
 export function updateRobots(g: Game, dt: number): void {
   const b = g.robotBuild;
   if (!b) return;
-  b.t += dt;
+  b.t += dt * (DEV ? DEV_BUILD_SPEED : 1);
   if (b.t < ROBOT_TIME) return;
   g.robotBuild = null;
   g.robots++;

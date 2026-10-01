@@ -1,3 +1,4 @@
+import { DEV, DEV_BUILD_SPEED } from '../devFlag';
 import { rollAffixes, WEAPONS } from '../../shared/weapons';
 import { levelMult } from '../defs';
 import type { Game } from '../game';
@@ -19,7 +20,7 @@ export function updateArsenal(g: Game, dt: number): void {
   if (!job) return;
   const sp = forgeSpeed(g);
   if (sp <= 0) return;
-  job.t += dt * sp;
+  job.t += dt * sp * (DEV ? DEV_BUILD_SPEED : 1);
   if (job.t < job.total) return;
   g.forgeJob = null;
   const w = findWeapon(g, job.uid);

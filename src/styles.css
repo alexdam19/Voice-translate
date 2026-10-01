@@ -1744,3 +1744,37 @@ html.touch .joy { display: block; }
 .int-tip em { display: block; margin-top: 4px; color: #ffd740; font-style: normal; font-size: 10px; }
 .int-deck[data-deck] { cursor: pointer; padding: 1px 2px; }
 .int-deck[data-deck]:hover { background: rgba(120, 160, 200, 0.12); color: #fff; }
+
+/* ---- The decluttered HUD: one compact brief down the left (details under the pointer), a slimmer menu and drive
+   panel, and everything on the left fading back while she's under way so it never sits over the ship. ---- */
+@media (min-width: 900px) {
+  .hud-tl { width: 270px; gap: 3px; transition: opacity 0.4s; }
+  .cmdr { padding: 3px 6px; }
+  .zone-banner { padding: 3px 8px; }
+  .zone-banner .need { display: none; }
+  .zone-banner:hover .need { display: block; }
+  .mission { padding: 4px 8px; max-width: none; }
+  .mission .mn { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mission .mh { display: none; }
+  .mission:hover .mh { display: block; }
+  .objective { padding: 4px 8px; }
+  .objective .on { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .objective .oh { display: none; }
+  .objective:hover .oh { display: block; }
+  .objective .or { font-size: 11px; }
+  .jobs { padding: 2px 8px; }
+  .jobs .rw { font-size: 11px; padding: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tracker { padding: 4px 8px; font-size: 12px; }
+  .menu-buttons { gap: 3px; }
+  .menu-btn { padding: 3px 8px; min-width: 0; }
+  .menu-btn small { display: none; }
+  .menu-btn b { font-size: 12px; }
+  .menu-btn.big { padding: 3px 10px; }
+  .menu-btn.big b { font-size: 13px; }
+  .hp-box { width: 228px; padding: 4px 6px; gap: 3px; transition: opacity 0.4s; }
+  .hp-box .tank-info span { display: none; }
+  .hp-box:hover .tank-info span { display: inline; }
+  .hud.moving .hud-tl:not(:hover) { opacity: 0.3; }
+  .hud.moving .hp-box:not(:hover) { opacity: 0.75; }
+}
+.dev-badge { position: fixed; left: 50%; top: 2px; transform: translateX(-50%); z-index: 40; pointer-events: none; font-family: var(--px); font-size: 10px; color: #0b0b0e; background: #76ff03; padding: 1px 8px; letter-spacing: 1px; opacity: 0.85; }
