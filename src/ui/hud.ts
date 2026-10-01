@@ -1,3 +1,4 @@
+import { CHAPTERS } from '../game/story';
 import { COLOSSI, colossusHealth } from '../game/systems/colossus';
 import { ENEMIES } from '../game/enemyDefs';
 import { ShipConsole } from './shipConsole';
@@ -105,6 +106,7 @@ const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls
   { key: 'blueprint', label: 'BLUEPRINT', sub: 'N' },
   { key: 'cargo', label: 'CARGO', sub: 'I' },
   { key: 'map', label: 'MAP', sub: 'M' },
+  { key: 'story', label: 'STORY', sub: 'journal', cls: 'story' },
   { key: 'help', label: '?', sub: 'H' },
   { key: 'menu', label: '☰', sub: 'Esc' },
 ];
@@ -601,7 +603,8 @@ export class Hud {
       const ms = mission(g);
       const dist = ms.x !== undefined && ms.y !== undefined ? Math.hypot(ms.x - p.x, ms.y - p.y) : 0;
       const eta = dist > 0 ? Math.ceil(dist / Math.max(1, p.stats.topSpeed) / 60) : 0;
-      setHTML(this.mission, `<div class="mt">MISSION ${ms.step}/${ms.of}${dist > 0 ? ` · ${dist > 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`}${eta ? ` · ~${eta} min` : ''}` : ''}</div><div class="mn">${esc(ms.title)}</div><div class="mh">${esc(ms.text)}</div>`);
+      const chap = CHAPTERS[Math.min(CHAPTERS.length - 1, g.story.chapter)];
+      setHTML(this.mission, `<div class="mt" title="${esc(chap.title)}">${esc(chap.sub.toUpperCase())} · ${ms.step}/${ms.of}${dist > 0 ? ` · ${dist > 1000 ? `${(dist / 1000).toFixed(1)}km` : `${Math.round(dist)}m`}${eta ? ` · ~${eta} min` : ''}` : ''}</div><div class="mn">${esc(ms.title)}</div><div class="mh">${esc(ms.text)}</div>`);
       this.mission.style.display = 'block';
       this.toss.mission.setContent(`${ms.title}|${ms.step}`);
     } else this.mission.style.display = 'none';

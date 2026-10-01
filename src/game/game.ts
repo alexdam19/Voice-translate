@@ -1,6 +1,7 @@
 import { DEV } from './devFlag';
 import { newCompound, type CompoundState } from './systems/compound';
 import { newComms, type Comms } from './systems/comms';
+import { newStory, type StoryState } from './story';
 import type { Nav } from './systems/nav';
 import { newTelemetry, type Telemetry } from './telemetry';
 import { CHUNK, MAX_BASE_CREW } from '../shared/constants';
@@ -260,6 +261,8 @@ export class Game {
   compound: CompoundState = newCompound();
   /** The intercom to the Mega Hangar (news, objectives, briefings). */
   comms: Comms = newComms();
+  /** The story: beats played, the one on screen, the journal. */
+  story: StoryState = newStory();
   /** Builder robots aboard (each an extra builder), and the one the workshop is making (see systems/robots). */
   robots = 0;
   robotBuild: { t: number } | null = null;

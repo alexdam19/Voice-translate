@@ -1,3 +1,4 @@
+import { renderJournal } from './storyView';
 import type { App } from '../app';
 import { saveGame, clearSave } from '../game/save';
 import { orderMove } from '../game/systems/orders';
@@ -103,6 +104,7 @@ export class Panels {
       map: { title: 'WORLD MAP', sub: 'The Crater, 140 km across. Click to drive there. Each zone has its own creatures and dangers; some need special gear.', render: (c) => this.renderMap(c), wide: true },
       help: { title: 'HOW TO PLAY', sub: 'Commander\'s field manual', render: (c) => this.renderHelp(c), wide: true },
       menu: { title: 'PAUSED', sub: '', render: (c) => this.renderMenu(c) },
+      story: { title: 'THE STORY', sub: 'The chapters so far, the people you have met, and everything they said.', render: (c) => renderJournal(c.body, c.app.game), wide: true, cls: 'story' },
       blueprint: { title: 'BLUEPRINT', sub: 'A technical drawing of your whole fortress, and an analysis of what it can do.', render: renderBlueprint, wide: true, cls: 'blueprint' },
     };
   }

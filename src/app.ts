@@ -1,3 +1,5 @@
+import { storyPauses } from './game/story';
+import { StoryView } from './ui/storyView';
 import { applyDev, DEV } from './game/dev';
 import { requestClearance } from './game/systems/compound';
 import type { CrewMember } from './game/crew';
@@ -76,6 +78,8 @@ export class App {
   /** Inside the base (the village view). */
   village = false;
   paused = false;
+  /** The story on screen: chapter cards, briefings, radio calls. */
+  story!: StoryView;
   /** Wheel zoom on top of the automatic zoom. */
   private zoomMul = 1;
   private packHint = false;
@@ -163,6 +167,7 @@ export class App {
       sound: (n) => this.sound(n),
     });
     this.panels = new Panels(uiRoot, this);
+    this.story = new StoryView(uiRoot);
     this.chest = new ChestUI(uiRoot, this);
     this.title = new Title(uiRoot, this);
     window.addEventListener('resize', () => {
@@ -533,7 +538,7 @@ export class App {
     const firstPerson = this.cabin.isOpen || this.interior.isOpen;
     if (!this.uiBlocking && !firstPerson) this.handleMouse(dt);
     if (!firstPerson) this.handleZoom();
-    const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen;
+    const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen || storyPauses(g);
     if (!paused) {
       this.checkWarp();
       const warp = this.dz ? 1 : this.aiming ? 0.25 : g.warp;
@@ -549,6 +554,7 @@ export class App {
       if (steps === 0) this.input.endFrame();
       if (this.acc > STEP * 5 * warp) this.acc = 0;
     } else this.input.endFrame();
+    this.story.update(g, dt);
     if (this.village && (g.player.dead || g.mode !== 'world')) this.setVillage(false);
     this.updateCamera(dt);
     // Objective tracker: what's still needed, and where to get it.

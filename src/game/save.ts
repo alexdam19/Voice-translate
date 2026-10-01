@@ -14,6 +14,7 @@ import { Tank, type TankSave } from './tank';
 import { bumpUid, peekUid } from './templates';
 import { applyOutriderCrew, launchOutrider } from './systems/outrider';
 import { newCampaign, type Campaign } from './campaign';
+import { newStory, type StoryState } from './story';
 import { newCrewLife, type CrewLife } from './systems/crewlife';
 import { loadTitanState, type TitanState } from './systems/titan';
 import type { Flight } from './systems/airlift';
@@ -62,6 +63,7 @@ export interface SaveData {
   /* v7: the streamed world keeps exploration per chunk */
   fog?: [number, string][];
   campaign?: Campaign;
+  story?: { seen: string[]; log: StoryState['log']; chapter: number };
   life?: CrewLife;
   titan?: Partial<TitanState>;
   home?: { x: number; y: number } | null;
@@ -92,7 +94,7 @@ export function serialize(g: Game): SaveData {
     builds: g.builds.map(({ modId, order: _o, ...b }) => ({ ...b, mod: idx(modId) })).filter((b) => b.mod >= 0),
     squads,
     tracked: !tr ? null : tr.kind === 'upgrade' ? { kind: 'upgrade', mod: idx(tr.modId) } : tr,
-    drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n, campaign: g.campaign, life: g.life, titan: g.titan, home: g.deploy.home,
+    drives: [...g.drivesOwned], autoDrive: g.autoDrive, wave: g.wave.n, campaign: g.campaign, story: { seen: g.story.seen, log: g.story.log.slice(-120), chapter: g.story.chapter }, life: g.life, titan: g.titan, home: g.deploy.home,
     autoRotate: g.autoRotate,
   };
 }
@@ -228,6 +230,7 @@ export function deserialize(d: SaveData): Game {
     }
   }
   if (d.campaign && d.v >= 9) g.campaign = { ...newCampaign(), ...d.campaign, finale: d.campaign.finale === 'won' ? 'won' : 'none' };
+  if (d.story) g.story = { ...newStory(), seen: d.story.seen ?? [], log: d.story.log ?? [], chapter: d.story.chapter ?? 0 };
   if (d.life) g.life = { ...newCrewLife(), ...d.life };
   g.titan = loadTitanState(d.titan);
   if (d.home && d.v >= 9) g.deploy.home = d.home;

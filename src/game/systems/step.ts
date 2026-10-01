@@ -1,3 +1,4 @@
+import { updateStory } from '../story';
 import { updateCompound } from './compound';
 import { updateComms } from './comms';
 import { updateNav } from './nav';
@@ -245,6 +246,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateTitan(g, dt);
       updateFuel(g, dt);
       updateComms(g, dt);
+      updateStory(g, dt);
       updateNav(g, dt);
       updateCompactor(g, dt);
       updateRobots(g, dt);
