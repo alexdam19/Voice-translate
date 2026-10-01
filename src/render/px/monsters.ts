@@ -15,9 +15,15 @@ import type { RGB } from './pixels';
  *   stitched heads and hooked arms; the Overmind's naked brain with its tentacles and three eyes; the Lich King's
  *   tattered robe, crowned skull, staff and orbiting skulls; the Brood Queen's egg sac, mandibles and folded wings;
  *   the Devourer, a walking maw ringed with teeth; the Spire, an eye in a crown of crystal shards.
+ * - Behemoths go on all fours under a ridged shell of armour plates, a battering-ram skull with horns curling forward.
+ * - Wyrms are serpents: a long body in segments thrown into an S, a finned spine, a horned head with its jaws open.
+ * - Elementals are a burning (or frozen, or storm-lit, or sand-whirled) core held in a ring of orbiting rock shards,
+ *   two shard-fists out ahead.
+ * - Constructs are ancient stone guardians: slab armour cut with glowing runes, a tower shield on one arm, a blade on
+ *   the other, a crested helm with one eye.
  */
 
-export type Species = 'brute' | 'colossus' | 'warlord' | 'wraith' | 'abomination' | 'overmind' | 'lich' | 'queen' | 'devourer' | 'spire';
+export type Species = 'brute' | 'colossus' | 'warlord' | 'wraith' | 'abomination' | 'overmind' | 'lich' | 'queen' | 'devourer' | 'spire' | 'behemoth' | 'wyrm' | 'elemental' | 'construct';
 export type Element = 'fire' | 'frost' | 'stone' | 'metal' | 'water' | 'bone' | 'storm' | 'sand' | 'none';
 
 /** The monster an enemy is drawn as (and its element), or none for the archetype's own plan. */
@@ -42,9 +48,13 @@ export function speciesFor(kind: string, name = '', arch?: string): { species: S
   if (has('queen', 'brood')) return { species: 'queen', element: 'none' };
   if (has('devourer')) return { species: 'devourer', element: 'none' };
   if (has('the_spire', 'the spire')) return { species: 'spire', element: 'none' };
-  if (has('wraith', 'phantom', 'void', 'the_drowned', 'the drowned')) return { species: has('wyrm') ? 'colossus' : 'wraith', element };
+  if (has('wyrm', 'worm', 'serpent', 'leviathan')) return { species: 'wyrm', element };
+  if (has('wraith', 'phantom', 'void', 'the_drowned', 'the drowned')) return { species: 'wraith', element };
+  if (has('behemoth', 'beast', 'goliath')) return { species: 'behemoth', element };
+  if (has('guardian', 'gatekeeper', 'crater_guard', 'crater guard', 'obsidian', 'ancient') || (has('colossus') && element === 'stone')) return { species: 'construct', element };
+  if (has('colossus') && (element === 'storm' || element === 'water' || element === 'sand')) return { species: 'elemental', element };
   if (has('troll', 'brute', 'giant', 'golem') && !has('colossus')) return { species: 'brute', element };
-  if (has('colossus', 'titan', 'behemoth', 'guardian', 'gatekeeper', 'goliath', 'colossal walker')) return { species: 'colossus', element };
+  if (has('colossus', 'titan', 'colossal walker')) return { species: 'colossus', element };
   return null;
 }
 
@@ -400,6 +410,137 @@ const PLANS: Record<Species, MPlan> = {
     ell(p, 16.8, 16, 2.8, 3.4, c.eye, 'glow');
     ell(p, 17.2, 16, 1, 2.6, [12, 6, 20], 'none', 0.2, 0, false);
     eye(p, 15.4, 14.6, [255, 255, 255], 0.5);
+  },
+  /* ---- A behemoth: four legs, a shell of plates, a ram's skull ---- */
+  behemoth: (p, c, f, el) => {
+    const st = f ? 1 : -1;
+    const hide = el === 'metal' ? tint(c.metal, -0.1) : c.body;
+    // Four thick legs, the pairs moving opposite, broad hooves.
+    for (const [lx, sd, ph] of [[9, -1, 1], [9, 1, -1], [20, -1, -1], [20, 1, 1]] as const) {
+      const fx = lx + st * ph * 1.6, fy = 16 + sd * 10.6;
+      cap(p, lx, 16 + sd * 5, fx, fy, 2.4, 2, tint(hide, -0.2), 'skin');
+      ell(p, fx + 0.4, fy + sd * 0.4, 2.2, 1.6, [40, 34, 30], 'rock');
+      claws(p, fx + 1.6, fy, 0, 3, 1, c.claw);
+    }
+    // A short tail with a spiked club.
+    cap(p, 5, 16, 1.4, 16 + st * 1.4, 1.4, 0.8, tint(hide, -0.1), 'skin');
+    ell(p, 1.4, 16 + st * 1.4, 1.6, 1.6, c.bone, 'rock');
+    // The body under its ridged shell: overlapping plates, a spine of horns.
+    ell(p, 14.5, 16, 10, 7.6, hide, el === 'metal' ? 'metal' : 'skin');
+    for (let k = 0; k < 4; k++) {
+      const x = 8 + k * 3.8;
+      ell(p, x, 16, 2.6, 6.4 - Math.abs(k - 1.5) * 0.6, tint(hide, 0.1 - k * 0.04), el === 'metal' ? 'metal' : 'rock', 0.9);
+      line(p, x + 2.2, 10.4, x + 2.2, 21.6, tint(c.dark, -0.3));
+      spike(p, x, 16, x - 2.6, 16, 1.6, c.bone);
+    }
+    elemental(p, el, 14, 12, 3, c, 0.4);
+    elemental(p, el, 14, 20, 3, c, 2.2);
+    // The head: a ram's skull of bone over a heavy jaw, horns curling forward, small furious eyes.
+    ell(p, 25.5, 16, 4, 4.4, tint(hide, -0.08), 'skin');
+    ell(p, 27.2, 16, 2.8, 3.6, c.bone, 'rock');
+    for (const sd of [-1, 1]) {
+      cap(p, 25, 16 + sd * 3.6, 27, 16 + sd * 7, 1.5, 1.2, tint(c.bone, -0.1), 'rock');
+      cap(p, 27, 16 + sd * 7, 30.6, 16 + sd * 5.6, 1.2, 0.5, tint(c.bone, -0.05), 'rock');
+      spike(p, 29.2, 16 + sd * 1.6, 31.6, 16 + sd * 2, 0.8, c.bone);
+      eye(p, 26.4, 16 + sd * 2.2, c.eye, 0.5);
+    }
+  },
+  /* ---- A wyrm: a serpent in an S, finned, horned, jaws open ---- */
+  wyrm: (p, c, f, el) => {
+    const wv = f ? 1 : -1;
+    const scale = el === 'water' ? tint(c.body, 0.05) : c.body;
+    // The body from the tail to the neck, segment by segment, each overlapping the last.
+    const N = 14;
+    const at = (t: number): [number, number] => [2 + t * 22, 16 + Math.sin(t * Math.PI * 2 + wv * 0.5) * 6 * (1 - t * 0.5)];
+    for (let k = 0; k < N; k++) {
+      const t = k / (N - 1);
+      const [x, y] = at(t);
+      const r = 1.2 + Math.sin(Math.min(1, t * 1.25) * Math.PI) * 2.8 + t * 0.6;
+      ell(p, x, y, r * 1.1, r, tint(scale, -0.1 + t * 0.12), 'scales', 1, 0, true);
+      // The belly plates show at the edges, the fins along the spine.
+      if (k % 2 === 0 && k > 1) {
+        const [nx, ny] = at(Math.min(1, t + 0.04));
+        const a = Math.atan2(ny - y, nx - x) + Math.PI / 2;
+        spike(p, x, y, x + Math.cos(a) * (r + 2.2) - 1, y + Math.sin(a) * (r + 2.2), 1.6, tint(c.dark, -0.1));
+        spike(p, x, y, x - Math.cos(a) * (r + 2.2) - 1, y - Math.sin(a) * (r + 2.2), 1.6, tint(c.dark, -0.1));
+      }
+      line(p, x - r * 0.4, y, x + r * 0.4, y, tint(c.dark, -0.35));
+    }
+    // The head: a wedge with swept horns, the jaw dropped, a forked tongue, a row of eyes.
+    const [hx, hy] = at(1);
+    ell(p, hx + 2.6, hy, 3.8, 3, tint(scale, 0.08), 'scales');
+    for (const sd of [-1, 1]) {
+      spike(p, hx + 1, hy + sd * 2, hx - 3.4, hy + sd * 4.6, 1.4, c.bone);
+      cap(p, hx + 4, hy + sd * 1.4, hx + 7.4, hy + sd * 2.6, 1, 0.6, tint(scale, -0.05), 'scales');
+      for (let k = 0; k < 3; k++) spike(p, hx + 4.6 + k * 1, hy + sd * 1.7, hx + 4.8 + k * 1, hy + sd * 0.7, 0.4, BONE);
+      eye(p, hx + 2.8, hy + sd * 1.4, c.eye, 0.5);
+    }
+    ell(p, hx + 5.8, hy, 1.6, 1, THROAT, 'none', 0.3, 0, false);
+    line(p, hx + 6, hy, hx + 8.8, hy + wv * 0.6, [200, 40, 60]);
+    elemental(p, el, 12, 16, 2.6, c, 1.1);
+  },
+  /* ---- An elemental: a core in a ring of orbiting shards, shard fists ---- */
+  elemental: (p, c, f, el) => {
+    const spin = f * 0.4;
+    const core: RGB = el === 'storm' ? [190, 220, 255] : el === 'water' ? [120, 220, 240] : el === 'sand' ? [255, 210, 120] : el === 'frost' ? [210, 240, 255] : [255, 150, 50];
+    const shard: RGB = el === 'storm' ? [70, 76, 96] : el === 'water' ? [40, 90, 120] : el === 'sand' ? [170, 136, 90] : el === 'frost' ? [150, 190, 220] : [70, 50, 44];
+    // A vortex of debris round it.
+    for (let k = 0; k < 14; k++) {
+      const a = spin * 2 + (k / 14) * Math.PI * 2;
+      const r = 12 + (k % 3) * 1.2;
+      ell(p, 15 + Math.cos(a) * r, 16 + Math.sin(a) * r, 0.9, 0.7, tint(shard, 0.1), 'rock', 0.8);
+    }
+    ell(p, 15, 16, 10.6, 10, tint(core, -0.5), 'glow', 0.25, 0, false);
+    // The ring of great shards, edge-on to the core.
+    for (let k = 0; k < 8; k++) {
+      const a = spin + (k / 8) * Math.PI * 2;
+      spike(p, 15 + Math.cos(a) * 5.4, 16 + Math.sin(a) * 5.4, 15 + Math.cos(a + 0.2) * 10.6, 16 + Math.sin(a + 0.2) * 10.6, 3.4, tint(shard, (k % 2) * 0.12));
+    }
+    // The core and its fire.
+    ell(p, 15, 16, 5, 5, tint(core, -0.25), 'glow');
+    ell(p, 15.6, 16, 3, 3, core, 'glow');
+    eye(p, 16, 16, [255, 255, 240], 1.4);
+    if (el === 'storm') for (let k = 0; k < 4; k++) {
+      const a = spin * 3 + k * 1.6;
+      line(p, 15, 16, 15 + Math.cos(a) * 9, 16 + Math.sin(a) * 9, [220, 240, 255]);
+    }
+    // Two shard fists out ahead, hovering free of the body.
+    for (const sd of [-1, 1]) {
+      const fx = 26 + Math.sin(spin * 2 + sd) * 0.8, fy = 16 + sd * 7;
+      ell(p, fx, fy, 2.8, 2.4, shard, 'rock');
+      for (let k = 0; k < 3; k++) spike(p, fx + 1.4, fy - 1.2 + k * 1.2, fx + 4, fy - 1.6 + k * 1.6, 1, tint(shard, 0.2));
+      eye(p, fx - 0.6, fy, core, 0.5);
+    }
+  },
+  /* ---- A construct: slab armour with runes, a tower shield, a blade, a one-eyed helm ---- */
+  construct: (p, c, f, el) => {
+    const st = f ? 1 : -1;
+    const stone: RGB = el === 'fire' ? [44, 36, 40] : el === 'sand' ? [168, 140, 100] : el === 'frost' ? [150, 170, 190] : [118, 120, 112];
+    const rune: RGB = el === 'fire' ? [255, 120, 40] : el === 'frost' ? [140, 220, 255] : [120, 255, 200];
+    // Legs: pillars of stone striding.
+    plate(p, 9 + st * 1.4, 9.2, 5, 3.6, tint(stone, -0.2), 'rock');
+    plate(p, 9 - st * 1.4, 19.2, 5, 3.6, tint(stone, -0.2), 'rock');
+    // The torso: stacked slabs, cut with runes.
+    plate(p, 9, 9.5, 11, 13, stone, 'rock');
+    plate(p, 11, 8, 7, 16, tint(stone, 0.08), 'rock');
+    for (const [x0, y0, x1, y1] of [[12, 10, 16, 12], [16, 12, 12, 14], [12, 18, 16, 20], [16, 20, 12, 22]]) line(p, x0, y0, x1, y1, rune);
+    eye(p, 14.5, 16, rune, 1);
+    elemental(p, el, 14.5, 16, 4, c, 0.9);
+    // The shield arm: a tower shield out to the left side, studded, its rim bound in metal.
+    plate(p, 16, 2, 7.4, 6.8, tint(stone, -0.08), 'rock');
+    plate(p, 21.4, 1.4, 2.2, 8.2, [96, 100, 110], 'metal');
+    for (let k = 0; k < 3; k++) eye(p, 22.5, 3 + k * 2.6, [200, 205, 215], 0.35);
+    // The sword arm: a stone fist and a broad blade forward.
+    cap(p, 17, 23, 22, 23.4, 2, 1.7, stone, 'rock');
+    ell(p, 22.8, 23.4, 1.9, 1.7, tint(stone, -0.15), 'rock');
+    plate(p, 23.6, 22.7, 7.6, 1.6, [150, 156, 168], 'metal');
+    spike(p, 31.2, 23.5, 32, 23.5, 1.6, [210, 216, 226]);
+    plate(p, 23, 21.6, 1, 3.8, GOLD, 'metal');
+    // The helm: a crest of stone fins, one great eye.
+    plate(p, 18.6, 13, 5.4, 6, tint(stone, 0.05), 'rock');
+    for (let k = 0; k < 4; k++) spike(p, 19.2 - k * 1.4, 16, 17 - k * 1.6, 16, 1.6, tint(stone, -0.1));
+    plate(p, 23, 15.2, 1, 1.6, [10, 10, 14], 'none');
+    eye(p, 23.4, 16, rune, 0.9);
   },
 };
 
