@@ -1,3 +1,4 @@
+import type { Element, Species } from './monsters';
 import type { Arch } from '../../game/enemyDefs';
 import { ctx2d, makeCanvas, shade } from './pixels';
 import { creatureHD, type Look } from './creaturesHD';
@@ -204,10 +205,10 @@ export function lookFor(kind: string, faction?: string): Look {
 const cache = new Map<string, HTMLCanvasElement>();
 
 /** A creature sprite `px` pixels across (plus a 1 px outline), facing right. */
-export function creatureSprite(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss' = 'normal', look: Look = ''): HTMLCanvasElement {
+export function creatureSprite(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss' = 'normal', look: Look = '', monster: { species: Species; element: Element } | null = null): HTMLCanvasElement {
   const S = Math.max(3, Math.min(640, Math.round(px)));
   // Big enough for detail: the high-resolution painter.
-  if (S >= 10) return creatureHD(arch, color, S, frame, kind, look);
+  if (S >= 10) return creatureHD(arch, color, S, frame, kind, look, monster);
   const key = `${arch}|${color}|${S}|${frame}|${kind}`;
   const hit = cache.get(key);
   if (hit) return hit;

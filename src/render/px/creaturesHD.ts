@@ -1,5 +1,6 @@
 import type { Arch } from '../../game/enemyDefs';
 import { ctx2d, hash2, makeCanvas, rgb, type RGB } from './pixels';
+import { paintMonster, type Element, type Species } from './monsters';
 
 /**
  * Creatures in high-resolution pixel art (up to 128 px and beyond for the giants), from above, facing right.
@@ -256,7 +257,7 @@ export function tint(c: RGB, k: number): RGB {
   return k >= 0 ? [c[0] + (255 - c[0]) * k, c[1] + (255 - c[1]) * k, c[2] + (255 - c[2]) * k] : [c[0] * (1 + k), c[1] * (1 + k), c[2] * (1 + k)];
 }
 
-interface Pal {
+export interface Pal {
   body: RGB;
   dark: RGB;
   light: RGB;
@@ -267,10 +268,10 @@ interface Pal {
   claw: RGB;
 }
 
-type Plan = (p: Painter, c: Pal, f: number, look: Look) => void;
+export type Plan = (p: Painter, c: Pal, f: number, look: Look) => void;
 
 /** Claws on a paw or foot, pointing along `a`. */
-function claws(p: Painter, x: number, y: number, a: number, n: number, len: number, col: RGB): void {
+export function claws(p: Painter, x: number, y: number, a: number, n: number, len: number, col: RGB): void {
   for (let k = 0; k < n; k++) {
     const s = (k - (n - 1) / 2) * 0.45;
     const bx = x + Math.cos(a + s) * len * 0.5, by = y + Math.sin(a + s) * len * 0.5;
@@ -633,9 +634,9 @@ export function quantizeSize(px: number): number {
   return Math.max(6, Math.round(Math.pow(2, Math.round(Math.log2(Math.max(6, px)) * 5) / 5)));
 }
 
-export function creatureHD(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss', look: Look = ''): HTMLCanvasElement {
+export function creatureHD(arch: Arch, color: string, px: number, frame: number, kind: 'normal' | 'elite' | 'boss', look: Look = '', monster: { species: Species; element: Element } | null = null): HTMLCanvasElement {
   const S = Math.max(6, Math.min(512, Math.round(px)));
-  const key = `${arch}|${color}|${S}|${frame}|${kind}|${look}`;
+  const key = `${arch}|${color}|${S}|${frame}|${kind}|${look}|${monster ? `${monster.species}:${monster.element}` : ''}`;
   const hit = cache.get(key);
   if (hit) return hit;
   if (cache.size > 900) cache.clear();
@@ -657,7 +658,8 @@ export function creatureHD(arch: Arch, color: string, px: number, frame: number,
   let seed = 0;
   for (let i = 0; i < color.length; i++) seed = (seed * 31 + color.charCodeAt(i)) | 0;
   const p: Painter = { S, u: S / 32, d: img.data, seed };
-  (PLANS[arch] ?? PLANS.beast)(p, pal, frame & 1, look);
+  if (monster) paintMonster(p, pal, frame & 1, monster.species, monster.element);
+  else (PLANS[arch] ?? PLANS.beast)(p, pal, frame & 1, look);
   x.putImageData(img, 0, 0);
   // Outline (magenta for elites, red for bosses), and a second ring on elites and bosses.
   const out = makeCanvas(S + 2, S + 2);

@@ -32,6 +32,7 @@ import { hatFor, topPerson } from './px/people';
 import { hero, heroFoot, heroIfPainted } from './px/heroes';
 import { foeFor, foePose, type Foe } from './px/foes';
 import { quantizeSize } from './px/creaturesHD';
+import { speciesFor } from './px/monsters';
 import type { Aboard } from '../game/aboard';
 
 /**
@@ -1052,7 +1053,7 @@ export class View2D {
       // Painted at quantised sizes and scaled the rest of the way (zooming doesn't repaint every creature).
       const q = quantizeSize(size);
       const ks = size / q;
-      const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', q, frame, variant, arch === 'humanoid' ? lookFor(e.kind, def?.faction) : '');
+      const img = creatureSprite(arch, e.hitFlash > 0 ? '#ffffff' : def?.color ?? '#9e9e9e', q, frame, variant, arch === 'humanoid' ? lookFor(e.kind, def?.faction) : '', arch === 'humanoid' ? null : speciesFor(e.kind, def?.name, arch));
       // An attack: it lunges into the blow (a giant's lands with a shockwave in the dust).
       const atk = (e.atkT ?? 9) < 0.55 ? (e.atkT ?? 9) / 0.55 : 0;
       const lg = Math.sin(Math.PI * atk) * size * 0.22;

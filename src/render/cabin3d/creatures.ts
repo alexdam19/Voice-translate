@@ -263,6 +263,11 @@ const PLANS: Record<Arch, Part[]> = {
     o.push(P('sphere', 'rock', 'body', [0.05, 1.05, 0], [0.26, 0.2, 0.3]));
     o.push(P('box', 'rock', 'dark', [0.1, 1.68, 0], [0.22, 0.2, 0.22]));
     eyes(o, 0.22, 1.7, 0.06, 0.03);
+    // Horns swept forward off the helm, spikes off the shoulders.
+    for (const sd of [-1, 1]) {
+      o.push(P('cone', 'bone', 'bone', [0.12, 1.8, sd * 0.16], [0.05, 0.32, 0.05], { r: [sd * -0.5, 0, -0.7] }));
+      for (let k = 0; k < 3; k++) o.push(P('cone', 'bone', 'bone', [-0.1 + k * 0.12, 1.7, sd * 0.5], [0.05, 0.28, 0.05], { r: [sd * -0.7, 0, 0.3] }));
+    }
     o.push(P('sphere', 'glow', 'glow', [0.18, 1.3, 0], [0.06, 0.1, 0.12]));
     for (const [sd, ph] of [[-1, 0], [1, Math.PI]] as [number, number][]) {
       const a = o.length;
@@ -303,14 +308,22 @@ const PLANS: Record<Arch, Part[]> = {
     return o;
   })(),
   entity: (() => {
+    // A hooded wraith: a cloak hanging off nothing, torn at the hem, two bone arms reaching out with long claws.
     const o: Part[] = [];
-    o.push(P('sphere', 'glow', 'glow', [0, 1.2, 0], [0.2, 0.2, 0.2], { anim: { k: 'seg', i: 0, amp: 0.1 } }));
-    o.push(P('sphere', 'ghost', 'body', [0, 1.2, 0], [0.42, 0.55, 0.42], { anim: { k: 'seg', i: 0, amp: 0.1 } }));
-    for (let i = 0; i < 5; i++) o.push(P('cone', 'rock', 'dark', [0, 1.2, 0], [0.06, 0.3, 0.06], { anim: { k: 'orbit', i, r: 0.7 } }));
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      o.push(P('limb', 'ghost', 'body', [Math.cos(a) * 0.2, 0.85, Math.sin(a) * 0.2], [0.05, 0.7, 0.05], { anim: { k: 'sway', ph: i, amp: 0.3 } }));
+    o.push(P('cone', 'ghost', 'body', [0, 0.35, 0], [0.42, 1.15, 0.42], { anim: { k: 'seg', i: 0, amp: 0.08 } }));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      o.push(P('cone', 'ghost', 'dark', [Math.cos(a) * 0.3 - 0.08, 0.42, Math.sin(a) * 0.3], [0.08, 0.45, 0.08], { r: [Math.PI, 0, 0], anim: { k: 'sway', ph: i, amp: 0.35 } }));
     }
+    o.push(P('sphere', 'ghost', 'dark', [0.08, 1.38, 0], [0.2, 0.22, 0.2], { anim: { k: 'seg', i: 0, amp: 0.08 } }));
+    o.push(P('sphere', 'dark', 'dark', [0.18, 1.34, 0], [0.12, 0.14, 0.14]));
+    eyes(o, 0.27, 1.36, 0.06, 0.035);
+    for (const sd of [-1, 1]) {
+      const a = o.length;
+      o.push(P('limb', 'bone', 'bone', [0.08, 1.12, sd * 0.22], [0.035, 0.55, 0.035], { r: [sd * 0.3, 0, -1.3], anim: { k: 'sway', ph: sd, amp: 0.2 } }));
+      for (let k = 0; k < 3; k++) o.push(P('cone', 'bone', 'bone', [0, -0.56, (k - 1) * 0.04], [0.012, 0.2, 0.012], { parent: a, r: [0, 0, (k - 1) * 0.25] }));
+    }
+    o.push(P('sphere', 'glow', 'glow', [0, 0.8, 0], [0.12, 0.2, 0.12], { anim: { k: 'seg', i: 0, amp: 0.1 } }));
     return o;
   })(),
   insect: (() => {
