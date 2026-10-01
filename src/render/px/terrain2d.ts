@@ -345,6 +345,9 @@ export class Terrain2D {
     }
   }
 
+  /** A stretch of ground (world tiles) drawn flat: no faces or shadows (its buildings stand up on their own). */
+  flat: { x0: number; y0: number; x1: number; y1: number } | null = null;
+
   /** How many tiles of south-facing wall an obstacle shows. */
   private wallLen(i: number): number {
     const o = this.obs[i];
@@ -706,7 +709,9 @@ export class Terrain2D {
         let r: number, g: number, b: number;
         // A wall face: some obstacle up to the north stands tall enough to hide this tile behind its south face.
         let face = 0, faceK = 0, faceLen = 0;
-        if (!o || this.wallLen(i) === 0) {
+        const fl = this.flat;
+        const flat = !!fl && tx >= fl.x0 && tx < fl.x1 && ty >= fl.y0 && ty < fl.y1;
+        if (!flat && (!o || this.wallLen(i) === 0)) {
           for (let k = 1; k < PAD - 1; k++) {
             const j = i - k * W;
             if (!obs[j]) continue;
@@ -794,14 +799,14 @@ export class Terrain2D {
           }
           // Shadow from anything tall up-sun, and darker ground at the foot of walls.
           let shade = 1;
-          for (let s = 1; s < PAD - 1; s++) {
+          for (let s = 1; s < PAD - 1 && !flat; s++) {
             const j = i - s * W - Math.round(s * 0.8);
             if (obs[j] && oh[j] * 0.5 * 0.55 >= s) {
               shade = 0.6;
               break;
             }
           }
-          if (shade === 1 && (obs[i - W] || obs[i - 1] || obs[i + 1] || obs[i - 2 * W])) shade = 0.82;
+          if (shade === 1 && !flat && (obs[i - W] || obs[i - 1] || obs[i + 1] || obs[i - 2 * W])) shade = 0.82;
           r *= shade;
           g *= shade;
           b *= shade * (shade < 1 ? 1.08 : 1);

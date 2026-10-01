@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Game } from '../../game/game';
-import { COMPOUND, FRONT_GUNS, FRONT_STRUCTS, HELIPADS, PADS, PAD_L, PAD_W, STRUCTS, TOWERS, type Struct } from '../../shared/compound';
+import { COMPOUND, FRONT_GUNS, FRONT_STRUCTS, GATE_TOWER_H, HANGAR_APEX, HANGAR_EAVE, HELIPADS, PADS, PAD_L, PAD_W, STRUCTS, TOWERS, TOWER_H, visualHeight, WALL_H, type Struct } from '../../shared/compound';
 import { HANGAR } from '../../shared/mapgen';
 import { PARKED } from '../px/compound2d';
 import { groundLevel } from '../px/terrain2d';
@@ -153,7 +153,7 @@ export class Compound3D {
 
   /** The great hangar: walls, the arched roof on trusses, lamps, the gantry cranes, the door frame. */
   private hangar(gl: (x: number, y: number) => number): void {
-    const W = HANGAR.w / 2, D = HANGAR.d / 2, eave = 58, apex = 96;
+    const W = HANGAR.w / 2, D = HANGAR.d / 2, eave = HANGAR_EAVE, apex = HANGAR_APEX;
     const base = gl(0, 0) - 1;
     const g = new THREE.Group();
     g.position.y = base;
@@ -195,7 +195,7 @@ export class Compound3D {
     roofG.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     roofG.setIndex(idx);
     roofG.computeVertexNormals();
-    add(mesh(roofG, mat.roof, 0, 0, 0));
+    add(mesh(roofG, roofMat('sheet', '#6e9054'), 0, 0, 0));
     // The gable ends (north full, south over the door).
     for (const z of [-D - 4, D + 5]) {
       const shape = new THREE.Shape();
@@ -246,7 +246,7 @@ export class Compound3D {
 
   /** The outer wall with its walkway and crenels, the towers and their guns, the gate's frame. */
   private walls(gl: (x: number, y: number) => number): void {
-    const C = COMPOUND, H = 15;
+    const C = COMPOUND, H = WALL_H;
     const g = new THREE.Group();
     const b = gl(0, 400) - 1.5;
     const seg = (x0: number, z0: number, x1: number, z1: number): void => {
@@ -268,24 +268,34 @@ export class Compound3D {
     seg(C.x1 - w, C.y0, C.x1 - w, C.y1);
     seg(C.x0, C.y1 - w, -C.gateHalf, C.y1 - w);
     seg(C.gateHalf, C.y1 - w, C.x1, C.y1 - w);
-    // Towers: taller blocks with a gun on each.
+    // Towers: the gate's two bastions with a gun on each; along the wall, watchtowers: a plinth, a slim shaft, a
+    // glazed cabin with its gun and a peaked roof.
     for (const t of TOWERS) {
-      const th = t.gate ? 32 : 24;
-      g.add(mesh(wallBox(t.half * 2, th, t.half * 2), mat.concrete, t.x, b + th / 2, t.y));
-      g.add(mesh(new THREE.BoxGeometry(t.half * 2 + 2, 1.5, t.half * 2 + 2), mat.dark, t.x, b + th + 0.7, t.y));
+      let th = GATE_TOWER_H;
+      if (t.gate) {
+        g.add(mesh(wallBox(t.half * 2, th, t.half * 2), mat.concrete, t.x, b + th / 2, t.y));
+        g.add(mesh(new THREE.BoxGeometry(t.half * 2 + 2, 1.5, t.half * 2 + 2), mat.dark, t.x, b + th + 0.7, t.y));
+      } else {
+        th = TOWER_H.shaft;
+        g.add(mesh(wallBox(t.half * 2, WALL_H, t.half * 2), mat.concrete, t.x, b + WALL_H / 2, t.y));
+        g.add(mesh(wallBox(9, TOWER_H.shaft - WALL_H, 9), mat.concrete, t.x, b + (WALL_H + TOWER_H.shaft) / 2, t.y));
+        g.add(mesh(new THREE.BoxGeometry(22, 1, 22), mat.dark, t.x, b + TOWER_H.shaft, t.y));
+        g.add(mesh(new THREE.BoxGeometry(17, TOWER_H.cabin - TOWER_H.shaft - 1, 17), mat.glass, t.x, b + (TOWER_H.shaft + TOWER_H.cabin) / 2, t.y));
+        g.add(mesh(new THREE.ConeGeometry(17.5, TOWER_H.peak - TOWER_H.cabin, 4).rotateY(Math.PI / 4), mat.olive, t.x, b + (TOWER_H.cabin + TOWER_H.peak) / 2, t.y));
+      }
       const gun = new THREE.Group();
       gun.position.set(t.x, b + th + 1.4, t.y);
       gun.add(mesh(new THREE.CylinderGeometry(2.4, 2.8, 2, 12), mat.olive, 0, 1, 0));
       gun.add(mesh(new THREE.CylinderGeometry(0.35, 0.4, 9, 8).rotateZ(-Math.PI / 2).translate(4.5, 1.6, 0), mat.dark, 0, 0, 0));
       g.add(gun);
       this.towerGuns.push(gun);
-      g.add(mesh(new THREE.SphereGeometry(0.7, 8, 6), mat.red, t.x + t.half, b + th + 2.5, t.y));
+      g.add(mesh(new THREE.SphereGeometry(0.7, 8, 6), mat.red, t.x, b + (t.gate ? th + 2.5 : TOWER_H.peak + 0.5), t.y));
     }
     this.root.add(g);
   }
 
   private struct(s: Struct, gl: (x: number, y: number) => number): void {
-    const cx = (s.x0 + s.x1) / 2, cz = (s.y0 + s.y1) / 2, w = s.x1 - s.x0, d = s.y1 - s.y0, h = s.h * 0.5;
+    const cx = (s.x0 + s.x1) / 2, cz = (s.y0 + s.y1) / 2, w = s.x1 - s.x0, d = s.y1 - s.y0, h = visualHeight(s);
     const b = gl(cx, cz) - 0.6;
     const g = new THREE.Group();
     const flat = (fac: Facade, tint: string, roof: Roof, rtint: string): void => {
@@ -386,6 +396,28 @@ export class Compound3D {
         g.add(mesh(new THREE.ConeGeometry(w * 0.48, h * 0.08, 20), mat.steel, cx, b + h * 1.04, cz));
         break;
       }
+      case 'plant': {
+        flat('iron', '#a8acb0', 'sheet', '#8a8e92');
+        for (const fx of [0.2, 0.32]) g.add(mesh(new THREE.CylinderGeometry(2.2, 2.6, 52 - h, 12), mat.dark, s.x0 + w * fx, b + h + (52 - h) / 2, s.y0 + d * 0.3));
+        break;
+      }
+      case 'stack': {
+        // A cooling tower: a waisted concrete shell.
+        const r0 = Math.min(w, d) / 2 - 1, H = 84;
+        const prof: THREE.Vector2[] = [];
+        for (let k = 0; k <= 12; k++) {
+          const z = (H * k) / 12;
+          prof.push(new THREE.Vector2(r0 * (1 - 0.32 * Math.sin(Math.min(1, z / (H * 0.8)) * Math.PI * 0.62) + Math.max(0, z / H - 0.8) * 0.3), z));
+        }
+        g.add(mesh(new THREE.LatheGeometry(prof, 28), mat.concreteV, cx, b, cz));
+        break;
+      }
+      case 'radar': {
+        g.add(mesh(wallBox(w, 14, d), facade('concrete', '#c8c4bc'), cx, b + 7, cz));
+        g.add(mesh(new THREE.SphereGeometry(Math.min(w, d) / 2 - 3, 24, 16), mat.white, cx, b + 14 + (Math.min(w, d) / 2 - 3) * 0.25, cz));
+        break;
+      }
+      case 'antenna':
       case 'mast': {
         g.add(mesh(new THREE.CylinderGeometry(0.3, 1.2, h, 4), mat.dark, cx, b + h / 2, cz));
         for (let k = 1; k < 6; k++) g.add(mesh(new THREE.SphereGeometry(0.5, 6, 4), mat.red, cx, b + (h * k) / 5, cz));

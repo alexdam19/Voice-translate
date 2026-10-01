@@ -3,6 +3,7 @@ import { CAR_SIZE, home, type Car, type Machine } from '../../game/systems/compo
 import { COMPOUND, FORWARD, FRONT_GUNS, FRONT_STRUCTS, GATE, HELIPADS, MOTOR_POOL, PADS, PAD_L, PAD_W, PARADE, STRUCTS, TOWERS } from '../../shared/compound';
 import { HANGAR } from '../../shared/mapgen';
 import { pxMini } from '../../ui/pixfont';
+import { atZ, drawBase3D, drawBaseGround, makeP3, PX, PY, type P3 } from './base25d';
 import { ART_PX, faceTiles, frontSprite, hasStructSprite, structSprite, towerSprite, wallSprites, type Sprite } from './compoundArt';
 import { hero, heroFoot, type HeroPose, type HeroRole } from './heroes';
 import { gunshipSprite, machineSprite, turretSprite, vehicleSprite, type VehicleKind } from './militaryArt';
@@ -24,6 +25,9 @@ export interface CompoundView {
   st: number;
   th: number;
   time: number;
+  /** The middle of the screen (where the lens looks straight down). */
+  cx: number;
+  cy: number;
   bx(x: number, y: number): number;
   by(x: number, y: number): number;
   near(x: number, y: number, pad: number): boolean;
@@ -287,22 +291,24 @@ function drawStrider(c: CanvasRenderingContext2D, m: Machine, ox: number, oy: nu
 }
 
 /** A gunship at (x, y) metres, `z` up: its shadow on the ground, the airframe, the rotor (a blur when it spins). */
-function drawGunship(c: CanvasRenderingContext2D, a: Gunship, ox: number, oy: number): void {
+function drawGunship(c: CanvasRenderingContext2D, a: Gunship, ox: number, oy: number, noShadow = false): void {
   const sp = gunshipSprite();
   const lift = a.z * 0.35;
   const ax = a.x - ox, ay = a.y - oy;
-  c.save();
-  c.translate(ax + a.z * 0.5, ay + a.z * 0.4);
-  c.rotate(a.rot);
-  c.globalAlpha = Math.max(0.12, 0.35 - a.z * 0.005);
-  c.fillStyle = '#000';
-  c.fillRect(-sp.l / 2 + 7.6, -1.3, 10.4, 2.6);
-  c.fillRect(-sp.l / 2, -0.4, 8, 0.8);
-  c.beginPath();
-  c.arc(-sp.l / 2 + 12, 0, 7.5, 0, Math.PI * 2);
-  c.fill();
-  c.globalAlpha = 1;
-  c.restore();
+  if (!noShadow) {
+    c.save();
+    c.translate(ax + a.z * 0.5, ay + a.z * 0.4);
+    c.rotate(a.rot);
+    c.globalAlpha = Math.max(0.12, 0.35 - a.z * 0.005);
+    c.fillStyle = '#000';
+    c.fillRect(-sp.l / 2 + 7.6, -1.3, 10.4, 2.6);
+    c.fillRect(-sp.l / 2, -0.4, 8, 0.8);
+    c.beginPath();
+    c.arc(-sp.l / 2 + 12, 0, 7.5, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha = 1;
+    c.restore();
+  }
   c.save();
   c.translate(ax, ay - lift);
   c.rotate(a.rot);
@@ -460,6 +466,22 @@ export function drawCompoundGround(v: CompoundView, g: Game): void {
     c.fillRect(p.x - 1, p.y - 30, 2, 60);
     pxMini(c, `PAD ${i + 1}`, p.x, y0 + PAD_L - 16, 'rgba(255,200,40,0.45)', 'center', null, 2);
   });
+  // Seen north-up, the base stands up in the overhead pass (base25d); here only its ground, sectors and shadows.
+  const persp = v.th === 0;
+  if (persp) {
+    drawBaseGround(c, g, v.near, h.x, h.y, ppm);
+    FRONT_GUNS.forEach((gn, i) => {
+      const st = cs.front[i];
+      if (gn.kind === 'tank' && v.near(h.x + gn.x, h.y + gn.y, 30)) drawVehicle(c, 'tank', i, gn.x, gn.y, Math.PI / 2, st?.aim ?? Math.PI / 2, st?.flash ?? 0);
+    });
+    if (v.near(h.x + (MOTOR_POOL.x0 + MOTOR_POOL.x1) / 2, h.y + (MOTOR_POOL.y0 + MOTOR_POOL.y1) / 2, 140)) {
+      for (const pk of PARKED) drawVehicle(c, pk.kind, pk.v, pk.x, pk.y, Math.PI / 2);
+    }
+    for (const a of cs.air) if (a.state === 'parked' || (a.state === 'up' && a.z < 3) || (a.state === 'down' && a.z < 3)) drawGunship(c, a, h.x, h.y);
+    c.imageSmoothingEnabled = smooth;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    return;
+  }
   // The wall and everything built inside it.
   for (const sp of wallSprites()) blit(v, h, sp);
   // (Painting a building's sprite is spread over frames; until then the ground renderer's block stands in for it.)
@@ -595,9 +617,15 @@ export function drawCompoundGround(v: CompoundView, g: Game): void {
   }
   c.imageSmoothingEnabled = smooth;
   c.setTransform(1, 0, 0, 1, 0, 0);
-  // The gate's sign, when close enough to read.
-  if (ppm > 1.2) {
-    const sx = v.bx(h.x + gx, h.y + y0), sy = v.by(h.x + gx, h.y + y0);
+  gateSign(v, g, v.bx(h.x + gx, h.y + y0), v.by(h.x + gx, h.y + y0));
+}
+
+/** The gate's state over it, when close enough to read. */
+function gateSign(v: CompoundView, g: Game, sx: number, sy: number): void {
+  const c = v.c, cs = g.compound, f = cs.gate.open;
+  const moving = cs.gate.open > 0.02 && cs.gate.open < 0.98;
+  const lamp = moving ? (Math.floor(v.time * 4) % 2 ? '#ffb020' : '#5a3a08') : f >= 0.98 ? '#40ff60' : '#ff3020';
+  if (v.ppm > 1.2) {
     if (cs.gate.breach > 0) {
       if (Math.floor(v.time * 3) % 2) pxMini(c, 'MAIN GATE BREACHED', sx, sy - 14, '#ff1744', 'center');
     } else {
@@ -701,6 +729,17 @@ export function drawCompoundOverhead(v: CompoundView, g: Game): void {
   const h = home(g);
   if (!h || !v.near(h.x, h.y + MID_Y, REACH)) return;
   const c = v.c, t = v.time;
+  if (v.th === 0) {
+    const pl = g.player;
+    const p = makeP3(c, v.ppm, v.cx, v.cy, v.bx(h.x, h.y), v.by(h.x, h.y), t, v.bx(pl.x, pl.y), v.by(pl.x, pl.y), (pl.stats.width / 2) * v.ppm);
+    drawBase3D(p, g, h.x, h.y);
+    toHangar(v, h.x, h.y);
+    for (const a of g.compound.air) if (!(a.state === 'parked' || (a.state === 'up' && a.z < 3) || (a.state === 'down' && a.z < 3))) drawGunshipHigh(p, c, a, h.x, h.y);
+    searchlights(c, g, t);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    gateSign(v, g, PX(p, GATE.x, 56), PY(p, GATE.y, 56) - 6);
+    return;
+  }
   toHangar(v, h.x, h.y);
   // Gantry cranes riding the rails of each bay.
   if (v.near(h.x, h.y, HANGAR.w / 2 + 40)) {
@@ -793,7 +832,33 @@ export function drawCompoundOverhead(v: CompoundView, g: Game): void {
   }
   // The gunships in the air.
   for (const a of g.compound.air) if (!(a.state === 'parked' || (a.state === 'up' && a.z < 3) || (a.state === 'down' && a.z < 3))) drawGunship(c, a, h.x, h.y);
-  // Searchlights sweep the ground outside the gate while the sirens are on (and from the masts at the front).
+  searchlights(c, g, t);
+  c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+/** A gunship in the air, up where it flies over the roofs: its shadow on the ground, the airframe high up. */
+function drawGunshipHigh(p: P3, c: CanvasRenderingContext2D, a: Gunship, ox: number, oy: number): void {
+  const sp = gunshipSprite();
+  const z = a.z * 3.2;
+  const ax = a.x - ox, ay = a.y - oy;
+  c.save();
+  c.translate(ax + z * 0.62, ay + z * 0.5);
+  c.rotate(a.rot);
+  c.globalAlpha = 0.22;
+  c.fillStyle = '#000';
+  c.fillRect(-sp.l / 2 + 7.6, -1.3, 10.4, 2.6);
+  c.fillRect(-sp.l / 2, -0.4, 8, 0.8);
+  c.beginPath();
+  c.arc(-sp.l / 2 + 12, 0, 7.5, 0, Math.PI * 2);
+  c.fill();
+  c.globalAlpha = 1;
+  c.restore();
+  atZ(p, z);
+  drawGunship(c, { ...a, z: 0 }, ox, oy, true);
+}
+
+/** Searchlights sweep the ground outside the gate while the sirens are on (and from the masts at the front). */
+function searchlights(c: CanvasRenderingContext2D, g: Game, t: number): void {
   if (g.compound.alarm) {
     for (const s of [-1, 1]) {
       const lx = GATE.x + s * 118, ly = COMPOUND.y1 + 27;
@@ -810,7 +875,6 @@ export function drawCompoundOverhead(v: CompoundView, g: Game): void {
       c.fill();
     }
   }
-  c.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 /** Name tags over the visiting bases (close in). */

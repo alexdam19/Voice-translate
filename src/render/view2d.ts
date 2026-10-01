@@ -1,3 +1,4 @@
+import { COMPOUND, FORWARD } from '../shared/compound';
 import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
 import { MODULES, TITAN_DECK_INFO, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
@@ -258,6 +259,9 @@ export class View2D {
   setWorld(g: Game): void {
     if (!this.terrain) this.terrain = new Terrain2D(g.map);
     else this.terrain.setMap(g.map);
+    // The Mega Hangar's compound stands up in 2.5D on its own (compound2d); the ground under it stays flat.
+    const h = g.mode === 'world' ? g.gen.hangar : null;
+    this.terrain.flat = h ? { x0: h.x + COMPOUND.x0 - 30, y0: h.y + COMPOUND.y0 - 30, x1: h.x + COMPOUND.x1 + 30, y1: h.y + FORWARD.y1 + 20 } : null;
     this.heading.clear();
   }
 
@@ -631,7 +635,7 @@ export class View2D {
 
   /** What the compound's painters need of the view. */
   private cview(): CompoundView {
-    return { c: this.ctx, ppm: this.ppm, ct: this.ct, st: this.st, th: this.th, time: this.time, bx: (x, y) => this.bx(x, y), by: (x, y) => this.by(x, y), near: (x, y, r) => this.near(x, y, r) };
+    return { c: this.ctx, ppm: this.ppm, ct: this.ct, st: this.st, th: this.th, time: this.time, cx: this.rw / 2 + this.shx, cy: this.rh / 2 + this.shy, bx: (x, y) => this.bx(x, y), by: (x, y) => this.by(x, y), near: (x, y, r) => this.near(x, y, r) };
   }
 
   private drawTanks(g: Game): void {

@@ -32,7 +32,8 @@ export const COMPOUND = {
 export type StructKind =
   | 'tank' | 'barracks' | 'workshop' | 'bar' | 'home' | 'stall' | 'statue' | 'watertower' | 'clinic' | 'mast'
   | 'warehouse' | 'greenhouse' | 'garage' | 'armory' | 'gatehouse' | 'command' | 'depot' | 'store' | 'mess'
-  | 'quonset' | 'ammo' | 'flagpole' | 'bunker' | 'sandbag' | 'hedgehog' | 'searchlight';
+  | 'quonset' | 'ammo' | 'flagpole' | 'bunker' | 'sandbag' | 'hedgehog' | 'searchlight'
+  | 'plant' | 'stack' | 'radar' | 'antenna';
 
 export interface Struct {
   x0: number;
@@ -80,10 +81,93 @@ function layout(): Struct[] {
       L.push(S(x0, y0, x0 + 34, y0 + 30, 10 + Math.floor(hash2(k, r, 4402) * 2) * 2, 'quonset'));
     }
   }
+  // The north yard, behind the Hangar: the power plant and its two cooling stacks, the radar dome, the signal
+  // masts, a supply shed.
+  L.push(
+    S(-334, -404, -186, -306, 24, 'plant'),
+    S(-170, -414, -118, -362, 60, 'stack'), S(-108, -414, -56, -362, 60, 'stack'),
+    S(-10, -416, 70, -336, 30, 'radar'),
+    S(146, -410, 156, -400, 80, 'antenna'), S(286, -344, 296, -334, 80, 'antenna'),
+    S(-40, -300, 120, -252, 14, 'depot'),
+  );
   return L;
 }
 
 export const STRUCTS: Struct[] = layout();
+
+/**
+ * How tall each kind of building stands, in metres, for the eye (the obstacle heights the map keeps are for the
+ * guns): a Titan is 42 m to her mast, and the base is built to dwarf her. The Hangar's walls are 70 m to the eaves
+ * under a 125 m vault, the fortified wall 30 m, its watchtowers 64 m to the roof peak, the gate towers 76 m, the
+ * signal masts 150 m.
+ */
+export const VIS_H: Record<StructKind, number> = {
+  tank: 24, barracks: 16, workshop: 22, bar: 11, home: 10, stall: 5, statue: 18, watertower: 46, clinic: 14, mast: 150,
+  warehouse: 26, greenhouse: 8, garage: 15, armory: 20, gatehouse: 28, command: 34, depot: 18, store: 16, mess: 12,
+  quonset: 8, ammo: 7, flagpole: 32, bunker: 5, sandbag: 1.8, hedgehog: 2.2, searchlight: 24, plant: 30, stack: 84,
+  radar: 18, antenna: 150,
+};
+
+export const visualHeight = (s: Struct): number => VIS_H[s.kind] + (s.kind === 'quonset' ? (s.h - 10) * 0.5 : 0);
+
+export const WALL_H = 30;
+/** A watchtower: its shaft, the glazed cabin on top, and the peak of its roof (metres). */
+export const TOWER_H = { shaft: 46, cabin: 56, peak: 64 } as const;
+export const GATE_TOWER_H = 76;
+export const HANGAR_EAVE = 70;
+export const HANGAR_APEX = 125;
+
+/**
+ * The base's sectors (metres from the Hangar's centre), each with its ground, its stencilled name and the fences
+ * that close it off (gaps left for the streets).
+ */
+export interface Sector {
+  id: string;
+  name: string;
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** Ground tint over the concrete. */
+  tint: string;
+  /** Where its name is painted. */
+  lx: number;
+  ly: number;
+}
+
+export const SECTORS: Sector[] = [
+  { id: 'A', name: 'HANGAR', x0: -352, y0: 214, x1: 352, y1: 312, tint: 'rgba(70,70,62,0.22)', lx: -230, ly: 262 },
+  { id: 'B', name: 'GARRISON', x0: 384, y0: -430, x1: 750, y1: 176, tint: 'rgba(92,100,64,0.16)', lx: 568, ly: -248 },
+  { id: 'C', name: 'AIRFIELD', x0: 384, y0: 182, x1: 750, y1: 382, tint: 'rgba(40,46,52,0.2)', lx: 660, ly: 372 },
+  { id: 'D', name: 'SUPPLY', x0: 384, y0: 388, x1: 750, y1: 604, tint: 'rgba(110,96,60,0.16)', lx: 476, ly: 498 },
+  { id: 'E', name: 'ARMOURY', x0: 384, y0: 610, x1: 750, y1: 990, tint: 'rgba(84,90,70,0.2)', lx: 648, ly: 722 },
+  { id: 'F', name: 'COMMAND', x0: -340, y0: 318, x1: 340, y1: 990, tint: 'rgba(60,64,72,0.14)', lx: 260, ly: 488 },
+  { id: 'G', name: 'DOCKS', x0: -750, y0: -430, x1: -376, y1: 990, tint: 'rgba(52,66,84,0.16)', lx: -560, ly: -40 },
+  { id: 'H', name: 'POWER & SIGNALS', x0: -352, y0: -430, x1: 352, y1: -222, tint: 'rgba(96,84,60,0.16)', lx: 230, ly: -268 },
+];
+
+/** The pine forest planted round the walls (north, east and west), with clearings; metres from the Hangar. */
+export const PINES: { x: number; y: number; r: number; h: number }[] = (() => {
+  const out: { x: number; y: number; r: number; h: number }[] = [];
+  const C = COMPOUND;
+  const belt = (x0: number, y0: number, x1: number, y1: number, seed: number): void => {
+    for (let y = y0; y < y1; y += 13) {
+      for (let x = x0; x < x1; x += 13) {
+        const k = hash2(Math.floor(x), Math.floor(y), seed);
+        // Clumps: thick where a slow noise says so, thinning toward the open ground.
+        const clump = hash2(Math.floor(x / 90), Math.floor(y / 90), seed + 1);
+        if (k > 0.25 + clump * 0.7) continue;
+        const jx = (hash2(Math.floor(x), Math.floor(y), seed + 2) - 0.5) * 11, jy = (hash2(Math.floor(x), Math.floor(y), seed + 3) - 0.5) * 11;
+        const big = hash2(Math.floor(x), Math.floor(y), seed + 4);
+        out.push({ x: x + jx, y: y + jy, r: 4.5 + big * 3.5, h: 20 + big * 16 });
+      }
+    }
+  };
+  belt(C.x0 - 230, C.y0 - 200, C.x1 + 230, C.y0 - 26, 9101);
+  belt(C.x1 + 26, C.y0 - 26, C.x1 + 230, C.y1 + 120, 9102);
+  belt(C.x0 - 230, C.y0 - 26, C.x0 - 26, C.y1 + 120, 9103);
+  return out;
+})();
 
 /** The gunships' landing pads (centres), 40 m across, east of the parade ground. */
 export const HELIPADS: { x: number; y: number }[] = [{ x: 606, y: 236 }, { x: 684, y: 236 }, { x: 606, y: 318 }, { x: 684, y: 318 }];

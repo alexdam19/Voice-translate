@@ -747,7 +747,67 @@ function paintSearchlight(c: C, w: number, d: number, f: number): void {
   }
 }
 
+/** The power plant's roof: turbine-hall skylights, ducts and fans, a transformer yard at the end. */
+function paintPlant(c: C, w: number, d: number, f: number, seed: number): void {
+  const col = '#5c6064';
+  slab(c, 0, 0, w, d, col);
+  R(c, 4, 4, w * 0.62, d - 8, shade(col, -0.08));
+  for (let x = 8; x < w * 0.62; x += 14) {
+    R(c, x, 8, 8, d - 16, '#7a98a8');
+    R(c, x, 8, 8, 2, '#b8d4e0');
+    R(c, x + 7, 8, 1, d - 16, '#4a5a64');
+  }
+  // Ducts and fans.
+  const fx = w * 0.7;
+  R(c, fx, 6, w * 0.26, 6, '#6e7276');
+  R(c, fx, 6, w * 0.26, 1, '#8e9296');
+  for (let k = 0; k < 3; k++) {
+    const cx = fx + 10 + k * ((w * 0.26 - 16) / 2), cy = d * 0.45;
+    disc(c, cx, cy, 7, '#3a3e42');
+    disc(c, cx, cy, 6, '#24272a');
+    line(c, cx - 5, cy, cx + 5, cy, '#5a5e62');
+    line(c, cx, cy - 5, cx, cy + 5, '#5a5e62');
+  }
+  // Transformers behind a fence.
+  for (let k = 0; k < 4; k++) {
+    R(c, fx + 4 + k * 12, d - 22, 8, 10, '#4a4e44');
+    R(c, fx + 4 + k * 12, d - 22, 8, 2, '#6a6e64');
+    R(c, fx + 7 + k * 12, d - 24, 2, 2, '#c8a030');
+  }
+  weather(c, w, d, seed, Math.floor(w / 20));
+  face(c, w, d, f, '#4a4e52', { win: '#2a3238', lit: 0.4, doors: 2, door: '#24282c', seed });
+}
+
+/** A cooling stack from straight above: the concrete lip round a dark throat, steam over it. */
+function paintStack(c: C, w: number, d: number, f: number): void {
+  const cx = w / 2, cy = d / 2, r = Math.min(w, d) / 2 - 1;
+  disc(c, cx, cy, r, '#8a867c');
+  disc(c, cx - 1, cy - 1, r - 1, '#a6a298');
+  disc(c, cx, cy, r - 4, '#26282a');
+  disc(c, cx + 2, cy + 2, r - 8, 'rgba(220,224,228,0.4)');
+  face(c, w, d, f, '#8a867c', { seed: 3 });
+}
+
+/** The radar station: a square block, the white radome on it. */
+function paintRadar(c: C, w: number, d: number, f: number, seed: number): void {
+  slab(c, 0, 0, w, d, '#7e807c');
+  const cx = w / 2, cy = d / 2, r = Math.min(w, d) / 2 - 4;
+  disc(c, cx + 2, cy + 2, r, 'rgba(0,0,0,0.25)');
+  disc(c, cx, cy, r, '#c8c8c2');
+  for (let k = r; k > 2; k -= 3) disc(c, cx - (r - k) * 0.2, cy - (r - k) * 0.2, k, shade('#dcdcd6', ((r - k) / r) * 0.4));
+  face(c, w, d, f, '#6a6c68', { seed, doors: 1, door: '#2a2c2e' });
+}
+
+/** A signal mast's foot: its concrete pad and the lattice from above. */
+function paintAntenna(c: C, w: number, d: number, f: number): void {
+  slab(c, 0, 0, w, d, '#8a8a84');
+  R(c, w / 2 - 3, d / 2 - 3, 6, 6, '#b0342a');
+  R(c, w / 2 - 1, d / 2 - 1, 2, 2, '#e8e2d4');
+  face(c, w, d, f, '#6a6a64', { seed: 4 });
+}
+
 const PAINT: Record<Struct['kind'], (c: C, w: number, d: number, f: number, seed: number) => void> = {
+  plant: paintPlant, stack: paintStack, radar: paintRadar, antenna: paintAntenna,
   home: paintHome, stall: paintStall, tank: paintTank, watertower: paintWaterTower, mast: paintMast, barracks: paintBarracks,
   workshop: paintWorkshop, bar: paintBar, clinic: paintClinic, warehouse: paintWarehouse, greenhouse: paintGreenhouse,
   garage: paintGarage, armory: paintArmory, gatehouse: paintGatehouse, command: paintCommand, depot: paintDepot,
