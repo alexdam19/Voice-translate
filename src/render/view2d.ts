@@ -1,4 +1,5 @@
 import { COMPOUND, FORWARD } from '../shared/compound';
+import { drawTitan3D } from './ship3d';
 import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
 import { MODULES, TITAN_DECK_INFO, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
@@ -653,7 +654,7 @@ export class View2D {
       const sx = Math.round(this.bx(t.x, t.y)), sy = Math.round(this.by(t.x, t.y));
       // A Titan is drawn from the design sheet's top view (once the art has loaded).
       if (t.fortress) {
-        const lights = drawTitanSprite(c, t, g, this.time, sx, sy, t.rot + this.th, ppm);
+        const lights = drawTitan3D(c, t, g, this.time, sx, sy, t.rot + this.th, ppm) ?? drawTitanSprite(c, t, g, this.time, sx, sy, t.rot + this.th, ppm);
         if (lights) {
           this.hullExtras(t, lights);
           if (t === g.player) this.drawMouth(g);

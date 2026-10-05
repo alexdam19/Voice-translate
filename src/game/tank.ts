@@ -33,7 +33,7 @@ export const STORY_H = 0.5;
 /** A fortress-class hull (the Titan Crawler) has seven decks under its roof, Deck +3 down to Deck -3. */
 export const TITAN_DECKS = 7;
 /** Metres per deck cell on a fortress-class hull. */
-export const TITAN_CELL = 5;
+export const TITAN_CELL = 2.5;
 export const SMALL_DECK = 0.78;
 
 export interface ModuleInst {
@@ -743,7 +743,7 @@ export class Tank {
     if (!this.fortress) return 0.7;
     if (m.key === 'main_gun') return batteryReach(this.stats.length, m.cy > this.rows / 2);
     const size = WEAPONS[m.weapon?.key ?? '']?.size ?? 'medium';
-    return size === 'heavy' ? 17 : size === 'medium' ? 11 : 7.5;
+    return size === 'heavy' ? 8.5 : size === 'medium' ? 5.5 : 3.8;
   }
 
   moduleWorld(m: ModuleInst): { x: number; y: number } {

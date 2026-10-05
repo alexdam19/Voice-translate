@@ -8,14 +8,14 @@ import { stepWorld } from '../src/game/systems/step';
 import { ccTo, game, levelTo, rich } from './helpers';
 
 describe('the fortress is a full facility', () => {
-  it('starts as a 200 x 90 m Titan Crawler with seven decks, weapon pads, a main battery, bunks and room to build', () => {
+  it('starts as a 100 x 45 m Titan Crawler with seven decks, weapon pads, a main battery, bunks and room to build', () => {
     const g = game();
     const p = g.player;
     expect(p.chassis).toBe('crawler');
     expect(p.cols * p.rows).toBe(18 * 38);
-    expect(p.cell).toBe(5);
-    expect(p.stats.width).toBe(90);
-    expect(p.stats.length).toBe(200);
+    expect(p.cell).toBe(2.5);
+    expect(p.stats.width).toBe(45);
+    expect(p.stats.length).toBe(100);
     // A pad on every corner and the main battery up front, all armed.
     const pads = p.modules.filter((m) => m.key === 'pad');
     expect(pads.map((m) => `${m.cx},${m.cy}`).sort()).toEqual(['0,0', '0,18', '0,36', '16,0', '16,18', '16,36']);

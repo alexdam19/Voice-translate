@@ -260,7 +260,7 @@ describe('rival dreadnoughts', () => {
     const t = spawnRival(g)!;
     expect(t).not.toBeNull();
     expect(t.kind).toBe('rival');
-    expect(t.cell).toBe(5);
+    expect(t.cell).toBe(2.5);
     expect(t.stats.cc).toBe(g.player.stats.cc);
     expect(t.modules.filter((m) => m.key === 'pad').every((m) => m.weapon)).toBe(true);
     onTankDestroyed(g, t);

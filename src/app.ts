@@ -54,8 +54,8 @@ interface Hover {
 
 /** Camera distance around a Titan Crawler (m): default, nearest and furthest. Phones sit a little closer. */
 const COARSE = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
-const TITAN_ZOOM = COARSE ? 300 : 360;
-const TITAN_MIN = 110, TITAN_MAX = COARSE ? 1000 : 1400;
+const TITAN_ZOOM = COARSE ? 210 : 250;
+const TITAN_MIN = 70, TITAN_MAX = COARSE ? 800 : 1100;
 
 export class App {
   game!: Game;

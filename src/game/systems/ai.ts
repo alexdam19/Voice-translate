@@ -235,10 +235,10 @@ const PILE_SEG = 5;
 /** Metres of pile each body adds to its stretch of hull. */
 const PILE_BODY = 0.8;
 /**
- * How high the pile must get before they climb the rest of the way: the first 12 m (the crawler housings and the
+ * How high the pile must get before they climb the rest of the way: the first 6 m (the crawler housings and the
  * lower hull) need bodies to stand on; above that there are ladders, pipes and armour seams to claw up.
  */
-const CLIMB_H = 12;
+const CLIMB_H = 6;
 
 function perimeterPos(t: Tank, x: number, y: number): number {
   const l = t.toLocal(x, y);
@@ -568,7 +568,7 @@ function updateSwarmer(g: Game, e: Enemy, dt: number, friends: Target[], latched
     }
     // Against a hull they tear at the skirts and the crawlers, ram the plating and claw for a grip to climb; flyers
     // dive in. A horde pressed against the hull strips it fast.
-    damageFriendly(g, tgt.id, tank ? e.dmg * (e.flying ? 0.5 : 0.11) : e.dmg, { silent: true, ...(e.flying ? { zone: 'roof' as const } : { at: { x: e.x, y: e.y } }) });
+    damageFriendly(g, tgt.id, tank ? e.dmg * (e.flying ? 0.5 : 0.2) : e.dmg, { silent: true, ...(e.flying ? { zone: 'roof' as const } : { at: { x: e.x, y: e.y } }) });
     if (Math.random() < 0.3) g.fx.push({ t: 'spark', x: e.x + dx * e.r, y: e.y + dy * e.r, color: '#ffab40', n: 2 });
   }
   // Run at it, shoulder to shoulder, climbing over whatever is in the way.
