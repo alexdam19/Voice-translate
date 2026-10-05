@@ -1,5 +1,5 @@
 import { COMPOUND, FORWARD } from '../shared/compound';
-import { drawTitan3D, SHIP_LEAN, shipRoofAt } from './ship3d';
+import { drawTitan3D, ship3DActive, SHIP_LEAN, shipRoofAt } from './ship3d';
 import { beginCreatures3D, drawCreature3D } from './creature3d';
 import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
@@ -323,7 +323,7 @@ export class View2D {
     g.fx.length = 0;
     this.drawTerrain(g);
     this.drawTrackMarks(g);
-    this.fx.drawGround(c, this.map);
+    this.fx.drawGround(c, this.map, this.rw, this.rh);
     this.drawDecals(g);
     this.drawFeatures(g);
     drawCompoundGround(this.cview(), g);
@@ -887,11 +887,19 @@ export class View2D {
     const L = t.stats.length, W = t.stats.width;
     const v = Math.abs(t.speed);
     const od = g.helm.overdrive;
-    // Exhaust.
+    // Exhaust: from the four nozzles in the stern plate (lifted to their height on the 3D hull), or the stacks.
+    const lift = ship3DActive() ? SHIP_LEAN : 0;
     if (Math.random() < dt * (4 + v * 0.6)) {
-      const spots = stackSpots(L, W, engineDef(t.engineKey).flame.jets);
-      const st = spots[Math.floor(Math.random() * spots.length)];
-      const w = t.toWorld(st.x, st.y);
+      let w: { x: number; y: number };
+      if (lift) {
+        const i = Math.floor(Math.random() * 4);
+        w = t.toWorld(-L / 2 - 2.5, (i % 2 ? 1 : -1) * W * 0.15);
+        w.y -= lift * t.deckY(0) * (i < 2 ? 0.38 : 0.56);
+      } else {
+        const spots = stackSpots(L, W, engineDef(t.engineKey).flame.jets);
+        const st = spots[Math.floor(Math.random() * spots.length)];
+        w = t.toWorld(st.x, st.y);
+      }
       const back = -(1 + v * 0.3);
       this.fx.emit(w.x, w.y, 4, Math.cos(t.rot) * back, Math.sin(t.rot) * back, 1.5, 2.5 + v * 0.05, 3, od ? '#546e7a' : '#2e2e30', { grow: 3, alpha: 0.6 });
       if (od) this.fx.emit(w.x, w.y, 4, Math.cos(t.rot) * back * 2, Math.sin(t.rot) * back * 2, 0.5, 0.25, 2, Math.random() < 0.5 ? '#ff9100' : '#40c4ff', { add: true });
@@ -904,7 +912,7 @@ export class View2D {
       for (const s of [-1, 1]) {
         const w = t.toWorld(-L * 0.5, s * W * 0.42);
         const col = wet ? (ter === TER.ACID ? '#9cff57' : '#9fd3e6') : ter === TER.SNOW ? '#eef3f8' : '#b89a70';
-        this.fx.emit(w.x + (Math.random() - 0.5) * 6, w.y + (Math.random() - 0.5) * 6, 1, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 1, 1.8, 4, col, { grow: 3, alpha: 0.45 });
+        this.fx.emit(w.x + (Math.random() - 0.5) * 6, w.y + (Math.random() - 0.5) * 6, 1, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 1, 1.8, 4, col, { grow: 3, alpha: 0.45, low: true });
       }
     }
     if (t.titan) {
@@ -913,6 +921,7 @@ export class View2D {
         if (f <= 0.02 || Math.random() > f * dt * 6) return;
         const sec = ci % 3;
         const w = t.toWorld((1 - sec) * L * 0.3 + (Math.random() - 0.5) * 20, (Math.random() - 0.5) * W * 0.5);
+        w.y -= lift * t.deckY(0);
         this.fx.emit(w.x, w.y, 10, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 2, 3.5, 5 + f * 4, '#232326', { grow: 4, alpha: 0.7 });
         this.fx.emit(w.x, w.y, 8, 0, 0, 3, 0.5, 2, Math.random() < 0.5 ? '#ff6d00' : '#ffab40', { add: true });
       });
@@ -920,11 +929,12 @@ export class View2D {
         if (h >= 0.35 || Math.random() > dt * 2) return;
         const k = i % 4, side = i < 4 ? -1 : 1;
         const w = t.toWorld(L * 0.37 - k * L * 0.245, side * W * 0.42);
+        w.y -= lift * t.deckY(0) * 0.3;
         this.fx.emit(w.x, w.y, 4, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2, 2.5, 4, h <= 0.1 ? '#1e1e20' : '#4a4a4c', { grow: 3, alpha: 0.7 });
         if (h <= 0.1 && Math.random() < 0.4) this.fx.emit(w.x, w.y, 3, 0, 0, 3, 0.4, 1.4, '#ffab40', { add: true, grav: 4 });
       });
     }
-    if (t.hp < t.stats.maxHp * 0.35 && Math.random() < dt * 3) this.fx.emit(t.x + (Math.random() - 0.5) * L * 0.6, t.y + (Math.random() - 0.5) * W * 0.4, 8, 0, 0, 2, 2.5, 5, '#3a3a3a', { grow: 3, alpha: 0.6 });
+    if (t.hp < t.stats.maxHp * 0.35 && Math.random() < dt * 3) this.fx.emit(t.x + (Math.random() - 0.5) * L * 0.6, t.y + (Math.random() - 0.5) * W * 0.4 - lift * t.deckY(0), 8, 0, 0, 2, 2.5, 5, '#3a3a3a', { grow: 3, alpha: 0.6 });
   }
 
   /* ---------------- creatures ---------------- */

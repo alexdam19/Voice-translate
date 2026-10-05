@@ -31,6 +31,8 @@ interface Particle {
   add: boolean;
   grav: number;
   alpha: number;
+  /** Ground-hugging (dust off the tracks): drawn under the hulls, not over them. */
+  low: boolean;
 }
 
 type Trans =
@@ -50,9 +52,9 @@ export class Fx2D {
     this.cap = cap;
   }
 
-  emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, size: number, color: string, opts: { add?: boolean; grav?: number; grow?: number; alpha?: number } = {}): void {
+  emit(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, size: number, color: string, opts: { add?: boolean; grav?: number; grow?: number; alpha?: number; low?: boolean } = {}): void {
     if (this.ps.length >= this.cap) this.ps.shift();
-    this.ps.push({ x, y, z, vx, vy, vz, life, max: life, size, grow: opts.grow ?? 0, color, add: opts.add ?? false, grav: opts.grav ?? 0, alpha: opts.alpha ?? 1 });
+    this.ps.push({ x, y, z, vx, vy, vz, life, max: life, size, grow: opts.grow ?? 0, color, add: opts.add ?? false, grav: opts.grav ?? 0, alpha: opts.alpha ?? 1, low: opts.low ?? false });
   }
 
   flash(x: number, y: number, r: number, color: string, life: number, z = 0): void {
@@ -107,7 +109,8 @@ export class Fx2D {
   }
 
   /** Scorch marks go under everything else. */
-  drawGround(c: CanvasRenderingContext2D, m: ScreenMap): void {
+  drawGround(c: CanvasRenderingContext2D, m: ScreenMap, w = 1e5, h = 1e5): void {
+    this.particles(c, m, w, h, true);
     for (const t of this.tr) {
       if (t.k !== 'scorch') continue;
       const a = Math.min(1, t.t / 4) * 0.45;
@@ -121,13 +124,13 @@ export class Fx2D {
     c.globalAlpha = 1;
   }
 
-  draw(c: CanvasRenderingContext2D, m: ScreenMap, w: number, h: number): void {
+  /** Particles: smoke and dust normally, fire and sparks additively. Height lifts them up the screen a little. */
+  private particles(c: CanvasRenderingContext2D, m: ScreenMap, w: number, h: number, low: boolean): void {
     const ppm = m.ppm;
-    // Particles: smoke and dust normally, fire and sparks additively. Height lifts them up the screen a little.
     for (const pass of [false, true]) {
       c.globalCompositeOperation = pass ? 'lighter' : 'source-over';
       for (const p of this.ps) {
-        if (p.add !== pass) continue;
+        if (p.add !== pass || p.low !== low) continue;
         const s = Math.max(1, Math.round(p.size * ppm));
         const x = Math.round(m.sx(p.x, p.y) - s / 2), y = Math.round(m.sy(p.x, p.y) - visZ(p.z) * ppm * 0.4 - s / 2);
         if (x < -s || y < -s || x > w || y > h) continue;
@@ -143,6 +146,12 @@ export class Fx2D {
       }
     }
     c.globalAlpha = 1;
+    c.globalCompositeOperation = 'source-over';
+  }
+
+  draw(c: CanvasRenderingContext2D, m: ScreenMap, w: number, h: number): void {
+    const ppm = m.ppm;
+    this.particles(c, m, w, h, false);
     c.globalCompositeOperation = 'lighter';
     for (const t of this.tr) {
       const f = t.t / t.max;

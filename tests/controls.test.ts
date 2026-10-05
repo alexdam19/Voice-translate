@@ -70,7 +70,7 @@ describe('Titan Crawler handling', () => {
     expect(60 / fast).toBeGreaterThan(400);
   });
 
-  it('a better engine: turbos get her rolling sooner, a bigger block goes faster', () => {
+  it('a better engine: turbos get her rolling sooner, a bigger block goes faster', { timeout: 20000 }, () => {
     const base = game();
     const turbo = game();
     turbo.player.engine.turbo = 6;

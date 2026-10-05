@@ -18,7 +18,7 @@ import { buildShip, compact, LOOKS, type ShipRig } from './model';
  */
 
 export const SHIP_LEAN = 1;
-const TOP = 32;
+const TOP = 38;
 
 interface Live {
   rig: ShipRig;
@@ -35,6 +35,15 @@ let sun: THREE.DirectionalLight;
 let ground: THREE.Mesh;
 const live = new Map<Tank, Live>();
 
+/** The light the hull is drawn under: a cool sky, a warm sun from the north-west (added by the caller, with its
+ *  shadow), and a low fill from the south so the walls facing the camera read. */
+export function shipLights(scene: THREE.Scene): void {
+  scene.add(new THREE.HemisphereLight('#b4c8e6', '#3a3630', 1.55));
+  const fill = new THREE.DirectionalLight('#9fb8e0', 0.75);
+  fill.position.set(30, 25, 80);
+  scene.add(fill);
+}
+
 function init(): boolean {
   if (renderer) return true;
   if (failed) return false;
@@ -43,8 +52,7 @@ function init(): boolean {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: false });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMapping = THREE.NoToneMapping;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
   } catch {
@@ -54,16 +62,13 @@ function init(): boolean {
   }
   scene = new THREE.Scene();
   camera = new THREE.Camera();
-  scene.add(new THREE.HemisphereLight('#c8d4e4', '#4a4238', 2.1));
-  sun = new THREE.DirectionalLight('#fff4e4', 3.2);
+  shipLights(scene);
+  sun = new THREE.DirectionalLight('#fff1dc', 2.3);
   sun.position.set(-45, 100, -40);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.bias = -0.0008;
   scene.add(sun, sun.target);
-  const fill = new THREE.DirectionalLight('#9ec0ff', 0.9);
-  fill.position.set(40, 30, 60);
-  scene.add(fill);
   ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.5 }));
   ground.receiveShadow = true;
   ground.frustumCulled = false;
@@ -75,7 +80,8 @@ function keyOf(t: Tank): string {
   return `${t.klass}|${t.stats.cc}|${t.dead ? 1 : 0}|${t.kind}|${t.version}|${t.stats.length}`;
 }
 
-function build(t: Tank): ShipRig {
+/** What the model needs to know about a hull: its size and class, its guns and what stands on its roof. */
+export function shipOpts(t: Tank): Parameters<typeof buildShip>[0] {
   const L = t.stats.length, W = t.stats.width, H = t.deckY(0);
   const look = t.dead ? LOOKS.wreck : t.kind === 'rival' ? LOOKS.rival : LOOKS[t.klass] ?? LOOKS.juggernaut;
   const mounts: Parameters<typeof buildShip>[0]['mounts'] = [];
@@ -90,7 +96,11 @@ function build(t: Tank): ShipRig {
     } else if (!d.hardpoint) props.push({ key: m.key, x: l.lx, z: l.lz, w: d.h * t.cell, d: d.w * t.cell });
   }
   const num = t.kind === 'main' ? '07' : String(10 + (t.id % 89)).padStart(2, '0');
-  const rig = buildShip({ L, W, H, klass: t.klass, look, cc: t.stats.cc, number: num, mounts, props });
+  return { L, W, H, klass: t.klass, look, cc: t.stats.cc, number: num, mounts, props };
+}
+
+function build(t: Tank): ShipRig {
+  const rig = buildShip(shipOpts(t));
   compact(rig);
   return rig;
 }
@@ -118,9 +128,11 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
     for (let s = 0; s < 2; s++) {
       const v = Math.max(-60, Math.min(60, t.sideSpeed[s] ?? t.speed));
       st.tread[s] += v * dt;
-      for (const tx of rig.treads[s]) tx.offset.x = -st.tread[s] / 8;
-      for (const w of rig.wheels[s]) w.rotation.z = -st.tread[s] / 2.2;
+      for (const tx of rig.treads[s]) tx.offset.x = st.tread[s] * (tx.userData.k ?? -1 / 8);
+      for (const w of rig.wheels[s]) w.rotation.z = -st.tread[s] / (w.userData.r ?? 2.2);
     }
+    // Wheel faces turn by their textures: clockwise seen from starboard going ahead, the other way to port.
+    for (const f of rig.wheelFaces) f.tex.rotation = ((f.side ? -1 : 1) * st.tread[f.side]) / f.r;
   }
   for (const m of t.modules) {
     const tr = rig.turrets.get(m.id);
@@ -156,6 +168,8 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
   rig.glow[0].color.set(LOOKS[t.dead ? 'wreck' : t.kind === 'rival' ? 'rival' : t.klass]?.glow ?? '#58c8ff').multiplyScalar(t.dead ? 0 : pulse);
   const flash = t.dead ? 0 : Math.min(0.55, t.hitFlash * 3);
   for (const m of rig.hullMats) m.emissive.setRGB(flash, flash * 0.9, flash * 0.8);
+  // The outline: crisp at close range, lighter when she's small on screen so it doesn't turn to soot.
+  rig.lines.opacity = Math.max(0.28, Math.min(0.72, 0.12 + ppm * 0.075));
 
   // ---- Lens: the hull's whole reach, the ground straight down, heights leaning up the screen.
   let reach = Math.hypot(L / 2, W / 2);
@@ -201,8 +215,11 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
   if (t.dead) return [];
   const hl = L / 2;
   lights.push({ x: hl + 12, y: -0.12 * W, r: 13, color: '#fff3c4', k: 0.12 }, { x: hl + 12, y: 0.12 * W, r: 13, color: '#fff3c4', k: 0.12 });
-  lights.push({ x: -hl - 1.5, y: 0, r: 7, color: LOOKS[t.klass]?.rear ?? '#ff9a2a', k: 0.25, z: 6 });
-  for (const sd of [-1, 1]) lights.push({ x: -0.15 * L, y: sd * 0.17 * W, r: 9, color: LOOKS[t.kind === 'rival' ? 'rival' : t.klass]?.glow ?? '#58c8ff', k: 0.12 * pulse, z: 15 });
+  for (const sd of [-1, 1]) {
+    // The exhaust nozzles in the stern plate, and the light bleeding from the bow seams.
+    lights.push({ x: -hl - 2, y: sd * 0.15 * W, r: 6 + push * 6, color: LOOKS[t.klass]?.rear ?? '#ff9a2a', k: 0.18 + push * 0.25, z: 9 });
+    lights.push({ x: 0.4 * L, y: sd * 0.12 * W, r: 9, color: LOOKS[t.kind === 'rival' ? 'rival' : t.klass]?.glow ?? '#58c8ff', k: 0.1 * pulse, z: 14 });
+  }
   if (own && g) {
     g.titan.crawlers.forEach((hp, i) => {
       if (hp > 0.1) return;
@@ -216,6 +233,11 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
     l.y -= d * ca;
   }
   return lights;
+}
+
+/** Is the hull being drawn as the 3D model (so things on and around it are lifted by SHIP_LEAN of their height)? */
+export function ship3DActive(): boolean {
+  return !!renderer && !failed;
 }
 
 /** How high the hull's roof stands at a local point (for things standing on it), or 0 when there's no 3D hull. */
