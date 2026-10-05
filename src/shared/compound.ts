@@ -6,7 +6,7 @@ import { hash2 } from './rng';
  * south.
  *
  *  - A fortified wall 8 m thick (a Titan can neither crush nor climb it) with a guard tower every 160 m and one big
- *    gate in the south wall, 140 m wide, flanked by two gate towers. Only the gate lets anything in or out.
+ *    gate in the south wall, 250 m wide, flanked by two gate towers. Only the gate lets anything in or out.
  *  - East of the Hangar, the garrison: fuel tanks, barracks, the workshop and the mess, rows of Quonset huts, the
  *    parade ground with its flagpole, four gunship pads, the clinic, the water tower, the radio mast, ammunition
  *    bunkers, the warehouse, the motor pool with its tanks and trucks in rows, the armory.
@@ -22,8 +22,8 @@ export const COMPOUND = {
   y0: -440,
   y1: 1000,
   wall: 8,
-  /** Half the gate's width. */
-  gateHalf: 70,
+  /** Half the gate's width (a 250 m gateway: two Titans side by side with room to spare). */
+  gateHalf: 125,
   towerHalf: 8,
   gateTowerHalf: 12,
   towerEvery: 160,
@@ -193,7 +193,7 @@ function front(): { structs: Struct[]; guns: FrontGun[] } {
   const L: Struct[] = [];
   const guns: FrontGun[] = [];
   for (const sx of [-1, 1]) {
-    for (const [bx, by] of [[175, 1052], [345, 1076]]) {
+    for (const [bx, by] of [[200, 1052], [345, 1076]]) {
       const x = sx * bx;
       L.push(S(x - 11, by - 7, x + 11, by + 7, 12, 'bunker'));
       guns.push({ x, y: by, kind: 'bunker' });
@@ -215,7 +215,7 @@ function front(): { structs: Struct[]; guns: FrontGun[] } {
         L.push(S(cx - 1.5, cy - 1.5, cx + 1.5, cy + 1.5, 5, 'hedgehog'));
       }
     }
-    L.push(S(sx * 118 - 1.5, 1026, sx * 118 + 1.5, 1029, 40, 'searchlight'));
+    L.push(S(sx * 162 - 1.5, 1026, sx * 162 + 1.5, 1029, 40, 'searchlight'));
   }
   return { structs: L, guns };
 }

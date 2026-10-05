@@ -46,23 +46,20 @@ describe('the Mega Hangar compound', () => {
     expect(hardAt(g, h.x, h.y + COMPOUND.y1 + 30)).toBe(false);
   });
 
-  it('holds the Titan at the shut gate until Gate Control clears her, then closes behind her', { timeout: 30000 }, () => {
+  it('hears the Titan driving at the shut gate, opens up for her, then closes behind her', { timeout: 30000 }, () => {
     const g = quiet();
     const p = g.player;
     const gp = gateXY(g)!;
     p.x = gp.x;
     p.y = gp.y - p.stats.length / 2 - 60;
     p.rot = Math.PI / 2;
+    expect(g.compound.gate.open).toBe(0);
     g.helm.lever = 0.35;
-    run(g, 25);
-    // Stopped against the doors, never through them.
-    expect(p.y + p.stats.length / 2).toBeLessThan(gp.y + 8);
-    expect(hullBlocked(g, p)).toBe(false);
-    expect(g.compound.prompt).toBe('exit');
-    expect(requestClearance(g, 'player')).toBe('asked');
-    // The answer, then the doors grind open.
-    expect(run(g, 20, () => g.compound.gate.open >= 1)).toBeLessThan(15);
+    // No button to find: driving at the doors puts the request in by itself, and the doors grind open.
+    expect(run(g, 20, () => g.compound.gate.req !== null || g.compound.gate.target === 1)).toBeLessThan(10);
+    expect(run(g, 25, () => g.compound.gate.open >= 1)).toBeLessThan(20);
     expect(g.map.getObs(Math.floor(gp.x), Math.floor(gp.y))).toBe(OBS.NONE);
+    expect(hullBlocked(g, p)).toBe(false);
     // She rolls out, and the gate shuts behind her.
     expect(run(g, 60, () => p.y - p.stats.length / 2 > gp.y + 60)).toBeLessThan(60);
     g.helm.lever = 0;
@@ -70,18 +67,28 @@ describe('the Mega Hangar compound', () => {
     expect(g.map.getObs(Math.floor(gp.x), Math.floor(gp.y))).toBe(OBS.BASTION);
   });
 
-  it('refuses clearance while hostiles crowd the gate', () => {
+  it('never shuts the Titan in: with hostiles at the gate it opens anyway and holds open while she punches through', () => {
     const g = quiet();
     const gp = gateXY(g)!;
     for (let i = 0; i < 8; i++) {
       const e = g.spawnEnemy('d_sand_rat', gp.x - 100 + i * 25, gp.y + 90, 1);
       e.hp = e.maxHp = 1e7;
     }
-    requestClearance(g, 'player');
+    // A visiting crew is told to wait...
+    requestClearance(g, 'Rustline');
     run(g, 4);
     expect(g.compound.gate.target).toBe(0);
     expect(g.compound.gate.deny).toBeGreaterThan(0);
     expect(g.compound.gate.open).toBe(0);
+    // ...the Titan is not.
+    g.compound.gate.deny = 0;
+    expect(requestClearance(g, 'player')).toBe('asked');
+    run(g, 4);
+    expect(g.compound.gate.target).toBe(1);
+    expect(g.compound.punch ?? 0).toBeGreaterThan(0);
+    run(g, 12);
+    expect(g.compound.gate.target).toBe(1);
+    expect(g.compound.gate.open).toBe(1);
   });
 
   it('has gun crews on the towers that shoot what comes near the wall', () => {

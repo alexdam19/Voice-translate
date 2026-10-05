@@ -203,6 +203,8 @@ export interface CompoundState {
   stuckT: number;
   /** What to offer on the HUD: request clearance to leave or to come in. */
   prompt: 'exit' | 'enter' | null;
+  /** Seconds the gate stays open for you to punch through hostiles (no slamming it on you). */
+  punch?: number;
 }
 
 export const newCompound = (): CompoundState => ({
@@ -335,6 +337,17 @@ function answer(g: Game): void {
   gate.req = null;
   const you = req.who === 'player';
   const n = gateThreat(g);
+  // Your Titan is never left shut in: with hostiles at the gate, Gate Control opens it anyway and puts every gun on
+  // the gateway (the gunships go up) so you can punch through.
+  if (n > 3 && you) {
+    gate.target = 1;
+    gate.idle = 0;
+    cs.sortie = Math.max(cs.sortie, 90);
+    cs.punch = 25;
+    g.hooks.toast(`GATE CONTROL: ${n} hostiles at the gate, Titan. Opening anyway: every gun on the gateway, punch through and we close behind you!`, '#ffab40');
+    g.hooks.sound('alarm', g.player.x, g.player.y, 0.4);
+    return;
+  }
   if (n > 3) {
     gate.deny = 12;
     const msg = `GATE CONTROL: Negative${you ? ', Titan' : `, ${req.who}`}. ${n} hostiles at the gate. Clear them and call again.`;
@@ -664,8 +677,9 @@ function updateGate(g: Game, dt: number): void {
     // Held open while the doors are still opening and while a hull is on its way through.
     gate.idle = busy || gate.open < 0.98 || gatewayBusy(g, 220) ? 0 : gate.idle + dt;
     const waiting = cs.bases.some((b) => b.state === 'waitOut' || b.state === 'waitIn' || b.state === 'leaving' || b.state === 'entering');
-    // A rush on an open, empty gate: slam it.
-    if (!busy && gateThreat(g) > 6) {
+    // A rush on an open, empty gate: slam it (unless it was opened for you to punch through).
+    cs.punch = Math.max(0, (cs.punch ?? 0) - dt);
+    if (!busy && gateThreat(g) > 6 && cs.punch <= 0) {
       gate.target = 0;
       g.hooks.toast('GATE CONTROL: HOSTILES AT THE GATE! CLOSING THE MAIN GATE!', '#ff5252');
       g.hooks.sound('alarm', g.player.x, g.player.y, 0.5);
@@ -1227,4 +1241,9 @@ export function updateCompound(g: Game, dt: number): void {
   const gp = gateXY(g)!;
   const nearGate = Math.abs(p.x - gp.x) < 420 && Math.abs(p.y - gp.y) < 420;
   cs.prompt = !p.dead && nearGate && cs.gate.target === 0 && !cs.gate.req ? (p.y < gp.y ? 'exit' : 'enter') : null;
+  // Drive at the shut gate and Gate Control hears you coming: the request goes in by itself.
+  if (cs.prompt && !cs.gate.req && cs.gate.deny <= 0 && Math.abs(p.x - gp.x) < COMPOUND.gateHalf + 60 && Math.abs(p.y - gp.y) < 260) {
+    const toward = (gp.y - p.y) * Math.sin(p.rot) > 0 && Math.abs(p.speed) > 1.5;
+    if (toward) requestClearance(g, 'player');
+  }
 }
