@@ -1,5 +1,6 @@
 import { COMPOUND, FORWARD } from '../shared/compound';
-import { drawTitan3D } from './ship3d';
+import { drawTitan3D, SHIP_LEAN, shipRoofAt } from './ship3d';
+import { beginCreatures3D, drawCreature3D } from './creature3d';
 import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
 import { MODULES, TITAN_DECK_INFO, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
@@ -994,7 +995,10 @@ export class View2D {
     const ppm = this.ppm;
     const R = this.groundR + 30;
     const p = g.player;
-    if (!air) this.foeBudget = 24;
+    if (!air) {
+      this.foeBudget = 24;
+      beginCreatures3D();
+    }
     this.headT -= 1;
     if (this.headT <= 0) {
       this.headT = 300;
@@ -1020,6 +1024,29 @@ export class View2D {
       const size = Math.max(min, real);
       const toP = Math.atan2(p.y - e.y, p.x - e.x);
       const a = this.headingOf(e.id, e.x, e.y, toP) + this.th;
+      // A 3D model where there is one: baked sheets for the crowds, live for giants and bosses.
+      {
+        const atkO = (e.atkT ?? 9) < 0.5 ? Math.sin((Math.PI * (e.atkT ?? 9)) / 0.5) * size * 0.18 : 0;
+        const gx = this.bx(e.x, e.y) + Math.cos(a) * atkO, gy = this.by(e.x, e.y) + Math.sin(a) * atkO;
+        let lift = e.flying ? Math.max(2, (1.6 + visZ(e.z)) * ppm * ZK * 1.3) : visZ(e.z) * ppm * ZK;
+        // Aboard a hull: up on its roof.
+        if (e.latch && e.latch.tank === p.id) lift += shipRoofAt(p, e.latch.lx, e.latch.lz) * SHIP_LEAN * ppm;
+        if (!e.latch) this.hostileRing(gx, this.by(e.x, e.y), size * 0.5, size * 0.36, e.boss, e.elite);
+        if (e.flying) {
+          const so = Math.max(3, size * 0.4);
+          c.fillStyle = 'rgba(0,0,0,0.28)';
+          c.beginPath();
+          c.ellipse(gx + so, this.by(e.x, e.y) + so, size * 0.4, size * 0.22, 0, 0, Math.PI * 2);
+          c.fill();
+        }
+        if (drawCreature3D(c, e, def, gx, gy - lift, size, a, e.titan || !!e.boss)) {
+          if (e.burn > 0 && Math.random() < 0.3) this.fx.emit(e.x, e.y, e.r, 0, 0, 2, 0.4, Math.max(0.5, e.r * 0.5), '#ff6d00', { add: true });
+          if (e.slow > 0 && Math.random() < 0.1) this.fx.emit(e.x, e.y, e.r, 0, 0, 0.5, 0.5, Math.max(0.4, e.r * 0.4), '#80deea', { add: true });
+          if (e.titan && !e.flying && Math.random() < 0.15) this.fx.emit(e.x + (Math.random() - 0.5) * e.r, e.y + (Math.random() - 0.5) * e.r, 0.5, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 1, 1.4, Math.max(1, e.r * 0.3), '#8d7a62', { grow: 2, alpha: 0.5 });
+          if (e.aim) this.drawAimLine(e);
+          continue;
+        }
+      }
       // People (the dead, raiders, cultists, cyborgs) are painted figures.
       const foe = !e.titan && !e.boss ? foeFor(e, def, arch) : null;
       if (foe && this.drawFoe(e, foe, a)) continue;
