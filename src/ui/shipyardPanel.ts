@@ -1,7 +1,9 @@
 import {
-  addStory, awaken, classMark, expandHull, hireOfficer, hireTroops, hullCost, installPart, isDocked, MARK_COST, maxStories, partsForCC, PARTS, REFIT_COST, refitClass,
-  STORY_COST, trade, TRADES, TROOP_COST,
+  addStory, awaken, buyFrame, classMark, expandHull, hireOfficer, hireTroops, hullCost, installPart, isDocked, MARK_COST, maxStories, partsForCC, PARTS, REFIT_COST, refitClass,
+  STORY_COST, trade, TRADES, TROOP_COST, useFrame,
 } from '../game/campaign';
+import { FRAME_ORDER, FRAMES } from '../game/frames';
+import { shipPortrait } from '../render/ship3d/portrait';
 import { CLASS_LIST, CLASSES } from '../game/classes';
 import { CC_COMMANDER_LEVEL, chassisForCC, DECK_OPEN_CC, TITAN_DECK_INFO } from '../game/defs';
 import { getItem } from '../shared/items';
@@ -25,10 +27,42 @@ export function renderShipyard(ctx: PanelCtx): void {
     ctx.rerender();
   };
   if (!isDocked(g)) {
-    ctx.body.appendChild(h('div', 'big-lock', 'Dock at the <b>Mothership</b> (the cyan ship at the edge of the world, on the MAP) to use the shipyard.'));
+    ctx.body.appendChild(h('div', 'big-lock', 'Dock at the <b>Mega Hangar</b> (drive into the compound, on the MAP) to use the shipyard.'));
     return;
   }
   const c = g.campaign;
+  if (ctx.tab === 'hulls' || !ctx.tab) {
+    ctx.body.appendChild(h('div', 'hint', `Every commander starts in the <b>Shark</b>. Bigger hulls are bought here with the scrap you haul home; you keep every hull you buy and can swap between them at any yard for free. Your crew, guns, buildings and decks move across with you.`));
+    const grid = h('div', 'yard-grid hulls');
+    const base = FRAMES[p.frame];
+    for (const k of FRAME_ORDER) {
+      const f = FRAMES[k];
+      const own = g.frames.includes(k), aboard = p.frame === k;
+      const len = Math.round((p.stats.length * f.cell) / base.cell);
+      const pct = (v: number): string => `${v >= 1 ? '+' : ''}${Math.round((v - 1) * 100)}%`;
+      const card = h('div', `yard-card hull ${aboard ? 'done' : ''}`, `<div class="yc-t">${esc(f.name.toUpperCase())} <small>${esc(f.title.replace(/·.*$/, '').trim())} · ${len} m</small></div>`);
+      const pic = shipPortrait(p, k);
+      if (pic) {
+        const img = document.createElement('img');
+        img.className = 'yc-img';
+        img.src = pic;
+        img.alt = f.name;
+        card.appendChild(img);
+      }
+      card.appendChild(h('div', 'yc-d', esc(f.desc)));
+      card.appendChild(h('div', 'yc-stats', `<span>Hull <b>${pct(f.hp)}</b></span><span>Armour <b>+${Math.round(f.armor * 100)}%</b></span><span>Top speed <b>${pct(f.speed)}</b></span><span>Turning <b>${pct(f.turn)}</b></span>`));
+      if (aboard) card.appendChild(h('div', 'yc-req good', 'YOU ARE ABOARD'));
+      else if (own) card.appendChild(button(`MOVE ACROSS TO THE ${esc(f.name.toUpperCase())}`, () => run(() => useFrame(g, k), 'levelup'), 'primary'));
+      else {
+        const lvl = g.commander.level >= f.level;
+        card.appendChild(h('div', 'yc-req', `Needs commander level ${f.level} ${lvl ? '✔' : '✖'}<br>${costHTML(f.cost, [p.cargo])}`));
+        card.appendChild(button(`BUY THE ${esc(f.name.toUpperCase())}`, () => run(() => buyFrame(g, k), 'legendary'), lvl && g.canPay(f.cost) ? 'primary' : 'disabled'));
+      }
+      grid.appendChild(card);
+    }
+    ctx.body.appendChild(grid);
+    return;
+  }
   if (ctx.tab === 'trade') {
     ctx.body.appendChild(h('div', 'hint', 'The Mothership always has stock. Straight swaps, no haggling.'));
     const grid = h('div', 'trade-grid');

@@ -230,7 +230,7 @@ export class ShipConsole {
     const p = g.player;
     const f = Math.max(0, p.hp / Math.max(1, p.stats.maxHp));
     const shield = p.stats.shield > 0 ? p.shield / p.stats.shield : 0;
-    const key = `${Math.ceil(f * 200)}:${Math.round(shield * 20)}:${this.flash > 0 ? 1 : 0}:${p.dead}`;
+    const key = `${Math.ceil(f * 200)}:${Math.round(shield * 20)}:${this.flash > 0 ? 1 : 0}:${p.dead}:${Math.round(p.stats.maxHp)}`;
     if (key === this.hull.key) return;
     this.hull.key = key;
     const x = this.hull.x;

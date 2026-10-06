@@ -1,4 +1,5 @@
 import { DEV } from './devFlag';
+import { FRAMES, type FrameKey } from './frames';
 import { Inventory, type Slot } from '../shared/inventory';
 import type { DriveKey, Hazard } from '../shared/types';
 import { BASE_WEAPON_MODS, WEAPONS, weaponStats, type WeaponItem, type WeaponMods, type WeaponStats } from '../shared/weapons';
@@ -152,6 +153,8 @@ export class Tank {
   stories = TITAN_DECKS;
   /** Hull class and its Mothership mark (I-III). */
   klass: HullClass = 'juggernaut';
+  /** Which hull she is (the Shark to begin with; bigger ones are bought at a base). */
+  frame: FrameKey = 'shark';
   classMk = 1;
   /** Troops aboard: they man the guns and the roof nests. Enemy hulls are always fully crewed. */
   troops = 0;
@@ -206,7 +209,7 @@ export class Tank {
   /** Damage multiplier for enemy tanks (threat scaling). */
   dmgScale = 1;
   /** World units per deck cell: your fortress is a full facility (1 unit per cell); enemy rigs are smaller. */
-  readonly cell: number;
+  cell: number;
   /** Rolls over rocks, ruins and wrecks instead of steering around them. */
   readonly crush: boolean;
   /** Seconds until a parked fortress checks for rubble under its hull again. */
@@ -592,18 +595,19 @@ export class Tank {
     const length = this.rows * this.cell + (dread ? 2 : 0.6) * this.cell;
     const ratio = Math.min(1.3, (thrust * 8) / mass);
     const topSpeed = this.anchored ? 0 : this.titanMods.speed * (this.fortress ? (70 + 12 * Math.min(1, ratio * 3)) * es.top : 2.2 + 3.6 * ratio) * (0.45 + 0.55 * driveRatio) * hull.speed * (1 + crew.speed) * cm.speed * (1 + 0.05 * rf('engines'));
-    this.handling = cm.turn * (1 + 0.04 * rf('treads'));
+    const fr = FRAMES[this.kind === 'main' || this.kind === 'rival' ? this.frame : 'shark'];
+    this.handling = cm.turn * (1 + 0.04 * rf('treads')) * fr.turn;
     this.ram = cm.ram;
     this.nitroMult = cm.nitro;
     this.soldierDmg = cm.soldierDmg;
     const bunkTotal = Math.round(bunks * cm.bunks) + 16 * rf('quarters');
     const turnRate = 1.9 * Math.sqrt(8 / ((this.rows + this.cols * 0.5) * this.cell / 0.5)) * (this.kind === 'main' ? 1.6 : 1);
     this.stats = {
-      maxHp: Math.round(hp * hull.hp * (1 + crew.hp) * cm.hp * (1 + 0.08 * rf('plating'))),
-      armor: Math.min(0.6, armor + hull.armor + crew.armor + cm.armor),
+      maxHp: Math.round(hp * hull.hp * (1 + crew.hp) * cm.hp * (1 + 0.08 * rf('plating')) * fr.hp),
+      armor: Math.min(0.6, armor + hull.armor + crew.armor + cm.armor + fr.armor),
       shield: Math.round(shield * hull.shield * (1 + crew.shield) * (1 + 0.1 * rf('shields'))),
       shieldRegen: shieldRegen * hull.shieldRegen * (1 + 0.1 * rf('shields')),
-      power, use, powerRatio, thrust, mass, topSpeed, turnRate,
+      power, use, powerRatio, thrust, mass, topSpeed: topSpeed * fr.speed, turnRate,
       cargo: Math.round((cargo + hull.cargo + crew.cargo) * cm.cargo * (1 + 0.1 * rf('cargo'))),
       crewCap: Math.min(15, crewCap),
       vision: vision + crew.vision,
@@ -708,6 +712,14 @@ export class Tank {
     return this.ccLevel >= (DECK_OPEN_CC[deck] ?? 1);
   }
 
+  /** Moves her into another hull: the same deck plan, bigger cells. */
+  setFrame(f: FrameKey, recalc = true): void {
+    this.frame = f;
+    if (this.kind === 'main' || this.kind === 'rival' || this.kind === 'remote') this.cell = FRAMES[f].cell;
+    this.version++;
+    if (recalc) this.recalc();
+  }
+
   /** World height of a deck's floor (deck 0 = the roof top). */
   deckY(deck = 0): number {
     const k = this.cell / 0.5;
@@ -801,7 +813,7 @@ export class Tank {
   serialize(): TankSave {
     return {
       chassis: this.chassis, cols: this.cols, rows: this.rows, drive: this.drive, x: this.x, y: this.y, rot: this.rot, hp: this.hp, shield: this.shield,
-      stories: this.stories, klass: this.klass, classMk: this.classMk, troops: this.troops,
+      stories: this.stories, klass: this.klass, classMk: this.classMk, troops: this.troops, frame: this.frame === 'shark' ? undefined : this.frame,
       modules: this.modules.map((m) => ({ key: m.key, cx: m.cx, cy: m.cy, d: m.deck, weapon: m.weapon, mode: m.mode, lvl: m.lvl > 1 ? m.lvl : undefined, b: m.built ? undefined : false })),
       cargo: this.cargo.snapshot(),
       engine: Object.values(this.engine).some((v) => v > 0) ? { ...this.engine } : undefined,
@@ -814,6 +826,7 @@ export class Tank {
   static deserialize(s: TankSave, team: Team = 'player', kind: TankKind = 'main', name = 'Fortress'): Tank {
     const t = new Tank(team, kind, s.chassis, name);
     if (s.klass) t.klass = s.klass;
+    if (s.frame && s.frame in FRAMES) t.setFrame(s.frame, false);
     t.classMk = s.classMk ?? 1;
     // Saves from before the Titan Crawler had two or three stories: every building goes to its deck on the new hull.
     const oldHull = (s.stories ?? 0) < TITAN_DECKS && t.fortress;
@@ -866,6 +879,7 @@ export class Tank {
 
 export interface TankSave {
   chassis: string;
+  frame?: FrameKey;
   /** Deck size when saved (v0.7+); older saves used the smaller legacy decks. */
   cols?: number;
   rows?: number;

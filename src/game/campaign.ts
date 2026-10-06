@@ -2,6 +2,8 @@ import { getItem } from '../shared/items';
 import { HANGAR, REGION_INFO, type Region } from '../shared/mapgen';
 import { ZONE } from '../shared/map';
 import { CLASSES, type HullClass } from './classes';
+import { FRAMES, type FrameKey } from './frames';
+import { hullBlocked } from './systems/compound';
 import { CC_COMMANDER_LEVEL, chassisForCC } from './defs';
 import type { Enemy } from './entities';
 import { ENEMIES, MEGA, strongholdBoss, ZONE_ROSTER } from './enemyDefs';
@@ -336,6 +338,39 @@ export function refitClass(g: Game, k: HullClass): Result {
   p.klass = k;
   g.syncHull();
   return OK(`Refitted as a ${CLASSES[k].name}. ${CLASSES[k].perk}`);
+}
+
+/** Buys a bigger hull at the yard (and moves you into it). */
+export function buyFrame(g: Game, k: FrameKey): Result {
+  if (!isDocked(g)) return NO('Hulls are bought at a base\'s yard.');
+  const f = FRAMES[k];
+  if (!f) return NO('No such hull.');
+  if (g.frames.includes(k)) return useFrame(g, k);
+  if (g.commander.level < f.level) return NO(`Reach commander level ${f.level} first.`);
+  if (!g.pay(f.cost)) return NO('Not enough materials.');
+  g.frames.push(k);
+  const r = useFrame(g, k);
+  return OK(`The ${f.name} is yours. ${r.msg ?? ''}`.trim());
+}
+
+/** Moves the crew, the guns and every building across to a hull you own. */
+export function useFrame(g: Game, k: FrameKey): Result {
+  if (!isDocked(g)) return NO('Hulls are swapped at a base\'s yard.');
+  if (!g.frames.includes(k)) return NO('You don\'t own that hull.');
+  const p = g.player;
+  if (p.frame === k) return NO('You are aboard her already.');
+  const hpFrac = p.hp / Math.max(1, p.stats.maxHp);
+  p.setFrame(k);
+  g.syncHull();
+  p.hp = Math.round(p.stats.maxHp * hpFrac);
+  // A bigger hull rolls out of the bay doors, not through the wall.
+  if (hullBlocked(g, p)) {
+    p.x = g.gen.spawn.x;
+    p.y = g.gen.spawn.y;
+    p.rot = g.gen.spawnRot ?? p.rot;
+    p.speed = 0;
+  }
+  return OK(`Crew, guns and decks moved across: you command the ${FRAMES[k].name}, ${Math.round(p.stats.length)} m long.`);
 }
 
 /** Hull expansion at the Mega Hangar: the next Command Center level, finished on the spot. */

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { HullClass } from '../../game/classes';
+import type { FrameKey } from '../../game/frames';
 
 /**
  * The Titan Crawler as a solid model, built after the "07" reference sheet: a long, tall, slab-sided gunmetal hull on
@@ -30,12 +31,12 @@ export interface ShipLook {
 }
 
 export const LOOKS: Record<HullClass | 'rival' | 'wreck', ShipLook> = {
-  juggernaut: { hull: '#464e5c', plate: '#58647a', dark: '#16191f', glow: '#5cd0ff', rear: '#ff8c1a', trim: '#6f7a8b' },
-  bastion: { hull: '#494b3f', plate: '#585b4a', dark: '#181914', glow: '#ffc84a', rear: '#ff8c1a', trim: '#777b63' },
-  ark: { hull: '#425056', plate: '#4e5f67', dark: '#141c20', glow: '#52ffb0', rear: '#ffb040', trim: '#6c8088' },
-  nightrunner: { hull: '#2e3039', plate: '#393c4a', dark: '#0f1015', glow: '#b48cff', rear: '#ff4a8a', trim: '#585c6f' },
-  dredge: { hull: '#4e443b', plate: '#5d5145', dark: '#1b1612', glow: '#ffab40', rear: '#ff7a2a', trim: '#8a7562' },
-  rival: { hull: '#47393d', plate: '#56454a', dark: '#191215', glow: '#ff3b30', rear: '#ff3b30', trim: '#7a5a62' },
+  juggernaut: { hull: '#22252b', plate: '#2b2f36', dark: '#0a0b0d', glow: '#5cd0ff', rear: '#ff8c1a', trim: '#3d434d' },
+  bastion: { hull: '#25261f', plate: '#2f3128', dark: '#0b0b09', glow: '#ffc84a', rear: '#ff8c1a', trim: '#4a4c3e' },
+  ark: { hull: '#20272a', plate: '#293235', dark: '#0a0d0e', glow: '#52ffb0', rear: '#ffb040', trim: '#3e4c50' },
+  nightrunner: { hull: '#1c1d23', plate: '#25262f', dark: '#08080b', glow: '#b48cff', rear: '#ff4a8a', trim: '#3a3c48' },
+  dredge: { hull: '#292522', plate: '#332e29', dark: '#0d0b09', glow: '#ffab40', rear: '#ff7a2a', trim: '#4e4439' },
+  rival: { hull: '#2b1f22', plate: '#35282b', dark: '#0e090a', glow: '#ff3b30', rear: '#ff3b30', trim: '#4a383d' },
   wreck: { hull: '#36322e', plate: '#3e3934', dark: '#141210', glow: '#000000', rear: '#000000', trim: '#4d4741' },
 };
 
@@ -63,6 +64,8 @@ export interface ShipRig {
   /** Exhaust flames at the stern nozzles, scaled with the engine's push. */
   flames: THREE.Object3D[];
   radar: THREE.Object3D | null;
+  /** The stern ramp (the bigger hulls): it swings down to the ground when she stops (`userData.open`, radians). */
+  ramp?: THREE.Object3D;
   /** Light materials that pulse; the hull materials (for the hit flash); the outline (its weight follows the zoom). */
   glow: THREE.MeshBasicMaterial[];
   hullMats: THREE.MeshStandardMaterial[];
@@ -75,7 +78,7 @@ export interface ShipRig {
 
 const texCache = new Map<string, THREE.Texture>();
 
-function tex(key: string, w: number, h: number, draw: (c: CanvasRenderingContext2D, w: number, h: number) => void, wrap = true): THREE.Texture {
+export function tex(key: string, w: number, h: number, draw: (c: CanvasRenderingContext2D, w: number, h: number) => void, wrap = true): THREE.Texture {
   const have = texCache.get(key);
   if (have) return have;
   const cv = document.createElement('canvas');
@@ -90,13 +93,13 @@ function tex(key: string, w: number, h: number, draw: (c: CanvasRenderingContext
   return t;
 }
 
-function rng(seed: number): () => number {
+export function rng(seed: number): () => number {
   let s = seed;
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 
 /** Armour plating: panels of a few sizes a shade apart, dark seams, a lit upper edge, rivet rows, a little grime. */
-function plateTexture(base: string): THREE.Texture {
+export function plateTexture(base: string): THREE.Texture {
   return tex(`plate|${base}`, 256, 256, (c, S) => {
     const col = new THREE.Color(base);
     const r = rng(7);
@@ -108,7 +111,7 @@ function plateTexture(base: string): THREE.Texture {
       let x = -Math.floor(r() * 50);
       while (x < S) {
         const w = 44 + Math.floor(r() * 64);
-        const cc = col.clone().offsetHSL(0, 0, (r() - 0.5) * 0.045);
+        const cc = col.clone().offsetHSL(0, 0, (r() - 0.5) * 0.045 * Math.max(0.35, Math.min(1, col.getHSL({ h: 0, s: 0, l: 0 }).l / 0.3)));
         for (const ox of [0, S, -S]) {
           const px = x + ox;
           if (px > S || px + w < 0) continue;
@@ -138,7 +141,7 @@ function plateTexture(base: string): THREE.Texture {
 }
 
 /** Track links: steel shoes with a raised grouser, the pins, the guide gap. 8 links across the texture. */
-function treadTexture(): THREE.Texture {
+export function treadTexture(): THREE.Texture {
   return tex('tread', 256, 64, (c, w, h) => {
     c.fillStyle = '#0a0b0d';
     c.fillRect(0, 0, w, h);
@@ -159,7 +162,7 @@ function treadTexture(): THREE.Texture {
 }
 
 /** The hull number, stencilled: white figures with a dark edge, on nothing. */
-function numberTexture(text: string, color: string): THREE.Texture {
+export function numberTexture(text: string, color: string): THREE.Texture {
   return tex(`num|${text}|${color}`, 256, 128, (c) => {
     c.font = 'bold 92px "Silkscreen", "Courier New", monospace';
     c.textAlign = 'center';
@@ -173,7 +176,7 @@ function numberTexture(text: string, color: string): THREE.Texture {
 }
 
 /** A grille: vertical slats in a dark frame. */
-function grilleTexture(): THREE.Texture {
+export function grilleTexture(): THREE.Texture {
   return tex('grille', 128, 64, (c, w, h) => {
     c.fillStyle = '#07080a';
     c.fillRect(0, 0, w, h);
@@ -187,7 +190,7 @@ function grilleTexture(): THREE.Texture {
 }
 
 /** The engine deck's ribbed grille: bars, deep shadow between. */
-function ribTexture(): THREE.Texture {
+export function ribTexture(): THREE.Texture {
   return tex('ribs', 128, 64, (c, w, h) => {
     c.fillStyle = '#060708';
     c.fillRect(0, 0, w, h);
@@ -203,7 +206,7 @@ function ribTexture(): THREE.Texture {
 }
 
 /** A fine mesh vent. */
-function meshTexture(): THREE.Texture {
+export function meshTexture(): THREE.Texture {
   return tex('mesh', 64, 64, (c, w, h) => {
     c.fillStyle = '#121418';
     c.fillRect(0, 0, w, h);
@@ -215,7 +218,7 @@ function meshTexture(): THREE.Texture {
 }
 
 /** Slotted vents ("III") for the decks: slots running across the texture's width. */
-function ventTexture(): THREE.Texture {
+export function ventTexture(): THREE.Texture {
   return tex('vent', 64, 32, (c, w, h) => {
     c.fillStyle = '#1f2329';
     c.fillRect(0, 0, w, h);
@@ -231,7 +234,7 @@ function ventTexture(): THREE.Texture {
 }
 
 /** A deck hatch: a raised square with a lit rim and two handles. */
-function hatchTexture(): THREE.Texture {
+export function hatchTexture(): THREE.Texture {
   return tex('hatch', 64, 64, (c, w, h) => {
     c.fillStyle = '#1a1d22';
     c.fillRect(0, 0, w, h);
@@ -248,7 +251,7 @@ function hatchTexture(): THREE.Texture {
 }
 
 /** A road wheel's face: rim, six lightening holes, the hub and its bolts. */
-function wheelTexture(): THREE.Texture {
+export function wheelTexture(): THREE.Texture {
   return tex('wheel', 128, 128, (c) => {
     c.fillStyle = '#16181c';
     c.fillRect(0, 0, 128, 128);
@@ -279,7 +282,7 @@ function wheelTexture(): THREE.Texture {
 }
 
 /** Launch tubes: a grid of red-lit mouths in a dark face. */
-function tubesTexture(): THREE.Texture {
+export function tubesTexture(): THREE.Texture {
   return tex('tubes', 64, 48, (c, w, h) => {
     c.fillStyle = '#15171b';
     c.fillRect(0, 0, w, h);
@@ -293,7 +296,7 @@ function tubesTexture(): THREE.Texture {
 }
 
 /** Hazard paint. */
-function hazardTexture(): THREE.Texture {
+export function hazardTexture(): THREE.Texture {
   return tex('hazard', 64, 64, (c, w, h) => {
     c.fillStyle = '#d9a21a';
     c.fillRect(0, 0, w, h);
@@ -312,7 +315,7 @@ function hazardTexture(): THREE.Texture {
 // ------------------------------------------------------------------------------------------------ geometry
 
 /** Planar UVs from world positions (by each face's facing), so plating tiles at its real size. */
-function planarUV(g: THREE.BufferGeometry, size = 10): THREE.BufferGeometry {
+export function planarUV(g: THREE.BufferGeometry, size = 10): THREE.BufferGeometry {
   const geo = g.index ? g.toNonIndexed() : g;
   geo.computeVertexNormals();
   const p = geo.attributes.position as THREE.BufferAttribute, n = geo.attributes.normal as THREE.BufferAttribute;
@@ -337,24 +340,24 @@ function planarUV(g: THREE.BufferGeometry, size = 10): THREE.BufferGeometry {
   return geo;
 }
 
-function box(w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry {
+export function box(w: number, h: number, d: number, x: number, y: number, z: number): THREE.BufferGeometry {
   return planarUV(new THREE.BoxGeometry(w, h, d).translate(x, y, z));
 }
 
 /** A block from corner to corner with its top edges cut back by `ch` (along X by `chx`). */
-function chamfer(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, ch: number, chx = ch): THREE.BufferGeometry {
+export function chamfer(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, ch: number, chx = ch): THREE.BufferGeometry {
   const pts: THREE.Vector3[] = [];
   for (const x of [x0, x1]) for (const z of [z0, z1]) pts.push(new THREE.Vector3(x, y0, z), new THREE.Vector3(x, y1 - ch, z));
   for (const x of [x0 + chx, x1 - chx]) for (const z of [z0 + ch, z1 - ch]) pts.push(new THREE.Vector3(x, y1, z));
   return planarUV(new ConvexGeometry(pts));
 }
 
-function hull(points: [number, number, number][]): THREE.BufferGeometry {
+export function hull(points: [number, number, number][]): THREE.BufferGeometry {
   return planarUV(new ConvexGeometry(points.map(([x, y, z]) => new THREE.Vector3(x, y, z))));
 }
 
 /** A convex polygon (in X-Z) moved inward by `d`. */
-function inset(poly: [number, number][], d: number): [number, number][] {
+export function inset(poly: [number, number][], d: number): [number, number][] {
   const n = poly.length;
   let area = 0;
   for (let i = 0; i < n; i++) area += poly[i][0] * poly[(i + 1) % n][1] - poly[(i + 1) % n][0] * poly[i][1];
@@ -372,7 +375,7 @@ function inset(poly: [number, number][], d: number): [number, number][] {
 }
 
 /** A convex footprint stood up from y0 to y1, its top edges chamfered by `ch`. */
-function prism(poly: [number, number][], y0: number, y1: number, ch = 0): THREE.BufferGeometry {
+export function prism(poly: [number, number][], y0: number, y1: number, ch = 0): THREE.BufferGeometry {
   const pts: [number, number, number][] = [];
   for (const [x, z] of poly) pts.push([x, y0, z], [x, y1 - ch, z]);
   for (const [x, z] of ch > 0 ? inset(poly, ch) : poly) pts.push([x, y1, z]);
@@ -380,7 +383,7 @@ function prism(poly: [number, number][], y0: number, y1: number, ch = 0): THREE.
 }
 
 /** 2D convex hull, counter-clockwise (Andrew's monotone chain). */
-function hull2(pts: [number, number][]): [number, number][] {
+export function hull2(pts: [number, number][]): [number, number][] {
   const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   const cross = (o: number[], a: number[], b: number[]): number => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const lo: [number, number][] = [], up: [number, number][] = [];
@@ -402,7 +405,7 @@ function hull2(pts: [number, number][]): [number, number][] {
  * A track belt wrapped round its wheels (circles in the X-Y plane, already grown by the belt's thickness): the tread
  * band, its texture running along the loop so it can roll, and the two rims.
  */
-function belt(circles: [number, number, number][], z0: number, z1: number, per: number, thick: number): { band: THREE.BufferGeometry; rims: THREE.BufferGeometry } {
+export function belt(circles: [number, number, number][], z0: number, z1: number, per: number, thick: number): { band: THREE.BufferGeometry; rims: THREE.BufferGeometry } {
   const pts: [number, number][] = [];
   for (const [cx, cy, r] of circles) for (let i = 0; i < 36; i++) {
     const a = (i / 36) * Math.PI * 2;
@@ -463,7 +466,7 @@ function belt(circles: [number, number, number][], z0: number, z1: number, per: 
   return { band, rims };
 }
 
-function mesh(g: THREE.BufferGeometry, m: THREE.Material | THREE.Material[], cast = true): THREE.Mesh {
+export function mesh(g: THREE.BufferGeometry, m: THREE.Material | THREE.Material[], cast = true): THREE.Mesh {
   const o = new THREE.Mesh(g, m);
   o.castShadow = cast;
   o.receiveShadow = true;
@@ -471,9 +474,14 @@ function mesh(g: THREE.BufferGeometry, m: THREE.Material | THREE.Material[], cas
   return o;
 }
 
-const basic = (color: THREE.ColorRepresentation): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color, toneMapped: false });
+export const basic = (color: THREE.ColorRepresentation): THREE.MeshBasicMaterial => new THREE.MeshBasicMaterial({ color, toneMapped: false });
 
 // ------------------------------------------------------------------------------------------------ the model
+
+/** Where the stern's exhaust nozzles sit across the hull (a fraction of its width either side of the keel). */
+export function nozzleW(frame: FrameKey | undefined): number {
+  return frame && frame !== 'shark' ? 0.31 : 0.15;
+}
 
 export interface BuildOpts {
   L: number;
@@ -485,6 +493,8 @@ export interface BuildOpts {
   /** Command Center level (1-6). */
   cc: number;
   number: string;
+  /** Which hull: the Shark (this file) or a crawler frame (crawler.ts). */
+  frame?: FrameKey;
   /** Turret mounts: module id, local x/z, size, family, glow colour; the main battery flagged. */
   mounts: { id: number; x: number; z: number; size: 'light' | 'medium' | 'heavy'; fam: string; color: string; main: boolean; reach: number }[];
   /** Roof props from the deck plan: radar, nests, coils, bays... with their footprints. */
@@ -523,7 +533,8 @@ export function buildShip(o: BuildOpts): ShipRig {
   const tubeM = decal(tubesTexture(), { transparent: false, emissive: '#3a0805' });
   const numM = decal(numberTexture(o.number, '#e9eef5'), { depthWrite: false });
   const hazardM = decal(hazardTexture(), { transparent: false });
-  const lines = new THREE.LineBasicMaterial({ color: '#05070a', transparent: true, opacity: 0.7 });
+  // The outline: a faint line of the class's light along every crease, the hull's Tron edge.
+  const lines = new THREE.LineBasicMaterial({ color: new THREE.Color(look.glow).multiplyScalar(0.16), transparent: true, opacity: 0.7 });
   const rig: ShipRig = {
     root, treads: [[], []], wheels: [[], []], wheelFaces: [], turrets: new Map(), fans: [], cores: [], flames: [], radar: null,
     glow: [glowM, glowDim, rearM], hullMats: [hullM, plateM, trimM, deckM], lines, roofAt: () => H, key: '',
@@ -627,8 +638,11 @@ export function buildShip(o: BuildOpts): ShipRig {
           add(chamfer(a, bb, trackTop * 0.5, trackTop + 0.25 * k, sd < 0 ? -hw - 0.35 * k : hw - 0.6 * k, sd < 0 ? -hw + 0.6 * k : hw + 0.35 * k, 0.3 * k, 0.3 * k), i % 2 ? hullM : plateM);
         }
         add(chamfer(X(0.082), X(0.04), trackTop - 0.1 * k, trackTop + 1.6 * k, sd < 0 ? -hw - 0.2 * k : Z(0.86), sd < 0 ? -Z(0.86) : hw + 0.2 * k, 0.45 * k), plateM);
-        lamp(whiteM, 0.7 * k, X(0.04) + 0.3 * k, trackTop + 0.7 * k, sd * Z(0.9));
+        // The LED fang on the pod's face: a white Y, the amber marker outboard.
+        bar(whiteM, X(0.04) + 0.3 * k, trackTop + 1.2 * k, sd * Z(0.865), X(0.04) + 0.3 * k, trackTop + 1.2 * k, sd * Z(0.95), 0.32 * k);
+        bar(whiteM, X(0.04) + 0.3 * k, trackTop + 1.2 * k, sd * Z(0.9), X(0.04) + 0.3 * k, trackTop + 0.1 * k, sd * Z(0.88), 0.28 * k);
         lamp(amberM, 0.45 * k, X(0.04) + 0.3 * k, trackTop + 0.7 * k, sd * Z(0.97));
+        lamp(redM, 0.4 * k, X(0.06), trackTop + 1.75 * k, sd * Z(0.97));
         if (cc >= 3) for (let i = 0; i < 3; i++) add(box((px1 - px0) / 3 - 0.4 * k, trackTop * 0.32, 0.5 * k, px0 + ((px1 - px0) * (i + 0.5)) / 3, trackTop * 0.36, sd * (hw + 0.55 * k)), trimM);
       }
     }
@@ -1018,6 +1032,55 @@ export function buildShip(o: BuildOpts): ShipRig {
   }
 
   // ================================================================================== roof props from the deck plan
+  placeProps(o, rig, k, roofHeight, { hullM, darkM, trimM, plateM, glowM, glowDim, hatchM });
+
+  // ================================================================================== the guns
+  for (const m of o.mounts) rig.turrets.set(m.id, turret(root, m, roofHeight(m.x, m.z), k, { trimM, darkM, plateM, hullM, glowM, redM }, lines));
+
+  /** How high the roof stands at a local point: what a turret, a prop or a climbing creature stands on. */
+  function roofHeight(x: number, z: number): number {
+    const az = Math.abs(z), w = az / hw;
+    for (const b of barbettes) if (Math.abs(x - b.x) < b.hl && az < b.hz) return b.top;
+    if (inSuper(x, z)) return x > X(0.4) ? Y(1.1) : superTop;
+    if (x > X(0.31)) {
+      // The bow: the hood, a petal, the shoulder, or out on the front crawlers.
+      if (w < hoodW) return x > X(0.28) ? hoodH(x) + (az < ribW ? 0.5 * k : 0) : deckMid;
+      const pa = petalAt(x, w);
+      if (pa !== null) return pa;
+      const sh = shoulderAt(x, w);
+      if (sh !== null) return sh;
+      if (w >= 0.86 && x > X(0.082)) return trackTop + 1.6 * k;
+      if (w >= 0.66) return trackTop;
+      return x < X(0.26) ? deckMid : Y(0.3);
+    }
+    if (w >= 0.585) return sideTop(x);
+    if (x < g07.x1 && x > g07.x0 && az < g07.w) return g07.top;
+    return x < xMidAft ? deckRear : deckMid;
+  }
+  rig.roofAt = roofHeight;
+  return rig;
+}
+
+export interface PropMats {
+  hullM: THREE.Material;
+  darkM: THREE.Material;
+  trimM: THREE.Material;
+  plateM: THREE.Material;
+  glowM: THREE.Material;
+  glowDim: THREE.Material;
+  hatchM: THREE.Material;
+}
+
+/** The roof buildings from the deck plan (radar, nests, helipad, coils...), each standing on the hull's roof. */
+export function placeProps(o: BuildOpts, rig: ShipRig, k: number, roofHeight: (x: number, z: number) => number, M: PropMats): void {
+  const { hullM, darkM, trimM, plateM, glowM, glowDim, hatchM } = M;
+  const root = rig.root;
+  const add = (g: THREE.BufferGeometry, m: THREE.Material, cast = true): void => {
+    root.add(mesh(g, m, cast));
+  };
+  const lay = (m: THREE.Material, w: number, d: number, x: number, y: number, z: number): void => {
+    add(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2).translate(x, y + 0.04, z), m, false);
+  };
   for (const p of o.props) {
     if (p.key === 'armor') continue;
     const y = roofHeight(p.x, p.z);
@@ -1059,35 +1122,9 @@ export function buildShip(o: BuildOpts): ShipRig {
       lay(hatchM, w * 0.5, d * 0.5, p.x, y + 1.6 * k, p.z);
     }
   }
-
-  // ================================================================================== the guns
-  for (const m of o.mounts) rig.turrets.set(m.id, turret(root, m, roofHeight(m.x, m.z), k, { trimM, darkM, plateM, hullM, glowM, redM }, lines));
-
-  /** How high the roof stands at a local point: what a turret, a prop or a climbing creature stands on. */
-  function roofHeight(x: number, z: number): number {
-    const az = Math.abs(z), w = az / hw;
-    for (const b of barbettes) if (Math.abs(x - b.x) < b.hl && az < b.hz) return b.top;
-    if (inSuper(x, z)) return x > X(0.4) ? Y(1.1) : superTop;
-    if (x > X(0.31)) {
-      // The bow: the hood, a petal, the shoulder, or out on the front crawlers.
-      if (w < hoodW) return x > X(0.28) ? hoodH(x) + (az < ribW ? 0.5 * k : 0) : deckMid;
-      const pa = petalAt(x, w);
-      if (pa !== null) return pa;
-      const sh = shoulderAt(x, w);
-      if (sh !== null) return sh;
-      if (w >= 0.86 && x > X(0.082)) return trackTop + 1.6 * k;
-      if (w >= 0.66) return trackTop;
-      return x < X(0.26) ? deckMid : Y(0.3);
-    }
-    if (w >= 0.585) return sideTop(x);
-    if (x < g07.x1 && x > g07.x0 && az < g07.w) return g07.top;
-    return x < xMidAft ? deckRear : deckMid;
-  }
-  rig.roofAt = roofHeight;
-  return rig;
 }
 
-interface TurretMats {
+export interface TurretMats {
   trimM: THREE.Material;
   darkM: THREE.Material;
   plateM: THREE.Material;
@@ -1101,7 +1138,7 @@ interface TurretMats {
  * red ranging laser ahead of them, a hatch and a periscope on top, the rarity colour on its back. The main battery is
  * the sheet's great twin-barrelled turret.
  */
-function turret(root: THREE.Group, m: BuildOpts['mounts'][number], y: number, k: number, M: TurretMats, lines: THREE.LineBasicMaterial): TurretRig {
+export function turret(root: THREE.Group, m: BuildOpts['mounts'][number], y: number, k: number, M: TurretMats, lines: THREE.LineBasicMaterial): TurretRig {
   const s = (m.main ? 2.1 : m.size === 'heavy' ? 1.25 : m.size === 'medium' ? 0.95 : 0.72) * k;
   const base = new THREE.Group();
   base.position.set(m.x, y, m.z);
@@ -1168,7 +1205,7 @@ function turret(root: THREE.Group, m: BuildOpts['mounts'][number], y: number, k:
 }
 
 /** Merges a group's own meshes by material (its sub-groups left alone), outlining the solid ones. */
-function mergeChildren(g: THREE.Object3D, lines: THREE.LineBasicMaterial): void {
+export function mergeChildren(g: THREE.Object3D, lines: THREE.LineBasicMaterial): void {
   const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
   const drop: THREE.Mesh[] = [];
   for (const ch of g.children) {
@@ -1197,7 +1234,7 @@ function mergeChildren(g: THREE.Object3D, lines: THREE.LineBasicMaterial): void 
 /** Merges a group's static meshes by material (fewer draw calls), animated parts left as they are, and outlines the
  *  merged hull: a dark line along every crease, the way the sheet's pixel art draws each plate. */
 export function compact(rig: ShipRig): void {
-  const keep = new Set<THREE.Object3D>([...rig.wheels.flat(), ...rig.fans, ...rig.flames, ...[...rig.turrets.values()].map((t) => t.yaw.parent!), ...(rig.radar ? [rig.radar] : [])]);
+  const keep = new Set<THREE.Object3D>([...rig.wheels.flat(), ...rig.fans, ...rig.flames, ...(rig.ramp ? [rig.ramp] : []), ...[...rig.turrets.values()].map((t) => t.yaw.parent!), ...(rig.radar ? [rig.radar] : [])]);
   const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
   const drop: THREE.Mesh[] = [];
   for (const ch of rig.root.children) {

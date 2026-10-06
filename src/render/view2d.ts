@@ -1,5 +1,6 @@
 import { COMPOUND, FORWARD } from '../shared/compound';
 import { drawTitan3D, ship3DActive, SHIP_LEAN, shipRoofAt } from './ship3d';
+import { nozzleW } from './ship3d/model';
 import { beginCreatures3D, drawCreature3D } from './creature3d';
 import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
@@ -893,7 +894,7 @@ export class View2D {
       let w: { x: number; y: number };
       if (lift) {
         const i = Math.floor(Math.random() * 4);
-        w = t.toWorld(-L / 2 - 2.5, (i % 2 ? 1 : -1) * W * 0.15);
+        w = t.toWorld(-L / 2 - 2.5, (i % 2 ? 1 : -1) * W * nozzleW(t.frame));
         w.y -= lift * t.deckY(0) * (i < 2 ? 0.38 : 0.56);
       } else {
         const spots = stackSpots(L, W, engineDef(t.engineKey).flame.jets);

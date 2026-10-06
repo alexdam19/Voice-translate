@@ -1259,6 +1259,11 @@ html.touch .joy { display: block; }
 .yard-card .yc-t img { width: 20px; height: 20px; vertical-align: -4px; }
 .yard-card .yc-d { font-size: 12px; color: #b0bec5; }
 .yard-card .yc-req { font-size: 12px; color: #cfd8dc; }
+.yard-grid.hulls { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+.yard-card.hull .yc-t small { font-size: 10px; color: #80deea; margin-left: 6px; }
+.yard-card .yc-img { width: 100%; aspect-ratio: 420 / 220; object-fit: contain; background: radial-gradient(ellipse at 50% 60%, #8a7a62 0%, #4d4436 70%, #2a251e 100%); border: 1px solid #1c3540; }
+.yard-card .yc-stats { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: #90a4ae; }
+.yard-card .yc-stats b { color: #e0f7fa; }
 .big.awaken { margin-top: 14px; font-size: 18px; padding: 12px 20px; background: #006064; border-color: #18ffff; }
 .trade-grid { display: flex; flex-direction: column; gap: 6px; }
 .trade-row { display: flex; gap: 10px; align-items: center; background: rgba(10, 16, 22, 0.8); padding: 6px 10px; border: 1px solid #37474f; }

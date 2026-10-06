@@ -6,7 +6,8 @@ import { toroidOut } from '../../game/systems/titan';
 import { WEAPONS } from '../../shared/weapons';
 import type { HullLight } from '../px/titan2d';
 import { turretFamily } from '../px/turretArt';
-import { buildShip, compact, LOOKS, type ShipRig } from './model';
+import { buildCrawler } from './crawler';
+import { buildShip, compact, LOOKS, nozzleW, type BuildOpts, type ShipRig } from './model';
 
 /**
  * Draws the Titans as solid 3D models into the overhead view. One small WebGL renderer, off screen, renders each hull
@@ -25,6 +26,8 @@ interface Live {
   key: string;
   t: number;
   tread: [number, number];
+  /** The tallest point of the model (its mast), so the lens leaves room for it. */
+  top: number;
 }
 
 let renderer: THREE.WebGLRenderer | null = null;
@@ -77,15 +80,15 @@ function init(): boolean {
 }
 
 function keyOf(t: Tank): string {
-  return `${t.klass}|${t.stats.cc}|${t.dead ? 1 : 0}|${t.kind}|${t.version}|${t.stats.length}`;
+  return `${t.klass}|${t.frame}|${t.stats.cc}|${t.dead ? 1 : 0}|${t.kind}|${t.version}|${t.stats.length}`;
 }
 
 /** What the model needs to know about a hull: its size and class, its guns and what stands on its roof. */
-export function shipOpts(t: Tank): Parameters<typeof buildShip>[0] {
+export function shipOpts(t: Tank): BuildOpts {
   const L = t.stats.length, W = t.stats.width, H = t.deckY(0);
   const look = t.dead ? LOOKS.wreck : t.kind === 'rival' ? LOOKS.rival : LOOKS[t.klass] ?? LOOKS.juggernaut;
-  const mounts: Parameters<typeof buildShip>[0]['mounts'] = [];
-  const props: Parameters<typeof buildShip>[0]['props'] = [];
+  const mounts: BuildOpts['mounts'] = [];
+  const props: BuildOpts['props'] = [];
   for (const m of t.modules) {
     if (m.deck !== 0) continue;
     const d = MODULES[m.key];
@@ -96,11 +99,16 @@ export function shipOpts(t: Tank): Parameters<typeof buildShip>[0] {
     } else if (!d.hardpoint) props.push({ key: m.key, x: l.lx, z: l.lz, w: d.h * t.cell, d: d.w * t.cell });
   }
   const num = t.kind === 'main' ? '07' : String(10 + (t.id % 89)).padStart(2, '0');
-  return { L, W, H, klass: t.klass, look, cc: t.stats.cc, number: num, mounts, props };
+  return { L, W, H, klass: t.klass, look, cc: t.stats.cc, number: num, mounts, props, frame: t.kind === 'main' || t.kind === 'rival' ? t.frame : 'shark' };
+}
+
+/** The model for a set of options: the Shark, or one of the crawler frames. */
+export function buildHull(o: BuildOpts): ShipRig {
+  return o.frame && o.frame !== 'shark' ? buildCrawler(o) : buildShip(o);
 }
 
 function build(t: Tank): ShipRig {
-  const rig = buildShip(shipOpts(t));
+  const rig = buildHull(shipOpts(t));
   compact(rig);
   return rig;
 }
@@ -112,7 +120,8 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
   const key = keyOf(t);
   if (!st || st.key !== key) {
     if (st) scene.remove(st.rig.root);
-    st = { rig: build(t), key, t: time, tread: [0, 0] };
+    const rig = build(t);
+    st = { rig, key, t: time, tread: [0, 0], top: Math.max(TOP, new THREE.Box3().setFromObject(rig.root).max.y + 2) };
     live.set(t, st);
   }
   if (live.size > 12) for (const k of live.keys()) if (k !== t && k.dead) live.delete(k);
@@ -164,6 +173,12 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
     f.scale.set(1, (0.4 + push * 1.6) * (od ? 1.6 : 1) * flick, 1);
   }
   if (rig.radar) rig.radar.rotation.y += dt * 1.4;
+  if (rig.ramp) {
+    // The vehicle ramp swings down when she stops, and up again before she moves off.
+    const want = !t.dead && Math.abs(t.speed) < 0.8 && Math.abs(t.throttle) < 0.05 ? rig.ramp.userData.open : rig.ramp.userData.shut;
+    const r = rig.ramp.rotation;
+    r.z += Math.max(-dt * 0.9, Math.min(dt * 0.9, want - r.z));
+  }
   const pulse = 0.8 + 0.2 * Math.sin(time * 2.4);
   rig.glow[0].color.set(LOOKS[t.dead ? 'wreck' : t.kind === 'rival' ? 'rival' : t.klass]?.glow ?? '#58c8ff').multiplyScalar(t.dead ? 0 : pulse);
   const flash = t.dead ? 0 : Math.min(0.55, t.hitFlash * 3);
@@ -177,11 +192,11 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
     const l = t.moduleLocal(m);
     reach = Math.max(reach, Math.hypot(l.lx, l.lz) + t.muzzleReach(m));
   }
-  const R = reach + 6;
-  const cw = Math.min(2400, Math.ceil(2 * R * ppm)), ch = Math.min(2400, Math.ceil((2 * R + SHIP_LEAN * TOP) * ppm));
+  const R = reach + 6, top = st.top;
+  const cw = Math.min(2400, Math.ceil(2 * R * ppm)), ch = Math.min(2400, Math.ceil((2 * R + SHIP_LEAN * top) * ppm));
   const size = renderer.getSize(new THREE.Vector2());
   if (size.x !== cw || size.y !== ch) renderer.setSize(cw, ch, false);
-  const hh = R + (SHIP_LEAN * TOP) / 2, cy = -(SHIP_LEAN * TOP) / 2, D = R * SHIP_LEAN + TOP + 30;
+  const hh = R + (SHIP_LEAN * top) / 2, cy = -(SHIP_LEAN * top) / 2, D = R * SHIP_LEAN + top + 30;
   const pm = new THREE.Matrix4().set(
     1 / R, 0, 0, 0,
     0, SHIP_LEAN / hh, -1 / hh, cy / hh,
@@ -207,7 +222,7 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
   c.save();
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.imageSmoothingEnabled = true;
-  c.drawImage(renderer.domElement, 0, 0, cw, ch, Math.round(sx - R * ppm), Math.round(sy - (R + SHIP_LEAN * TOP) * ppm), cw, ch);
+  c.drawImage(renderer.domElement, 0, 0, cw, ch, Math.round(sx - R * ppm), Math.round(sy - (R + SHIP_LEAN * top) * ppm), cw, ch);
   c.restore();
   scene.remove(rig.root);
 
@@ -217,7 +232,7 @@ export function drawTitan3D(c: CanvasRenderingContext2D, t: Tank, g: Game | null
   lights.push({ x: hl + 12, y: -0.12 * W, r: 13, color: '#fff3c4', k: 0.12 }, { x: hl + 12, y: 0.12 * W, r: 13, color: '#fff3c4', k: 0.12 });
   for (const sd of [-1, 1]) {
     // The exhaust nozzles in the stern plate, and the light bleeding from the bow seams.
-    lights.push({ x: -hl - 2, y: sd * 0.15 * W, r: 6 + push * 6, color: LOOKS[t.klass]?.rear ?? '#ff9a2a', k: 0.18 + push * 0.25, z: 9 });
+    lights.push({ x: -hl - 2, y: sd * nozzleW(t.frame) * W, r: 6 + push * 6, color: LOOKS[t.klass]?.rear ?? '#ff9a2a', k: 0.18 + push * 0.25, z: 9 });
     lights.push({ x: 0.4 * L, y: sd * 0.12 * W, r: 9, color: LOOKS[t.kind === 'rival' ? 'rival' : t.klass]?.glow ?? '#58c8ff', k: 0.1 * pulse, z: 14 });
   }
   if (own && g) {

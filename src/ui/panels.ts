@@ -84,8 +84,8 @@ export class Panels {
         tabs: [['stations', 'Stations'], ['roster', 'Officers'], ['recruit', 'Recruit'], ['outrider', 'Outrider']], render: renderCrew, wide: true, cls: 'crew',
       },
       shipyard: {
-        title: 'MOTHERSHIP SHIPYARD', sub: 'Install the parts from the strongholds, rebuild your fortress, trade and hire.',
-        tabs: [['parts', 'Parts'], ['refit', 'Rebuild'], ['trade', 'Trade'], ['hire', 'Hire']], render: renderShipyard, wide: true, cls: 'shipyard',
+        title: 'MOTHERSHIP SHIPYARD', sub: 'Buy bigger hulls, install the parts from the strongholds, rebuild your fortress, trade and hire.',
+        tabs: [['hulls', 'Hulls'], ['parts', 'Parts'], ['refit', 'Rebuild'], ['trade', 'Trade'], ['hire', 'Hire']], render: renderShipyard, wide: true, cls: 'shipyard',
       },
       bridge: {
         title: 'SHIP VITALS', sub: 'Every number the Titan has, live (the game keeps running). SEND TEAM puts six people on a problem; STABILIZE sends teams to the worst of it.',

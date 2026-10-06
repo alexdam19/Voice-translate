@@ -25,6 +25,7 @@ import { builderCount, levelBonus, levelRoad, MAX_COMMANDER_LEVEL, relicSlots, t
 import type { SquadState, SquadType } from './squads';
 import { crewFx, emptyCrewFx, type CrewFx } from './tech';
 import type { HullClass } from './classes';
+import type { FrameKey } from './frames';
 import { newCampaign, type Campaign } from './campaign';
 import { autoAssign, noStationMods } from './stations';
 import { newCrewLife, type CrewLife } from './systems/crewlife';
@@ -264,6 +265,8 @@ export class Game {
   comms: Comms = newComms();
   /** The story: beats played, the one on screen, the journal. */
   story: StoryState = newStory();
+  /** Hulls bought at a base's yard (the Shark is everyone's first; see frames.ts). */
+  frames: FrameKey[] = ['shark'];
   /** Builder robots aboard (each an extra builder), and the one the workshop is making (see systems/robots). */
   robots = 0;
   /** Killstreak: points, banked rewards, the one being flown (see systems/streaks). */
