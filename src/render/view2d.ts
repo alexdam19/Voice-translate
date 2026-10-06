@@ -7,7 +7,7 @@ import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompo
 import { CHEST_INFO } from '../game/chests';
 import { MODULES, TITAN_DECK_INFO, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
 import type { Enemy } from '../game/entities';
-import { ENEMIES } from '../game/enemyDefs';
+import { ENEMIES, type EnemyDef } from '../game/enemyDefs';
 import type { FxEvent, Game } from '../game/game';
 import { SITE_RADIUS } from '../game/systems/world';
 import { STORMS } from '../game/systems/weather';
@@ -39,6 +39,13 @@ import { foeFor, foePose, type Foe } from './px/foes';
 import { quantizeSize } from './px/creaturesHD';
 import { speciesFor } from './px/monsters';
 import type { Aboard } from '../game/aboard';
+
+/** How the escorts are drawn: a model from the creature pipeline in the Hangar's colours, at a real size (m). */
+const ESCORT_LOOK: Record<'mantis' | 'raptor' | 'wasp', { kind: string; size: number; min: number; def: EnemyDef }> = {
+  mantis: { kind: 'escort_mantis', size: 9, min: 44, def: { name: 'Mantis Walker Mech', color: '#d8dee6', faction: 'cyborg' } as unknown as EnemyDef },
+  raptor: { kind: 'escort_raptor', size: 10, min: 42, def: { name: 'Raptor Hover Tank', color: '#c8d0da', faction: 'cyborg' } as unknown as EnemyDef },
+  wasp: { kind: 'escort_wasp', size: 8, min: 36, def: { name: 'Wasp Gunship', color: '#cfd6de', faction: 'cyborg' } as unknown as EnemyDef },
+};
 
 /**
  * The world from straight above, as pixel art: the Crater's ground baked a metre to the pixel, your Titan and
@@ -1142,6 +1149,19 @@ export class View2D {
    * A ring on the ground under everything hostile, so a creature reads against any ground and at any zoom: red, a
    * dark edge outside it, magenta for elites and bosses.
    */
+  /** A cyan ring under one of your escorts. */
+  private friendRing(x: number, y: number, rx: number, ry: number): void {
+    const c = this.ctx;
+    c.beginPath();
+    c.ellipse(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.max(4, rx) + 1, Math.max(2.5, ry) + 1, 0, 0, Math.PI * 2);
+    c.lineWidth = 3;
+    c.strokeStyle = 'rgba(0,10,20,0.45)';
+    c.stroke();
+    c.lineWidth = 1.4;
+    c.strokeStyle = 'rgba(64,224,255,0.95)';
+    c.stroke();
+  }
+
   private hostileRing(x: number, y: number, rx: number, ry: number, boss?: boolean, elite?: boolean): void {
     const c = this.ctx;
     rx = Math.max(4, rx);
@@ -1225,9 +1245,26 @@ export class View2D {
       if (flyer !== air || !this.near(a.x, a.y, 10)) continue;
       const real = a.kind === 'dragon' ? 14 : a.kind === 'mech' ? 5 : a.kind === 'minitank' ? 6 : a.kind === 'buggy' ? 4 : a.kind === 'jet' ? 8 : a.kind === 'drone' ? 2 : a.kind === 'mine' ? 1 : 1.2;
       const size = Math.max(a.kind === 'mine' ? 6 : 10, real * ppm * 1.4);
+      // Escorts bought with war XP: the Hangar's machines in its white and cyan, a friendly ring under each.
+      if (a.escort && a.escort !== 'warden') {
+        const m = ESCORT_LOOK[a.escort];
+        const es = Math.max(m.min, m.size * ppm * 1.6);
+        const heading = (a.kind === 'mech' || a.kind === 'drone' ? a.rot : this.headingOf(a.id + 1e9, a.x, a.y, a.rot)) + this.th;
+        const sx = this.bx(a.x, a.y), sy = this.by(a.x, a.y);
+        const lift = a.kind === 'drone' ? Math.max(4, visZ(a.z) * ppm * ZK * 1.3) : 0;
+        if (!flyer) this.friendRing(sx, sy, es * 0.5, es * 0.36);
+        else {
+          c.fillStyle = 'rgba(0,0,0,0.25)';
+          c.beginPath();
+          c.ellipse(sx + es * 0.3, sy + es * 0.3, es * 0.4, es * 0.22, 0, 0, Math.PI * 2);
+          c.fill();
+        }
+        const fake = { kind: m.kind, atkT: a.cd > 0.8 ? 0.2 : 9, anim: a.anim * 0.25, hitFlash: 0 } as unknown as Enemy;
+        if (drawCreature3D(c, fake, m.def, sx, sy - lift, es, heading, false)) continue;
+      }
       if (a.kind === 'marine' || a.kind === 'heavy') {
         // Soldiers are painted figures, upright, facing the way they're going (rifles up when they have a target).
-        const S = Math.max(24, Math.min(112, Math.round((ppm * 1.8 * 1.6) / 0.86 / 4) * 4));
+        const S = Math.max(a.escort ? 36 : 24, Math.min(112, Math.round((ppm * 1.8 * (a.escort ? 2.4 : 1.6)) / 0.86 / 4) * 4));
         const moving = this.headingOf(a.id + 1e9, a.x, a.y, a.rot);
         const pose = a.targetId > 0 && a.cd < 0.6 ? 'aim' : 'walk';
         const img = hero({ role: a.kind === 'heavy' ? 'heavy' : a.id % 3 === 0 ? 'rifleman' : 'marine', seed: a.id }, pose, Math.floor(a.anim * 7), S, { heading: moving + this.th });

@@ -111,6 +111,7 @@ const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls
   { key: 'blueprint', label: 'BLUEPRINT', sub: 'N · analysis', hub: 'ship' },
   { key: 'camp', label: 'CAMP', sub: 'T · deploy here', hub: 'ship' },
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
+  { key: 'reinforce', label: 'XP 0', sub: 'X · reinforcements', cls: 'big xp' },
   { key: 'map', label: 'MAP', sub: 'M · the Crater', hub: 'world' },
   { key: 'story', label: 'STORY', sub: 'the journal', hub: 'world' },
   { key: 'bounty', label: 'BOUNTY', sub: 'Mothership parts', hub: 'world' },
@@ -699,6 +700,10 @@ export class Hud {
       b.classList.toggle('on', (m.key === 'base' && village) || (m.key === 'camp' && g.deploy.state !== 'mobile'));
       if (m.key === 'shipyard') b.style.display = g.mode === 'world' && isDocked(g) ? '' : 'none';
       if (m.key === 'bridge' || m.key === 'cabin' || m.key === 'inside' || m.key === 'hangar' || m.key === 'bounty') b.style.display = g.mode === 'world' && g.player.titan ? '' : 'none';
+      if (m.key === 'reinforce') {
+        b.style.display = g.mode === 'world' ? '' : 'none';
+        setHTML(b.querySelector('b')!, `XP ${Math.floor(g.warXp).toLocaleString()}`);
+      }
       if (m.key === 'camp') {
         b.style.display = g.mode === 'world' ? '' : 'none';
         setHTML(b.querySelector('b')!, g.deploy.state === 'up' ? 'PACK UP' : g.deploy.state === 'deploying' ? 'DEPLOYING' : g.deploy.state === 'packing' ? 'PACKING' : 'CAMP');

@@ -94,8 +94,27 @@ function followSpot(g: Game, a: Ally): { x: number; y: number } {
   return { x: p.x + Math.cos(ang) * r, y: p.y + Math.sin(ang) * r };
 }
 
+/** An escort's place: strung along the Titan's flanks, both sides, out past the guns; gunships over the bow. */
+function escortSpot(g: Game, a: Ally): { x: number; y: number } {
+  const p = g.player;
+  const k = a.slot ?? 0;
+  const L = p.stats.length, W = p.stats.width;
+  if (a.kind === 'drone') {
+    const ang = a.anim * 0.08 + k;
+    return p.toWorld(L * 0.35 + Math.cos(ang) * 10, Math.sin(ang) * W * 0.4);
+  }
+  const side = k % 2 ? 1 : -1, row = Math.floor(k / 2);
+  const along = (0.3 - (row % 4) * 0.2) * L;
+  const out = W / 2 + 12 + Math.floor(row / 4) * 8 + (a.kind === 'mech' ? 6 : 0);
+  return p.toWorld(along, side * out);
+}
+
 function anchorOf(g: Game, a: Ally): Anchor {
   const p = g.player;
+  if (a.escort) {
+    const f = escortSpot(g, a);
+    return { x: f.x, y: f.y, idle: 2, engage: p.stats.length / 2 + 34, busy: false };
+  }
   if (a.squad) {
     const sq = g.squads[a.squad as SquadType];
     if (sq?.order === 'guard') {
@@ -223,9 +242,10 @@ function updateMarine(g: Game, a: Ally, dt: number, an: Anchor): void {
       if (!best) a.face = dx >= 0 ? 1 : -1;
     }
   }
-  // Squad units that fall far behind the fortress catch up quickly.
-  const far = a.squad && Math.hypot(an.x - a.x, an.y - a.y) > 30 ? 1.8 : 1;
-  const sp = speed * far;
+  // Squad units that fall far behind the fortress catch up quickly; escorts keep pace with her at any speed.
+  const gap = Math.hypot(an.x - a.x, an.y - a.y);
+  const far = a.squad && gap > 30 ? 1.8 : 1;
+  const sp = a.escort && gap > an.idle + 3 ? Math.max(speed * far, Math.abs(g.player.speed) * 1.25 + 6) : speed * far;
   if (buggy && (mx || my)) a.rot = turnToward(a.rot, Math.atan2(my, mx), 6 * dt);
   const r = moveSmall(g, a.x, a.y, buggy ? 0.5 : 0.3, mx * sp * dt, my * sp * dt, false);
   if (r.hit && (far > 1 || a.squad)) {
@@ -300,7 +320,7 @@ function updateDrone(g: Game, a: Ally, dt: number, an: Anchor): void {
   }
   const dx = gx - a.x, dy = gy - a.y;
   const d = Math.hypot(dx, dy) || 1;
-  const sp = Math.min(d, (d > 20 ? 18 : 9) * dt);
+  const sp = Math.min(d, (a.escort ? Math.max(d > 20 ? 18 : 9, Math.abs(p.speed) * 1.3 + 6) : d > 20 ? 18 : 9) * dt);
   a.x += (dx / d) * sp;
   a.y += (dy / d) * sp;
   a.face = dx >= 0 ? 1 : -1;
@@ -342,8 +362,15 @@ function updateMech(g: Game, a: Ally, dt: number, an: Anchor): void {
       a.rot = turnToward(a.rot, Math.atan2(dy, dx), 3 * dt);
     }
   }
-  const far = a.squad && Math.hypot(an.x - a.x, an.y - a.y) > 30 ? 2 : 1;
-  const r = moveSmall(g, a.x, a.y, 1, mx * 3.6 * far * dt, my * 3.6 * far * dt, false);
+  const gap = Math.hypot(an.x - a.x, an.y - a.y);
+  const far = a.squad && gap > 30 ? 2 : 1;
+  const ms = a.escort && gap > an.idle + 3 ? Math.max(3.6 * far, Math.abs(g.player.speed) * 1.25 + 6) : 3.6 * far;
+  const r = moveSmall(g, a.x, a.y, 1, mx * ms * dt, my * ms * dt, false);
+  if (a.escort && r.hit) {
+    // A walker strides over the rubble.
+    r.x = a.x + mx * ms * dt;
+    r.y = a.y + my * ms * dt;
+  }
   if (mx || my) {
     if (Math.floor(a.anim * 0.5) !== Math.floor((a.anim - dt * 6) * 0.5)) g.fx.push({ t: 'dust', x: a.x, y: a.y, color: '#a1887f' });
   }

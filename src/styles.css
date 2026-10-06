@@ -1259,6 +1259,12 @@ html.touch .joy { display: block; }
 .yard-card .yc-t img { width: 20px; height: 20px; vertical-align: -4px; }
 .yard-card .yc-d { font-size: 12px; color: #b0bec5; }
 .yard-card .yc-req { font-size: 12px; color: #cfd8dc; }
+.menu-btn.xp b { color: #d1b3ff; }
+.yard-card.escort { border-color: #7c4dff; }
+.escort-list { margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+.escort-list .eu { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #cfd8dc; }
+.escort-list .eu i { flex: 1; height: 6px; background: #1c2630; border: 1px solid #37474f; }
+.escort-list .eu i b { display: block; height: 100%; background: #40e0ff; }
 .yard-grid.hulls { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 .yard-card.hull .yc-t small { font-size: 10px; color: #80deea; margin-left: 6px; }
 .yard-card .yc-img { width: 100%; aspect-ratio: 420 / 220; object-fit: contain; background: radial-gradient(ellipse at 50% 60%, #8a7a62 0%, #4d4436 70%, #2a251e 100%); border: 1px solid #1c3540; }

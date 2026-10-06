@@ -266,6 +266,8 @@ export class Game {
   comms: Comms = newComms();
   /** The story: beats played, the one on screen, the journal. */
   story: StoryState = newStory();
+  /** War XP: earned by every kill, spent on reinforcements (see systems/reinforce). */
+  warXp = 0;
   /** Hulls bought at a base's yard (the Shark is everyone's first; see frames.ts). */
   frames: FrameKey[] = ['shark'];
   /** Builder robots aboard (each an extra builder), and the one the workshop is making (see systems/robots). */

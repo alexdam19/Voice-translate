@@ -20,6 +20,7 @@ import { renderShipyard } from './shipyardPanel';
 import { renderBridge } from './bridgePanel';
 import { renderHangar } from './hangarPanel';
 import { renderBounty } from './bountyPanel';
+import { renderReinforce } from './reinforcePanel';
 
 const SWITCH: [string, string, string][] = [
   ['cards', 'CARDS (C)', ''], ['arsenal', 'ARSENAL (V)', 'arsenal'], ['crew', 'CREW (K)', 'crew'], ['progress', 'LEVEL ROAD (L)', ''],
@@ -82,6 +83,10 @@ export class Panels {
       crew: {
         title: 'CREW', sub: 'Stations: everyone aboard and where they work. Officers: your named crew with bonuses and perks (max 15).',
         tabs: [['stations', 'Stations'], ['roster', 'Officers'], ['recruit', 'Recruit'], ['outrider', 'Outrider']], render: renderCrew, wide: true, cls: 'crew',
+      },
+      reinforce: {
+        title: 'REINFORCEMENTS', sub: 'Spend the war XP your kills earn on escorts from the Hangar that stay at your side. The game keeps running.',
+        render: renderReinforce, wide: true, cls: 'reinforce', live: true,
       },
       shipyard: {
         title: 'MOTHERSHIP SHIPYARD', sub: 'Buy bigger hulls, install the parts from the strongholds, rebuild your fortress, trade and hire.',

@@ -1,3 +1,4 @@
+import type { EscortKind } from './systems/reinforce';
 import type { Stack } from '../shared/inventory';
 import type { Rarity } from '../shared/rarity';
 import type { PoolKind, ProjKind, Special, WeaponItem } from '../shared/weapons';
@@ -218,6 +219,8 @@ export interface Ally {
   squad?: string;
   /** Formation slot within its squad. */
   slot?: number;
+  /** Bought with war XP: an escort that keeps pace with the Titan for good (see systems/reinforce). */
+  escort?: EscortKind;
 }
 
 export type ZoneKind = 'fire' | 'well' | 'acid' | 'chrono' | 'rad' | 'frost' | 'smoke';

@@ -16,6 +16,7 @@ import { bumpUid, peekUid } from './templates';
 import { applyOutriderCrew, launchOutrider } from './systems/outrider';
 import { newCampaign, type Campaign } from './campaign';
 import { FRAMES, type FrameKey } from './frames';
+import { escortLoad, escortSave } from './systems/reinforce';
 import { newStory, type StoryState } from './story';
 import { newCrewLife, type CrewLife } from './systems/crewlife';
 import { loadTitanState, type TitanState } from './systems/titan';
@@ -79,6 +80,9 @@ export interface SaveData {
   cardPicks?: number;
   /** Hulls bought (the Shark is implied). */
   frames?: string[];
+  /** War XP and the escorts at the hull. */
+  warXp?: number;
+  escorts?: string[];
   /* v11: the Mega Hangar airlift */
   airlift?: boolean;
   flights?: Flight[];
@@ -90,7 +94,7 @@ export function serialize(g: Game): SaveData {
   for (const [k, s] of Object.entries(g.squads)) if (s) squads[k as SquadType] = { order: s.order, gx: s.gx, gy: s.gy };
   const tr = g.tracked;
   return {
-    v: 11, reserves: g.reserves, autoRepair: g.autoRepair, robots: g.robots, streakReady: g.streak.ready, cardPicks: g.cardPicks, frames: g.frames.length > 1 ? g.frames : undefined, airlift: g.airlift.contact, flights: g.flights, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
+    v: 11, reserves: g.reserves, autoRepair: g.autoRepair, robots: g.robots, streakReady: g.streak.ready, cardPicks: g.cardPicks, frames: g.frames.length > 1 ? g.frames : undefined, warXp: g.warXp ? Math.floor(g.warXp) : undefined, escorts: escortSave(g), airlift: g.airlift.contact, flights: g.flights, forgeJob: g.forgeJob, tankControls: g.tankControls, seed: g.seed, time: g.time, tank: g.player.serialize(), crew: g.crew, recruits: g.recruits,
     armory: g.armory, tech: [...g.tech], stats: g.stats, explored: '', fog: g.fog.serialize(),
     ...featureState(g),
     outpostsDown: [...g.outpostsDown], outriderLevel: g.outriderLevel, outrider: g.outrider && !g.outrider.dead ? g.outrider.serialize() : null,
@@ -253,6 +257,8 @@ export function deserialize(d: SaveData): Game {
   g.cardPicks = d.cardPicks ?? Math.max(0, Object.keys(g.cards).length - 8);
   g.frames = ['shark', ...(d.frames ?? []).filter((k): k is FrameKey => k in FRAMES && k !== 'shark')];
   if (!g.frames.includes(g.player.frame)) g.frames.push(g.player.frame);
+  g.warXp = Math.max(0, d.warXp ?? 0);
+  escortLoad(g, d.escorts);
   g.streak.ready = (d.streakReady ?? []).filter((k): k is StreakKind => k in STREAKS);
   g.airlift = { contact: !!d.airlift, calling: 0 };
   g.flights = Array.isArray(d.flights) ? d.flights.filter((f) => f && Array.isArray(f.cargo)) : [];

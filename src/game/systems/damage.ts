@@ -1,6 +1,7 @@
 import { troopCasualty } from './troops';
 import { streakKill } from './streaks';
 import { gunnerHit } from './gunner';
+import { warXpFor } from './reinforce';
 import { titanHit, type ArmorZone } from './titan';
 import { onBossKilled } from '../campaign';
 import { colossusShielded, onColossusPart } from './colossus';
@@ -163,6 +164,7 @@ export function killEnemy(g: Game, e: Enemy): void {
     if (Math.random() < 0.25) g.hooks.sound('splat', e.x, e.y, 0.5);
     if (Math.random() < 0.1) g.dropLoot(e.x, e.y, 'swarm', 1);
     g.gainXp(e.xp * (0.8 + 0.2 * threat));
+    warXpFor(g, e);
     return;
   }
   g.fx.push({ t: 'boom', x: e.x, y: e.y, r: e.r * 1.6, color: e.titan ? '#ff9100' : '#ffcc80', big: e.titan });
@@ -192,6 +194,8 @@ export function killEnemy(g: Game, e: Enemy): void {
     }
   }
   g.gainXp(e.xp * (0.8 + 0.2 * threat));
+  warXpFor(g, e);
+  if (!e.horde && g.isVisible(e.x, e.y)) g.float(e.x, e.y - e.r - 1, `+${Math.round(e.xp * (0.8 + 0.2 * threat))} XP`, '#b388ff');
 }
 
 /** Damage to any tank. Shields and armor soak first. Player tanks can injure crew on big hits. */
