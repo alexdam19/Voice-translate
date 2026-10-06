@@ -133,7 +133,7 @@ export function updateSites(g: Game, dt: number): void {
   const waveAt = [1, 4.5, 8];
   if (g.site.wave < waveAt.length && g.site.t >= waveAt[g.site.wave]) {
     g.site.wave++;
-    const n = 2 + Math.floor(s.threat * 0.8);
+    const n = 1 + Math.floor(s.threat * 0.5);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = 16 + Math.random() * 5;

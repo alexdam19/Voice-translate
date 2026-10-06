@@ -2,6 +2,7 @@ import { COMPOUND, FORWARD } from '../shared/compound';
 import { drawTitan3D, ship3DActive, SHIP_LEAN, shipRoofAt } from './ship3d';
 import { nozzleW } from './ship3d/model';
 import { beginCreatures3D, drawCreature3D } from './creature3d';
+import { drawSwarm, swarmGlow, swarmShape } from './px/swarm';
 import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
 import { MODULES, TITAN_DECK_INFO, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
@@ -1029,12 +1030,20 @@ export class View2D {
       }
       const def = ENEMIES[e.kind];
       const arch = archFor(e.kind, def?.arch);
-      // Drawn a little larger than life, and never too small to read at full resolution.
-      const real = e.r * 2 * ppm * (arch === 'worm' || arch === 'dragon' ? 1.7 : 1.5);
-      const min = e.boss ? 48 : e.titan ? 34 : e.elite ? 22 : e.horde ? 13 : 16;
+      // Drawn larger than life (the swarm's fodder small and quick), never too small to read.
+      const fodder = !e.elite && !e.titan && !e.boss && (def?.loot === 'swarm' || e.horde);
+      const real = e.r * 2 * ppm * (fodder ? 1.6 : arch === 'worm' || arch === 'dragon' ? 2 : 1.8);
+      const min = e.boss ? 64 : e.titan ? 48 : e.elite ? 40 : fodder ? 8 : 30;
       const size = Math.max(min, real);
       const toP = Math.atan2(p.y - e.y, p.x - e.x);
       const a = this.headingOf(e.id, e.x, e.y, toP) + this.th;
+      // The swarm: a crisp little silhouette each, hundreds of them cheaply.
+      if (fodder && !e.flying && size < 30) {
+        let lift = visZ(e.z) * ppm * ZK;
+        if (e.latch && e.latch.tank === p.id) lift += shipRoofAt(p, e.latch.lx, e.latch.lz) * SHIP_LEAN * ppm;
+        drawSwarm(c, swarmShape(e.kind, def?.arch), def?.color ?? '#9e9e9e', swarmGlow(def?.faction), this.bx(e.x, e.y), this.by(e.x, e.y) - lift, size, a, (e.anim ?? 0) * 1.6, e.hitFlash > 0);
+        continue;
+      }
       // A 3D model where there is one: baked sheets for the crowds, live for giants and bosses.
       {
         const atkO = (e.atkT ?? 9) < 0.5 ? Math.sin((Math.PI * (e.atkT ?? 9)) / 0.5) * size * 0.18 : 0;

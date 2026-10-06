@@ -19,7 +19,7 @@ import type { DriveKey } from '../shared/types';
 import { BASE_MAX_ENERGY, CARDS, deckSlots, ENERGY_REGEN, HAND_SIZE, levelPower, MAX_CARD_LEVEL, STARTER_DECK, type OwnedCard, type PackKind } from './cards';
 import { computeCrewBonus, giveXp, makeRecruit, signatureCard, type CrewMember } from './crew';
 import { eid, type Ally, type ChestKind, type Enemy, type FloatText, type Pickup, type Projectile, type Reward, type Telegraph, type Zone } from './entities';
-import { ENEMIES } from './enemyDefs';
+import { ENEMIES, enemyScale } from './enemyDefs';
 import { MODULES } from './defs';
 import { EnemyGrid } from './systems/grid';
 import { builderCount, levelBonus, levelRoad, MAX_COMMANDER_LEVEL, relicSlots, techsForLevel, xpToNext, type LevelReward } from './progress';
@@ -822,13 +822,15 @@ export class Game {
   spawnEnemy(kind: string, x: number, y: number, threat: number, elite = false): Enemy {
     const d = ENEMIES[kind];
     const esc = this.mode === 'world' ? this.escalation() : 1;
-    const hpScale = (0.6 + 0.4 * threat) * (elite ? 2.2 : 1) * esc;
-    const dmgScale = (0.8 + 0.2 * threat) * (elite ? 1.35 : 1) * (1 + (esc - 1) * 0.6);
+    // Fewer, bigger, tougher enemies; the swarm's fodder small and quick (see enemyScale).
+    const k = enemyScale(d);
+    const hpScale = (0.6 + 0.4 * threat) * (elite ? 2.2 : 1) * esc * k.hp;
+    const dmgScale = (0.8 + 0.2 * threat) * (elite ? 1.35 : 1) * (1 + (esc - 1) * 0.6) * k.dmg;
     const e: Enemy = {
-      id: eid(), kind: d.kind, x, y, vx: 0, vy: 0, face: 1, hp: d.hp * hpScale, maxHp: d.hp * hpScale, r: d.r * (elite ? 1.2 : 1),
-      speed: d.speed * (elite ? 1.1 : 1), dmg: d.dmg * dmgScale, range: d.range, atkCd: 1 + Math.random(), atkRate: d.rate, threat, elite,
+      id: eid(), kind: d.kind, x, y, vx: 0, vy: 0, face: 1, hp: d.hp * hpScale, maxHp: d.hp * hpScale, r: d.r * (elite ? 1.2 : 1) * k.r,
+      speed: d.speed * (elite ? 1.1 : 1) * k.speed, dmg: d.dmg * dmgScale, range: d.range + d.r * (k.r - 1), atkCd: 1 + Math.random(), atkRate: d.rate, threat, elite,
       flying: !!d.flying, state: 'idle', stateT: 0, targetId: 0, homeX: x, homeY: y, leash: 0, camp: 0, stun: 0, slow: 0, slowAmt: 0, burn: 0, burnDps: 0,
-      hitFlash: 0, anim: Math.random() * 10, burrowed: false, lastHitBy: 0, aggro: false, parts: [], loot: d.loot, xp: d.xp * (elite ? 2 : 1),
+      hitFlash: 0, anim: Math.random() * 10, burrowed: false, lastHitBy: 0, aggro: false, parts: [], loot: d.loot, xp: d.xp * (elite ? 2 : 1) * k.xp,
       titan: kind.startsWith('titan') || !!d.titanStyle || !!d.boss, boss: !!d.boss, name: d.name, z: d.flying ? 1.6 : 0, horde: false, latch: null,
     };
     this.enemies.push(e);

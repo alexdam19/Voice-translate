@@ -43,8 +43,8 @@ function init(): boolean {
     renderer.setSize(CANVAS, CANVAS, false);
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    // Straight colour (no filmic curve washing it out), like the ship.
+    renderer.toneMapping = THREE.NoToneMapping;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.autoClear = false;
@@ -55,14 +55,14 @@ function init(): boolean {
   }
   scene = new THREE.Scene();
   camera = new THREE.Camera();
-  scene.add(new THREE.HemisphereLight('#d0dcec', '#4a4038', 2.2));
-  sun = new THREE.DirectionalLight('#fff4e4', 3);
+  scene.add(new THREE.HemisphereLight('#c4d2e6', '#3a3430', 1.5));
+  sun = new THREE.DirectionalLight('#fff1dc', 2.6);
   sun.position.set(-4, 10, -4);
   sun.castShadow = true;
   sun.shadow.mapSize.set(384, 384);
   sun.shadow.bias = -0.002;
   scene.add(sun, sun.target);
-  const rim = new THREE.DirectionalLight('#ffd0b0', 0.9);
+  const rim = new THREE.DirectionalLight('#ffd0b0', 0.7);
   rim.position.set(5, 3, 6);
   scene.add(rim);
   ground = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.ShadowMaterial({ opacity: 0.45 }));
@@ -84,6 +84,7 @@ function shade(hex: string, k: number): string {
 }
 
 const specCache = new Map<string, Spec | null>();
+const OUTLINE = new THREE.LineBasicMaterial({ color: '#08090b', transparent: true, opacity: 0.55 });
 
 /** The model an enemy kind is drawn as. */
 export function specFor(kind: string, def: EnemyDef | undefined): Spec | null {
@@ -245,12 +246,21 @@ function modelFor(kind: string, s: Spec): Built {
   let b = models.get(kind);
   if (!b) {
     b = buildRig(s);
+    const meshes: THREE.Mesh[] = [];
     b.root.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) {
         o.castShadow = true;
         o.frustumCulled = false;
+        meshes.push(o as THREE.Mesh);
       }
     });
+    // A dark line along every hard crease, so the shape reads at a few dozen pixels.
+    for (const m of meshes) {
+      if (m.material instanceof THREE.MeshBasicMaterial) continue;
+      const l = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 35), OUTLINE);
+      l.frustumCulled = false;
+      m.add(l);
+    }
     models.set(kind, b);
   }
   return b;

@@ -296,3 +296,14 @@ export function zoneHorde(zone: number): { horde: string[]; heavy: string[]; bos
   const flyer = list.find((k) => ENEMIES[k].flying && (ENEMIES[k].size ?? 1) < 30) ?? null;
   return { horde: [list[0], list[0], list[1]], heavy: [list[2], list[3]], boss: list[4], flyer, name: ZONE_INFO[zone]?.name ?? 'the wastes' };
 }
+
+/**
+ * How an enemy kind stands next to a 100 m fortress: the swarm's fodder (the things that come in hundreds) small and
+ * quick, taking little room; everything else bigger than life, so there are fewer of them and each one reads, and
+ * tougher and worth more to match; the giants and bosses as they are.
+ */
+export function enemyScale(d: EnemyDef): { r: number; hp: number; dmg: number; xp: number; speed: number } {
+  if (d.loot === 'swarm') return { r: 0.6, hp: 1, dmg: 1, xp: 1, speed: 1.05 };
+  if (d.titanStyle || d.boss || d.still || d.kind.startsWith('titan') || d.kind.includes('part') || (d.size ?? 1) >= 20) return { r: 1, hp: 1, dmg: 1, xp: 1, speed: 1 };
+  return { r: 2.2, hp: 3.2, dmg: 1.6, xp: 2.5, speed: 1.12 };
+}

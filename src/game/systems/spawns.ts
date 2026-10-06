@@ -1,7 +1,7 @@
 import { inCompound } from '../../shared/compound';
 import { ZONE } from '../../shared/map';
 import { REGION_INFO, threatAt } from '../../shared/mapgen';
-import { ENEMIES, ZONE_ROSTER } from '../enemyDefs';
+import { ENEMIES, enemyScale, ZONE_ROSTER } from '../enemyDefs';
 import type { Game } from '../game';
 import { buildRaider, buildRival, RIVAL_NAMES } from '../templates';
 import { featureLevel } from '../progress';
@@ -76,7 +76,8 @@ export function updateSpawns(g: Game, dt: number): void {
     // Hostile places are crawling with the zone's creatures; the longer you survive, the more there are.
     const here = g.gen.regionAt(p.x, p.y);
     const esc = Math.min(2.2, g.escalation());
-    const target = inCamp ? 0 : Math.round((6 + threat * 2.6) * (here && REGION_INFO[here.kind].hostile ? 2 : 1) * esc);
+    // Fewer of them than there used to be, but every one of them bigger and harder (see enemyScale).
+    const target = inCamp ? 0 : Math.round((3 + threat * 1.3) * (here && REGION_INFO[here.kind].hostile ? 2 : 1) * esc);
     if (ambient < target) {
       const pt = spawnPoint(g, ext + far(p, 26, 260), ext + far(p, 42, 420));
       if (pt) {
@@ -85,8 +86,8 @@ export function updateSpawns(g: Game, dt: number): void {
         const first = pickKind(t, zone);
         // Small things come in packs; anything big comes alone or with a few hangers-on.
         const big = (ENEMIES[first].size ?? 1) >= 8;
-        const pack = big ? 1 + Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * (3 + t));
-        const spread = Math.max(4, ENEMIES[first].r * 3);
+        const pack = big ? 1 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * (1.5 + t * 0.6));
+        const spread = Math.max(6, ENEMIES[first].r * enemyScale(ENEMIES[first]).r * 3);
         for (let k = 0; k < pack; k++) {
           const kind = k === 0 ? first : big ? ZONE_ROSTER[zone]?.[Math.floor(Math.random() * 2)] ?? first : first;
           const e = g.spawnEnemy(kind, pt.x + (Math.random() - 0.5) * spread, pt.y + (Math.random() - 0.5) * spread, t, t >= 2.5 && Math.random() < 0.07);
