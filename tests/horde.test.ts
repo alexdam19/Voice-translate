@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { CENTER } from '../src/shared/constants';
 import { OBS, TER } from '../src/shared/map';
 import { findPath } from '../src/shared/motion';
@@ -104,6 +104,10 @@ describe('horde waves', () => {
   });
 
   it('running into them never kills them: they are thrown clear, and some grab on and climb aboard', () => {
+    // A fixed crowd and fixed dice, so the run is the same every time.
+    let seed = 12345;
+    const rnd = vi.spyOn(Math, 'random').mockImplementation(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
+    onTestFinished(() => rnd.mockRestore());
     const g = game(6);
     const p = g.player;
     for (const m of p.modules) m.weapon = null;

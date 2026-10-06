@@ -1,5 +1,6 @@
 import { troopCasualty } from './troops';
 import { streakKill } from './streaks';
+import { gunnerHit } from './gunner';
 import { titanHit, type ArmorZone } from './titan';
 import { onBossKilled } from '../campaign';
 import { colossusShielded, onColossusPart } from './colossus';
@@ -136,6 +137,7 @@ export function damageEnemy(g: Game, e: Enemy, dmg: number, o: HitOpts = {}): vo
     e.vy += (o.ky ?? 0) * o.knock / Math.max(0.5, e.r * 2);
   }
   lifesteal(g, o.srcTank, dealt, o.lifesteal);
+  if (g.gunner && o.srcTank === g.player.id && o.wkey === g.gunner.wkey) gunnerHit(g, e, e.hp <= 0);
   // Horde fodder doesn't get damage numbers (there'd be hundreds); crits still show.
   if (!o.silent && (!e.horde || o.crit) && g.isVisible(e.x, e.y)) g.float(e.x, e.y, String(Math.round(dmg)), o.crit ? '#ffea00' : '#ffffff', !!o.crit);
   if (e.hp > 0) postHit(g, e, o.fx, o);

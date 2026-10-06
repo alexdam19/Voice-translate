@@ -103,6 +103,8 @@ export class Audio {
       case 'ui': this.tone(660, 0.04, 'square', 0.05 * vol); break;
       case 'lockon': [880, 1175, 880, 1175].forEach((f, i) => setTimeout(() => this.tone(f, 0.05, 'square', 0.06 * vol), i * 55)); break;
       case 'streak': [392, 494, 587, 784].forEach((f, i) => setTimeout(() => this.tone(f, 0.12, 'sawtooth', 0.07 * vol, 1.1), i * 90)); break;
+      case 'reload': this.noise(0.05, 0.25 * vol, 2200); setTimeout(() => this.noise(0.06, 0.3 * vol, 1500), 180); setTimeout(() => this.tone(240, 0.05, 'square', 0.08 * vol, 1.4), 420); break;
+      case 'hitmark': this.tone(1900, 0.03, 'square', 0.035 * vol); break;
       case 'vhs': this.noise(0.35, 0.18 * vol, 3200, 1.5); this.tone(60, 0.3, 'sine', 0.05 * vol); break;
       case 'error': this.tone(140, 0.15, 'square', 0.1 * vol); break;
       case 'build': this.tone(260, 0.06, 'square', 0.1 * vol, 0.8); this.noise(0.05, 0.2 * vol, 3000); break;

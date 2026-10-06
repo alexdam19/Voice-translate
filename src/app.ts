@@ -19,6 +19,8 @@ import { castRange, cardBlock, clampCast, playCard } from './game/systems/cards'
 import { FOCUS_TIME, focusFire, orderAttack, orderHarvest, orderInteract, orderMove } from './game/systems/orders';
 import { endStreak, startStreak, STREAK_ORDER, streakAim, streakSwitch, streakTrigger, type StreakKind } from './game/systems/streaks';
 import { StreakCam } from './ui/streakCam';
+import { GunCam } from './ui/gunCam';
+import { gunAim, gunReload, gunSwitch, gunTrigger, leaveGun, takeGun } from './game/systems/gunner';
 import { launchOutrider, OUTRIDER_COST, sendOutrider } from './game/systems/outrider';
 import { setSquadOrder } from './game/systems/squads';
 import { installHandlers, stepWorld, warpBlocked } from './game/systems/step';
@@ -101,6 +103,8 @@ export class App {
   sendMode = false;
   /** The killstreak's camera feed (a VHS overlay over the battlefield view). */
   streakCam!: StreakCam;
+  /** On a gun: its camera feed (gunner mode). */
+  gunCam!: GunCam;
   /** The FOCUS button is armed: the next tap marks a spot (or a foe) for every gun instead of driving there. */
   focusArm = false;
   private objT = 0;
@@ -152,6 +156,7 @@ export class App {
           this.hud.toast(h.plow ? 'COMPACTOR: the jaws open. She eats whatever she drives into and spits out bales of scrap.' : 'Compactor jaws shut.', h.plow ? '#ffd740' : '#b0bec5');
           this.sound('ui');
         }
+        else if (cmd === 'gun') this.toggleGun();
         else if (cmd === 'focus') {
           if (this.game.player.aimPoint) {
             this.game.player.aimPoint = null;
@@ -187,6 +192,16 @@ export class App {
         this.sound('ui');
       },
       leave: () => endStreak(this.game),
+    });
+    this.gunCam = new GunCam(document.body, this.canvas, {
+      aim: (sx, sy) => {
+        const w = this.view.screenToWorld(sx, sy);
+        gunAim(this.game, w.x, w.y);
+      },
+      trigger: (down) => gunTrigger(this.game, down),
+      weapon: (i) => gunSwitch(this.game, i),
+      reload: () => gunReload(this.game),
+      leave: () => leaveGun(this.game),
     });
     this.mapCtx = this.hud.minimap.getContext('2d')!;
     this.villageUI = new VillageUI(uiRoot, this);
@@ -578,7 +593,7 @@ export class App {
     if (this.cabin.isOpen && (g.player.dead || g.mode !== 'world' || !g.player.titan)) this.toggleCabin(false);
     if (this.interior.isOpen && (g.mode !== 'world' || !g.player.titan)) this.toggleInterior(false);
     const firstPerson = this.cabin.isOpen || this.interior.isOpen;
-    const feed = !!g.streak.active;
+    const feed = !!g.streak.active || !!g.gunner;
     if (!this.uiBlocking && !firstPerson && !feed) this.handleMouse(dt);
     if (!firstPerson && !feed) this.handleZoom();
     const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen || storyPauses(g);
@@ -638,6 +653,7 @@ export class App {
     }
     this.view.render(g, paused ? 0 : dt);
     this.streakCam.update(g, dt, (x, y) => this.view.worldToScreen(x, y, 0));
+    this.gunCam.update(g, dt, (x, y) => this.view.worldToScreen(x, y, 0));
     this.overlay.draw(g, this.hover?.kind === 'enemy' ? this.hover.id : 0);
     if (this.village) {
       this.vstate.selected = this.villageUI.selected;
@@ -704,6 +720,20 @@ export class App {
       v.snap = false;
       return;
     }
+    // On a gun: the camera rides out along the barrel toward the crosshair, closer in, and jumps with the kick.
+    const gn = g.gunner;
+    const gm = gn ? p.modules.find((m) => m.id === gn.id) : undefined;
+    if (gn && gm && !this.village) {
+      const pos = p.moduleWorld(gm);
+      const dx = gn.aim.x - pos.x, dy = gn.aim.y - pos.y, dist = Math.hypot(dx, dy) || 1;
+      const kc = 1 - Math.pow(0.01, dt);
+      const back = gn.kick * 3;
+      v.cam.x += (pos.x + dx * 0.62 - (dx / dist) * back - v.cam.x) * kc;
+      v.cam.y += (pos.y + dy * 0.62 - (dy / dist) * back - v.cam.y) * kc;
+      v.cam.zoom += (Math.max(90, Math.min(240, dist * 1.15 + 60)) - v.cam.zoom) * kc;
+      v.snap = false;
+      return;
+    }
     let tx = p.x, ty = p.y;
     // Look a little ahead of where you're driving, so you see what you're about to hit.
     const lead = p.fortress ? Math.max(-20, Math.min(40, p.speed * 5)) : Math.max(-2, Math.min(6, p.speed * 0.9));
@@ -741,6 +771,24 @@ export class App {
       this.hud.toast(why, '#ff8a80');
       this.sound('error');
     }
+  }
+
+  /** Onto a gun's camera, or off it. */
+  toggleGun(): void {
+    const g = this.game;
+    if (g.gunner) {
+      leaveGun(g);
+      return;
+    }
+    if (this.cabin.isOpen) this.toggleCabin(false);
+    if (this.interior.isOpen) this.toggleInterior(false);
+    if (this.village) this.setVillage(false);
+    if (this.panels.isOpen) this.panels.close();
+    const why = takeGun(g);
+    if (why) {
+      this.hud.toast(why, '#ff8a80');
+      this.sound('error');
+    } else this.hud.toast(`ON THE GUN: ${this.touch ? 'drag to aim, hold to fire' : 'aim with the pointer, fire with the button'} · R reload · 1-9 change guns · Esc off`, '#e0f7fa');
   }
 
   /** Back to the fortress after dragging the view away. */
@@ -890,6 +938,14 @@ export class App {
       }
       return;
     }
+    // On a gun: reload, change guns, get off it (the helm keys still drive).
+    if (this.game?.gunner) {
+      if (i.consume('Escape') || i.consume('KeyE')) leaveGun(this.game);
+      if (i.consume('KeyR')) gunReload(this.game);
+      for (let k = 0; k < 9; k++) if (i.consume(`Digit${k + 1}`)) gunSwitch(this.game, 100 + k);
+      return;
+    }
+    if (i.consume('KeyE') && this.game) this.toggleGun();
     if (i.consume('KeyR') && this.game) {
       const ready = [...STREAK_ORDER].reverse().find((k) => this.game.streak.ready.includes(k));
       if (ready) this.callStreak(ready);

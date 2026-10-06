@@ -5,6 +5,7 @@ import { updateNav } from './nav';
 import { updateCompactor } from './compactor';
 import { updateRobots } from './robots';
 import { streakReset, updateStreaks } from './streaks';
+import { updateGunner } from './gunner';
 import { recordTelemetry } from '../telemetry';
 import type { Game } from '../game';
 import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
@@ -253,6 +254,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateCompactor(g, dt);
       updateRobots(g, dt);
       updateStreaks(g, dt);
+      updateGunner(g, dt);
       updateHelm(g, dt);
       recordTelemetry(g, dt);
       updateTeams(g, dt);

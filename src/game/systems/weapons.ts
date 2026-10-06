@@ -7,6 +7,7 @@ import type { ModuleInst, Tank } from '../tank';
 import { spawnJet } from './allies';
 import { damageEnemy, damageFriendly, damageTank, explode, type HitOpts } from './damage';
 import { MARK_RADIUS } from './orders';
+import { manualGun } from './gunner';
 
 const HEIGHT = 1.2;
 
@@ -78,6 +79,11 @@ export function updateTankWeapons(g: Game, t: Tank, dt: number): void {
     m.recoil = Math.max(0, m.recoil - dt * 4);
     if (m.cd < -0.8) m.ramp = 0;
     const pos = t.moduleWorld(m);
+    // The gun you're on yourself: your crosshair, your trigger.
+    if (t === g.player && g.gunner?.id === m.id) {
+      manualGun(g, t, m, d, s, pos, dt);
+      continue;
+    }
     // Every gun picks its own target.
     const target: Target | null = pickTarget(g, t, m, d, s, pos.x, pos.y, cands, dt);
     if (!target) {

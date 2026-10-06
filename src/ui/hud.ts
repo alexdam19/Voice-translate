@@ -73,7 +73,7 @@ export interface HudActions {
   /** Set up camp / pack up. */
   camp(): void;
   /** The helm: throttle lever steps, all stop, overdrive. */
-  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp' | 'jaws' | 'focus'): void;
+  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp' | 'jaws' | 'focus' | 'gun'): void;
   /** Into the captain's cabin (first person). */
   cabin(): void;
   /** The all-decks interior cutaway. */
@@ -352,7 +352,7 @@ export class Hud {
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
     this.hpBox.append(this.alerts, this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
     this.gauge.append(this.gaugeRead, this.gaugeCtl);
-    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): a big burst of speed for a lot of fuel, until the engine overheats (Engine Workshop parts change all three)'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near'], ['jaws', 'JAWS', 'Compactor: open the bow\'s jaws and she eats whatever she drives into (buildings, walls, wrecks, small creatures), spitting it out of the stern as bales of scrap. 10% less top speed while open.'], ['focus', 'FOCUS', 'Focus fire: click a foe or a spot (on touch: press FOCUS, then tap) and every gun, battery and roof nest in reach turns on it for 12 s. Press again to lift it.']] as const) {
+    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): a big burst of speed for a lot of fuel, until the engine overheats (Engine Workshop parts change all three)'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near'], ['jaws', 'JAWS', 'Compactor: open the bow\'s jaws and she eats whatever she drives into (buildings, walls, wrecks, small creatures), spitting it out of the stern as bales of scrap. 10% less top speed while open.'], ['focus', 'FOCUS', 'Focus fire: click a foe or a spot (on touch: press FOCUS, then tap) and every gun, battery and roof nest in reach turns on it for 12 s. Press again to lift it.'], ['gun', 'GUN', 'Take a gun (E): work one of the Titan\'s guns yourself on its camera. Aim with the pointer, fire with the button (hold for the light guns, a click a round for the heavies), R reloads, 1-9 or the wheel change guns, Esc gets off it. The helm still answers WASD.']] as const) {
       const b = button(label, (e) => {
         e.stopPropagation();
         act.helm(cmd);

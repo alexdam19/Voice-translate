@@ -1,5 +1,6 @@
 import { DEV } from './devFlag';
 import { newStreak, type StreakState } from './systems/streaks';
+import type { Gunner } from './systems/gunner';
 import { newCompound, type CompoundState } from './systems/compound';
 import { newComms, type Comms } from './systems/comms';
 import { newStory, type StoryState } from './story';
@@ -269,6 +270,8 @@ export class Game {
   frames: FrameKey[] = ['shark'];
   /** Builder robots aboard (each an extra builder), and the one the workshop is making (see systems/robots). */
   robots = 0;
+  /** On a gun: the turret you're working yourself on its camera (see systems/gunner). */
+  gunner: Gunner | null = null;
   /** Killstreak: points, banked rewards, the one being flown (see systems/streaks). */
   streak: StreakState = newStreak();
   robotBuild: { t: number; queue?: number } | null = null;

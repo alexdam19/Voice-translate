@@ -1868,6 +1868,36 @@ body.on-feed #ui, body.on-feed #overlay, body.on-feed .tip { visibility: hidden;
 .vhs-mark { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; display: none; }
 .vhs-mark::before { content: ''; position: absolute; left: -9px; top: -9px; width: 14px; height: 14px; border: 2px solid #fff; transform: rotate(45deg); box-shadow: 0 0 6px #fff; }
 .vhs-flash { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%); font-size: 26px; letter-spacing: 3px; color: #fff; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.vhs-cross.gun::before { left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; border-width: 2px; clip-path: polygon(0 0, 100% 0, 100% 38%, 62% 38%, 62% 62%, 100% 62%, 100% 100%, 0 100%, 0 62%, 38% 62%, 38% 38%, 0 38%); }
+.vhs-cross.gun::after { left: -2px; top: -2px; width: 0; height: 0; border-width: 2px; border-radius: 50%; }
+.vhs-cross.gun.heavy::before { left: -44px; top: -44px; width: 88px; height: 88px; border-radius: 0; clip-path: polygon(0 0, 26% 0, 26% 5%, 5% 5%, 5% 26%, 0 26%, 0 74%, 5% 74%, 5% 95%, 26% 95%, 26% 100%, 74% 100%, 74% 95%, 95% 95%, 95% 74%, 100% 74%, 100% 26%, 95% 26%, 95% 5%, 74% 5%, 74% 0, 100% 0, 100% 100%, 0 100%); }
+.vhs-cross.gun.reloading::before { opacity: 0.35; border-style: dashed; }
+.vhs-cross.gun .hm { position: absolute; left: -16px; top: -16px; width: 32px; height: 32px; opacity: 0; }
+.vhs-cross.gun .hm::before, .vhs-cross.gun .hm::after { content: ''; position: absolute; left: 15px; top: -4px; width: 2px; height: 40px; background: linear-gradient(to bottom, #fff 0 35%, transparent 35% 65%, #fff 65%); }
+.vhs-cross.gun .hm::before { transform: rotate(45deg); }
+.vhs-cross.gun .hm::after { transform: rotate(-45deg); }
+.vhs-cross.gun.hit .hm { opacity: 1; }
+.vhs-cross.gun.hit::before { border-color: #ff5252; box-shadow: 0 0 8px #ff5252; }
+.gun-mag { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+.gun-mag .n { font-size: 16px; letter-spacing: 2px; }
+.gun-mag .n b { font-size: 34px; }
+.gun-mag .ticks { display: flex; gap: 2px; flex-wrap: wrap; justify-content: center; max-width: 420px; }
+.gun-mag .ticks i { width: 5px; height: 14px; border: 1px solid rgba(242, 242, 232, 0.55); }
+.gun-mag .ticks i.big { width: 14px; height: 26px; border-radius: 6px 6px 1px 1px; }
+.gun-mag .ticks i.full { background: #f2f2e8; box-shadow: 0 0 4px rgba(255, 255, 255, 0.5); }
+.gun-mag .belt { width: 260px; height: 10px; border: 1px solid rgba(242, 242, 232, 0.6); }
+.gun-mag .belt i { display: block; height: 100%; background: repeating-linear-gradient(90deg, #f2f2e8 0 4px, transparent 4px 6px); }
+.gun-mag .rl { position: relative; width: 260px; height: 18px; border: 1px solid rgba(242, 242, 232, 0.6); font-size: 11px; text-align: center; line-height: 18px; }
+.gun-mag .rl span { position: relative; z-index: 1; letter-spacing: 3px; }
+.gun-mag .rl i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255, 255, 255, 0.35); }
+.gun-mag .rl.dry { color: #ff5252; border-color: #ff5252; animation: gun-blink 0.5s steps(2) infinite; }
+.gun-mag .rl.low { color: #ffd740; border-color: #ffd740; }
+@keyframes gun-blink { 50% { opacity: 0.3; } }
+.gun-list { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; }
+.gun-list .g { min-width: 150px; padding: 3px 8px; border: 1px solid rgba(242, 242, 232, 0.4); background: rgba(0, 0, 0, 0.35); cursor: pointer; font-size: 11px; display: flex; justify-content: space-between; gap: 10px; }
+.gun-list .g.sel { border-color: #fff; background: rgba(255, 255, 255, 0.16); box-shadow: 0 0 8px rgba(255, 255, 255, 0.4); }
+.gun-list .g.rel { opacity: 0.55; }
+@media (max-width: 760px) { .gun-list { display: none; } .gun-mag .n b { font-size: 24px; } .gun-mag .rl, .gun-mag .belt { width: 180px; } }
 .vhs.static .vhs-noise { opacity: 1; filter: contrast(3); }
 .vhs.static::after { content: 'NO SIGNAL'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 34px; letter-spacing: 6px; }
 @media (max-width: 760px) {
