@@ -741,6 +741,7 @@ export class Interior {
 
     /* ---- The crew, then the roof's guns in front of their crews ---- */
     this.drawCrew(c, g, ab);
+    this.drawJourneys(c, g, ab);
     for (const pl of this.roomsByDeck[ROOF] ?? []) this.roofGun(c, g, pl, this.roofAt((pl.xa + pl.xb) / 2) - 4);
 
     // The deck's own spaces are named too (dimmer than your rooms).
@@ -1012,6 +1013,81 @@ export class Interior {
   }
 
   /** Everyone aboard, where they are and doing what they do (beds, benches, machines, the Spine, the lifts). */
+  /**
+   * Work crews you've sent: each one picked out with a pulsing ring, and their way through the ship drawn ahead of
+   * them, along the decks and up and down the lifts, to a marker on the job with what they're doing there.
+   */
+  private drawJourneys(c: CanvasRenderingContext2D, g: Game, ab: Aboard): void {
+    const p = g.player;
+    const rows = p.rows;
+    const at = (deck: number, cx: number, cy: number): [number, number] => {
+      void cx;
+      const x = deck === ROOF ? this.roofX(cy, rows) : this.walkX(deck, cy);
+      return [x, deck === ROOF ? this.roofAt(x) - 12 : this.deckTop(deck) + DH - 12];
+    };
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 6);
+    for (const o of g.orders) {
+      const crew = ab.people.filter((q) => q.order === o.id);
+      if (!crew.length) continue;
+      const lead = crew[0];
+      const col = '#ff4fd8';
+      // The way ahead: from where the leader is now, waypoint by waypoint, to the job.
+      const pts: [number, number][] = [at(lead.deck, lead.x, lead.y)];
+      for (const w of lead.path) pts.push(at(w.deck, w.x, w.y));
+      const end = at(o.dest.deck, o.dest.x, o.dest.y);
+      if (Math.hypot(pts[pts.length - 1][0] - end[0], pts[pts.length - 1][1] - end[1]) > 2) pts.push(end);
+      if (pts.length > 1) {
+        c.save();
+        c.strokeStyle = col;
+        c.lineWidth = 2;
+        c.setLineDash([5, 4]);
+        c.lineDashOffset = -this.time * 18;
+        c.shadowColor = col;
+        c.shadowBlur = 6;
+        c.beginPath();
+        c.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) {
+          // Along a deck, or straight up or down a lift.
+          if (Math.abs(pts[i][1] - pts[i - 1][1]) > 4) c.lineTo(pts[i - 1][0], pts[i][1]);
+          c.lineTo(pts[i][0], pts[i][1]);
+        }
+        c.stroke();
+        c.restore();
+      }
+      // The job: a marker and what they're at.
+      c.save();
+      c.fillStyle = col;
+      c.globalAlpha = 0.6 + 0.4 * pulse;
+      c.beginPath();
+      c.moveTo(end[0], end[1] - 14);
+      c.lineTo(end[0] + 5, end[1] - 8);
+      c.lineTo(end[0], end[1] - 2);
+      c.lineTo(end[0] - 5, end[1] - 8);
+      c.closePath();
+      c.fill();
+      c.globalAlpha = 1;
+      const label = `${o.name.toUpperCase()} · ${o.status.toUpperCase()}`.slice(0, 58);
+      c.fillStyle = 'rgba(10,6,14,0.85)';
+      c.fillRect(Math.round(end[0] - label.length * 2.1 - 3), Math.round(end[1] - 26), Math.round(label.length * 4.2 + 6), 9);
+      pxMini(c, label, end[0], end[1] - 25, col, 'center', null);
+      // Each of the crew, ringed (a lift ride shows as a marker at the shaft).
+      for (const q of crew) {
+        const [x, y] = at(q.deck, q.x, q.y);
+        c.strokeStyle = col;
+        c.lineWidth = 1.5;
+        c.globalAlpha = 0.5 + 0.5 * pulse;
+        c.beginPath();
+        c.ellipse(x, y + 9, 7 + pulse * 2, 3 + pulse, 0, 0, Math.PI * 2);
+        c.stroke();
+        if (q.ride > 0) pxMini(c, 'LIFT', x, y - 22, col, 'center', null);
+      }
+      c.globalAlpha = 1;
+      const [lx, ly] = at(lead.deck, lead.x, lead.y);
+      pxMini(c, `CREW ${o.n}`, lx, ly - 30, col, 'center', null);
+      c.restore();
+    }
+  }
+
   private drawCrew(c: CanvasRenderingContext2D, g: Game, ab: Aboard): void {
     const p = g.player;
     const rows = p.rows;

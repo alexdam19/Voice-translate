@@ -304,6 +304,8 @@ export class Game {
   energy = 5;
   /** Unopened card packs. */
   packs: PackKind[] = [];
+  /** Cards taken off the card road so far: the further along, the rarer and stronger what it offers. */
+  cardPicks = 0;
   /** Seconds until Phoenix Feather can save you again. */
   phoenixCd = 0;
 

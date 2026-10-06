@@ -190,3 +190,41 @@ export function rollPack(rng: () => number, kind: PackKind, luck: number): strin
   }
   return out;
 }
+
+/* ---------------------------------------------------------------------- */
+/* The card road                                                           */
+/* ---------------------------------------------------------------------- */
+
+/** Picks it takes to open the next rarity on the card road. */
+export const ROAD_STEP = 3;
+/** How much further along the road each kind of pack reaches. */
+export const PACK_REACH: Record<PackKind, number> = { pack: 0, rare_pack: 1, epic_pack: 2, legendary_pack: 3 };
+
+/** The highest rarity the road offers after `picks` picks (a better pack reaches further). */
+export function roadTier(picks: number, kind: PackKind = 'pack'): Rarity {
+  return Math.min(5, Math.floor(picks / ROAD_STEP) + PACK_REACH[kind]) as Rarity;
+}
+
+/**
+ * No more luck of the draw: a pack is a choice of two cards from the card road. One is a card you don't have yet,
+ * from the newest rarity the road has opened (the further you've come, the bigger and harder-hitting); the other
+ * is another new card from a different school a step behind, or, once you've collected a rarity, a level for a
+ * card you own. Taking a card you already own levels it up.
+ */
+export function cardOffer(owned: Record<string, OwnedCard>, picks: number, kind: PackKind, rng: () => number): [string, string] {
+  const top = roadTier(picks, kind);
+  const pick = (pool: CardDef[]): CardDef | null => (pool.length ? pool[Math.floor(rng() * pool.length)] : null);
+  const fresh = (r: number, not?: CardDef | null): CardDef[] => CARD_LIST.filter((c) => c.rarity === r && !owned[c.id] && c.id !== not?.id);
+  // The headline: the newest rarity first, stepping down until something new turns up.
+  let a: CardDef | null = null;
+  for (let r = top; r >= 0 && !a; r--) a = pick(fresh(r));
+  // The alternative: something new from another school a step behind, or a level for a card you own.
+  let b: CardDef | null = null;
+  for (let r = Math.max(0, top - 1); r >= 0 && !b; r--) b = pick(fresh(r, a).filter((c) => !a || c.school !== a.school)) ?? pick(fresh(r, a));
+  const ownedList = CARD_LIST.filter((c) => owned[c.id] && owned[c.id].level < MAX_CARD_LEVEL && c.id !== a?.id && c.id !== b?.id);
+  if (!b) b = ownedList.sort((x, y) => y.rarity - x.rarity || owned[x.id].level - owned[y.id].level)[0] ?? null;
+  if (!a) a = ownedList.find((c) => c.id !== b?.id) ?? b;
+  if (!a) a = CARD_LIST[0];
+  if (!b || b.id === a.id) b = CARD_LIST.find((c) => c.id !== a!.id)!;
+  return [a.id, b.id];
+}

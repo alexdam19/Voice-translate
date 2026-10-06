@@ -472,7 +472,7 @@ export class App {
     const g = this.game;
     if (!g) return;
     const r = openPack(g, 0);
-    if (r) this.openChest(r.kind, r.rewards, false);
+    if (r) this.openChest(r.kind, r.rewards, true);
   }
 
   /** Clicking the tracker box: jump to where the tracked thing gets built or levelled. */

@@ -1887,3 +1887,24 @@ body.on-feed #ui, body.on-feed #overlay, body.on-feed .tip { visibility: hidden;
   .streaks .ks { width: 96px; font-size: 8px; padding: 2px 5px 5px; }
   .streaks .ks b { font-size: 9px; }
 }
+
+/* ---------------- Top bar hubs ---------------- */
+.menu-btn.hub { border-color: #3a4a5c; }
+.menu-btn.hub b { color: #b3d4f0; }
+.menu-btn.hub.open { border-color: var(--gold); background: rgba(24, 28, 38, 0.96); }
+.menu-drop { display: none; position: absolute; top: calc(100% + 4px); left: -2px; z-index: 40; min-width: 210px; padding: 4px; background: rgba(10, 12, 18, 0.97); border: 2px solid var(--edge); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6); text-align: left; }
+.menu-btn.hub.open .menu-drop { display: block; }
+.menu-item { position: relative; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 6px 10px; cursor: pointer; border: 1px solid transparent; }
+.menu-item b { font-family: var(--px); font-size: 13px; color: var(--gold2); }
+.menu-item small { font-size: 10px; color: var(--dim); white-space: nowrap; }
+.menu-item:hover { background: rgba(255, 255, 255, 0.06); border-color: #3c4147; }
+.menu-item.on b { color: #76ff03; }
+.menu-item .badge { position: static; margin-left: auto; }
+.menu-drop .menu-item small { display: inline !important; }
+
+/* ---------------- Card road ---------------- */
+.road { margin: 4px 0 8px; padding: 6px 10px; background: rgba(20, 22, 30, 0.9); border: 1px solid #3c4147; font-size: 12px; color: #cfd8dc; }
+.road b { font-family: var(--px); color: #ffd740; }
+.road-bar { display: flex; gap: 3px; margin-top: 6px; }
+.road-bar i { flex: 1; font-style: normal; text-align: center; font-family: var(--px); font-size: 10px; padding: 3px 0; color: #5a626b; background: #14161b; border: 1px solid #2a2e35; }
+.road-bar i.on { color: #0b0c10; background: var(--rc); border-color: var(--rc); }

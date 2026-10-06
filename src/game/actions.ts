@@ -4,7 +4,7 @@ import { DRIVE_ITEM, getItem } from '../shared/items';
 import type { DriveKey } from '../shared/types';
 import { canTakeNode, treeNode, WEAPONS, type WeaponItem } from '../shared/weapons';
 import { nextRarity, scrapValue, STAR_TIME, starBlock, starCost } from './arsenal';
-import { CARDS, MAX_CARD_LEVEL, rollPack, shardsNeeded, upgradeCost, type PackKind } from './cards';
+import { cardOffer, CARDS, MAX_CARD_LEVEL, shardsNeeded, upgradeCost, type PackKind } from './cards';
 import { hireCost, pickPerk } from './crew';
 import { buildLimit, buildTime, canMount, CC_COMMANDER_LEVEL, chassisDef, CREW_SCALE, DECK_OPEN_CC, deckAllows, deckKind, deckName, defaultDeck, titanReserved, levelCost, levelTime, maxModuleLevel, MODULES, RECIPES, type Recipe } from './defs';
 import type { Reward } from './entities';
@@ -445,21 +445,34 @@ export function upgradeCard(g: Game, id: string): Result {
   return OK(`${d.name} is now level ${c.level}!`);
 }
 
-/** Opens an unopened card pack; returns the cards as rewards for the reveal screen. */
-/** Opens every pack at once: all the cards go straight into the collection. Returns what came out. */
+/** Opens every pack at once, taking the headline card of each choice (the newest one on the road). */
 export function openAllPacks(g: Game): { id: string; isNew: boolean }[] {
   const out: { id: string; isNew: boolean }[] = [];
   while (g.packs.length) {
     const res = openPack(g, 0);
     if (!res) break;
-    for (const r of res.rewards) {
-      if (r.type !== 'card') continue;
-      const isNew = !g.cards[r.id];
-      g.ownCard(r.id);
-      out.push({ id: r.id, isNew });
-    }
+    const r = res.rewards[0];
+    if (r?.type !== 'card') continue;
+    const isNew = !g.cards[r.id];
+    takeRoadCard(g, r.id);
+    out.push({ id: r.id, isNew });
   }
   return out;
+}
+
+/** A card taken off the road: a new one joins the collection; one you already own goes up a level. */
+export function takeRoadCard(g: Game, id: string): 'new' | 'level' {
+  g.cardPicks++;
+  const c = g.cards[id];
+  if (!c) {
+    g.ownCard(id);
+    return 'new';
+  }
+  if (c.level < MAX_CARD_LEVEL) {
+    c.level++;
+    c.shards = 0;
+  }
+  return 'level';
 }
 
 /** Upgrades every card that has enough copies and materials. Returns how many levels were gained. */
@@ -492,7 +505,7 @@ export function openPack(g: Game, idx = 0): { kind: PackKind; rewards: Reward[] 
   const kind = g.packs[idx];
   if (!kind) return null;
   g.packs.splice(idx, 1);
-  const ids = rollPack(() => g.rng.next(), kind, g.player.crew.chestLuck + g.chestBonus * 0.8);
+  const ids = cardOffer(g.cards, g.cardPicks, kind, () => g.rng.next());
   g.chestBonus = 0;
   bump(g, 'packs');
   return { kind, rewards: ids.map((id) => ({ type: 'card', id })) };

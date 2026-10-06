@@ -95,26 +95,34 @@ function setHTML(el: HTMLElement, s: string): void {
   }
 }
 
-/** Which menu buttons show up (features switch on as you level). */
-const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls?: string }[] = [
+/**
+ * The top bar: five buttons. BASE and CARDS stand on their own; SHIP and WORLD open a short list each (every page
+ * still has its own key), and the menu. Entries switch on as features unlock.
+ */
+type Hub = 'ship' | 'world';
+const MENU: { key: string; label: string; sub: string; feature?: FeatureKey; cls?: string; hub?: Hub }[] = [
   { key: 'base', label: 'BASE', sub: 'B', cls: 'big base' },
+  { key: 'cabin', label: 'CABIN', sub: 'F · cockpit', hub: 'ship' },
+  { key: 'inside', label: 'INSIDE', sub: 'G · every deck', hub: 'ship' },
+  { key: 'bridge', label: 'VITALS', sub: 'Y · damage & crews', hub: 'ship' },
+  { key: 'arsenal', label: 'ARSENAL', sub: 'V · weapons', feature: 'arsenal', hub: 'ship' },
+  { key: 'crew', label: 'CREW', sub: 'K · officers', feature: 'crew', hub: 'ship' },
+  { key: 'cargo', label: 'CARGO', sub: 'I · hold & workshop', hub: 'ship' },
+  { key: 'blueprint', label: 'BLUEPRINT', sub: 'N · analysis', hub: 'ship' },
+  { key: 'camp', label: 'CAMP', sub: 'T · deploy here', hub: 'ship' },
   { key: 'cards', label: 'CARDS', sub: 'C', cls: 'big cards' },
-  { key: 'cabin', label: 'CABIN', sub: 'F', cls: 'big cabin' },
-  { key: 'inside', label: 'INSIDE', sub: 'G', cls: 'inside' },
-  { key: 'bridge', label: 'VITALS', sub: 'Y', cls: 'bridge' },
-  { key: 'arsenal', label: 'ARSENAL', sub: 'V', feature: 'arsenal' },
-  { key: 'crew', label: 'CREW', sub: 'K', feature: 'crew' },
-  { key: 'shipyard', label: 'SHIPYARD', sub: 'U', cls: 'shipyard' },
-  { key: 'bounty', label: 'BOUNTY', sub: 'parts', cls: 'bounty' },
-  { key: 'hangar', label: 'HANGAR', sub: 'airlift', cls: 'hangar' },
-  { key: 'camp', label: 'CAMP', sub: 'T', cls: 'camp' },
-  { key: 'blueprint', label: 'BLUEPRINT', sub: 'N' },
-  { key: 'cargo', label: 'CARGO', sub: 'I' },
-  { key: 'map', label: 'MAP', sub: 'M' },
-  { key: 'story', label: 'STORY', sub: 'journal', cls: 'story' },
-  { key: 'help', label: '?', sub: 'H' },
+  { key: 'map', label: 'MAP', sub: 'M · the Crater', hub: 'world' },
+  { key: 'story', label: 'STORY', sub: 'the journal', hub: 'world' },
+  { key: 'bounty', label: 'BOUNTY', sub: 'Mothership parts', hub: 'world' },
+  { key: 'hangar', label: 'HANGAR', sub: 'airlift', hub: 'world' },
+  { key: 'shipyard', label: 'SHIPYARD', sub: 'U · docked only', hub: 'world' },
+  { key: 'help', label: 'HELP', sub: 'H · keys & tips', hub: 'world' },
   { key: 'menu', label: '☰', sub: 'Esc' },
 ];
+const HUBS: Record<Hub, { label: string; sub: string; after: string }> = {
+  ship: { label: 'SHIP ▾', sub: 'decks · crew · hold', after: 'base' },
+  world: { label: 'WORLD ▾', sub: 'map · story', after: 'cards' },
+};
 
 export class Hud {
   root: HTMLDivElement;
@@ -142,6 +150,7 @@ export class Hud {
   private bossFocus = h('button', 'boss-focus');
   private bossTarget = 0;
   private streaks = h('div', 'streaks');
+  private hubBtns = new Map<Hub, HTMLElement>();
   private streakKey = '';
   private waveBar = h('div', 'wave-bar');
   private buffs = h('div', 'buffbar');
@@ -277,19 +286,59 @@ export class Hud {
       this.lvlBanner.style.display = 'none';
       act.openPanel('progress');
     });
+    const drops = new Map<Hub, HTMLElement>();
+    const closeDrops = (): void => {
+      for (const d of drops.values()) d.parentElement!.classList.remove('open');
+    };
+    document.addEventListener('pointerdown', (e) => {
+      if (!(e.target as HTMLElement).closest?.('.menu-btn.hub')) closeDrops();
+    });
+    const run = (key: string): void => {
+      closeDrops();
+      if (key === 'base') act.village(!this.village);
+      else if (key === 'camp') act.camp();
+      else if (key === 'cabin') act.cabin();
+      else if (key === 'inside') act.interior();
+      else act.openPanel(key);
+    };
     for (const m of MENU) {
+      if (m.hub) {
+        let drop = drops.get(m.hub);
+        if (!drop) {
+          const hd = HUBS[m.hub];
+          const hb = h('div', `menu-btn hub ${m.hub}`, `<b>${hd.label}</b><small>${hd.sub}</small>`);
+          const hbadge = h('span', 'badge');
+          hb.appendChild(hbadge);
+          drop = h('div', 'menu-drop');
+          hb.appendChild(drop);
+          hb.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const open = !hb.classList.contains('open');
+            closeDrops();
+            hb.classList.toggle('open', open);
+          });
+          drops.set(m.hub, drop);
+          this.hubBtns.set(m.hub, hb);
+          this.menu.appendChild(hb);
+        }
+        const it = h('div', `menu-item mi-${m.key}`, `<b>${m.label}</b><small>${m.sub}</small>`);
+        it.appendChild(h('span', 'badge'));
+        it.addEventListener('click', (e) => {
+          e.stopPropagation();
+          run(m.key);
+        });
+        this.badges.set(m.key, it);
+        drop.appendChild(it);
+        continue;
+      }
       const b = h('div', `menu-btn ${m.key} ${m.cls ?? ''}`, `<b>${m.label}</b><small>${m.sub}</small>`);
-      b.title = `${m.label === '?' ? 'HELP' : m.label === '☰' ? 'MENU' : m.label} (${m.sub})`;
+      b.title = `${m.label === '☰' ? 'MENU' : m.label} (${m.sub})`;
       const badge = h('span', 'badge');
       b.appendChild(badge);
       this.badges.set(m.key, b);
       b.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (m.key === 'base') act.village(!this.village);
-        else if (m.key === 'camp') act.camp();
-        else if (m.key === 'cabin') act.cabin();
-        else if (m.key === 'inside') act.interior();
-        else act.openPanel(m.key);
+        run(m.key);
       });
       this.menu.appendChild(b);
     }
@@ -672,6 +721,12 @@ export class Hud {
     const pts = [...g.armory, ...p.weapons().map((m) => m.weapon!)].some((w) => (w.tree ?? []).length < treePoints(w));
     const spare = g.armory.length > 0 && p.hardpoints().some((m) => !m.weapon && m.built);
     badge('arsenal', spare ? '!' : pts ? '★' : '');
+    // A hub shows a mark when anything in its list wants attention.
+    for (const [hub, hb] of this.hubBtns) {
+      const flag = MENU.some((m) => m.hub === hub && this.badges.get(m.key)!.style.display !== 'none' && (this.badges.get(m.key)!.querySelector('.badge') as HTMLElement).style.display === 'block');
+      (hb.querySelector(':scope > .badge') as HTMLElement).style.display = flag ? 'block' : 'none';
+      (hb.querySelector(':scope > .badge') as HTMLElement).textContent = flag ? '!' : '';
+    }
     // Horde wave
     const ws = waveStatus(g);
     if (ws) {

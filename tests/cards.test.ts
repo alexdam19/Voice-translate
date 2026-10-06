@@ -80,9 +80,11 @@ describe('battle cards', () => {
     const g = game();
     rich(g);
     g.packs.push('epic_pack');
+    // A pack is a this-or-that pick off the card road: two different cards, and you take one.
     const res = openPack(g, 0)!;
-    expect(res.rewards.length).toBe(5);
-    for (const r of res.rewards) grantReward(g, r);
+    expect(res.rewards.length).toBe(2);
+    expect(res.rewards[0]).not.toEqual(res.rewards[1]);
+    grantReward(g, res.rewards[0]);
     expect(g.packs.length).toBe(0);
     const id = 'artillery';
     g.cards[id].shards = shardsNeeded(CARDS[id], 1);
@@ -106,5 +108,31 @@ describe('battle cards', () => {
     const e = g.maxEnergy();
     expect(toggleRelic(g, 'overcharged_core').ok).toBe(true);
     expect(g.maxEnergy()).toBe(e + 2);
+  });
+});
+
+describe('the card road', () => {
+  it('offers two different cards, new ones first, rarer the further along you are', async () => {
+    const { cardOffer, CARDS, roadTier } = await import('../src/game/cards');
+    const { takeRoadCard } = await import('../src/game/actions');
+    const g = game();
+    let seed = 3;
+    const rng = (): number => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const [a, b] = cardOffer(g.cards, 0, 'pack', rng);
+    expect(a).not.toBe(b);
+    expect(g.cards[a]).toBeUndefined();
+    expect(CARDS[a].rarity).toBeLessThanOrEqual(roadTier(0));
+    // Twelve picks on: the road offers Epic cards, and a Legendary pack reaches the end.
+    expect(roadTier(12)).toBe(4);
+    expect(roadTier(4, 'legendary_pack')).toBe(4);
+    const late = cardOffer(g.cards, 12, 'pack', rng);
+    expect(CARDS[late[0]].rarity).toBe(4);
+    // Taking one you already own levels it up; every pick moves you along.
+    const own = Object.keys(g.cards)[0];
+    const lv = g.cards[own].level;
+    const picks = g.cardPicks;
+    expect(takeRoadCard(g, own)).toBe('level');
+    expect(g.cards[own].level).toBe(lv + 1);
+    expect(g.cardPicks).toBe(picks + 1);
   });
 });

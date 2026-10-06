@@ -1,5 +1,6 @@
 import { rollDropRarity, rollLoot, rollWeaponKey } from '../shared/loot';
-import { CARDS, PACK_INFO, rollPack } from './cards';
+import { cardOffer, CARDS, PACK_INFO } from './cards';
+import { takeRoadCard } from './actions';
 import { clampRarity, rarityName, type Rarity } from '../shared/rarity';
 import { EXCLUSIVE_WEAPONS, WEAPONS } from '../shared/weapons';
 import { CHAMPIONS, EXCLUSIVES, makeChampion, makeCrew, makeExclusive, randomRole, ROLES, signatureCard } from './crew';
@@ -48,7 +49,8 @@ export function rollChest(g: Game, kind: ChestKind, threat: number): Reward[] {
   const rnd = (): number => g.rng.next();
   const bonus = takeBonus(g);
   if (kind === 'pack' || kind === 'rare_pack' || kind === 'epic_pack' || kind === 'legendary_pack') {
-    return rollPack(rnd, kind, g.player.crew.chestLuck + bonus * 0.8).map((id) => ({ type: 'card', id }));
+    void bonus;
+    return cardOffer(g.cards, g.cardPicks, kind, rnd).map((id) => ({ type: 'card', id }));
   }
   if (kind === 'rune') {
     const roll = rnd() - g.player.crew.chestLuck * 0.03 - bonus * 0.05;
@@ -119,8 +121,8 @@ export function grantReward(g: Game, r: Reward): string {
       g.give('tech_parts', r.n, true);
       return `${r.n} Salvaged Tech`;
     case 'card': {
-      const got = g.ownCard(r.id);
-      return `${CARDS[r.id]?.name ?? r.id}${got === 'dupe' ? ' (copy)' : ' (new!)'}`;
+      const got = takeRoadCard(g, r.id);
+      return `${CARDS[r.id]?.name ?? r.id}${got === 'level' ? ` (level ${g.cards[r.id].level})` : ' (new!)'}`;
     }
   }
 }

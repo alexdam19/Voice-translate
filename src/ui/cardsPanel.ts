@@ -1,5 +1,5 @@
 import { autoDeck, canUpgradeCard, openAllPacks, openPack, swapDeck, toggleDeck, toggleRelic, trackCard, upgradeAllCards, upgradeCard } from '../game/actions';
-import { CARD_LIST, CARDS, MAX_CARD_LEVEL, MAX_DECK, PACK_INFO, SCHOOLS, shardsNeeded, upgradeCost, type School } from '../game/cards';
+import { CARD_LIST, CARDS, MAX_CARD_LEVEL, MAX_DECK, PACK_INFO, ROAD_STEP, roadTier, SCHOOLS, shardsNeeded, upgradeCost, type School } from '../game/cards';
 import { RARITIES } from '../shared/rarity';
 import { cardEl } from './cardView';
 import { button, clickWord, costHTML, esc, h } from './dom';
@@ -184,7 +184,10 @@ function renderRelics(ctx: PanelCtx): void {
 
 function renderPacks(ctx: PanelCtx): void {
   const g = ctx.app.game;
-  ctx.body.appendChild(h('div', 'hint', 'Card packs drop from <b>elite</b> enemies, <b>bosses</b>, <b>raider tanks</b>, <b>outposts</b>, <b>rune altars</b>, <b>titans</b> and loot areas, every other horde you survive, and one every commander level.'));
+  const tier = roadTier(g.cardPicks);
+  const next = tier < 5 ? ROAD_STEP - (g.cardPicks % ROAD_STEP) : 0;
+  ctx.body.appendChild(h('div', 'road', `<b>CARD ROAD</b> · ${g.cardPicks} picks · offering up to <span style="color:${RARITIES[tier].color}">${RARITIES[tier].name}</span>${next ? ` · ${RARITIES[tier + 1].name} opens in ${next} pick${next > 1 ? 's' : ''}` : ' · the whole road is open'}<div class="road-bar">${[0, 1, 2, 3, 4, 5].map((r) => `<i class="${r <= tier ? 'on' : ''}" style="--rc:${RARITIES[r].color}">${RARITIES[r].name}</i>`).join('')}</div>`));
+  ctx.body.appendChild(h('div', 'hint', 'Every pack is a <b>this-or-that</b> pick off the card road: a new card from the newest rarity it has opened, or another card (or a level for one you own). Take a card you already have and it goes up a level. Rare, Epic and Legendary packs reach further down the road. Packs come from elites, bosses, raider tanks, outposts, rune altars, titans, loot areas, hordes and every commander level.'));
   if (g.packs.length > 1) {
     ctx.body.appendChild(button(`OPEN ALL ${g.packs.length} PACKS`, () => {
       st.opened = openAllPacks(g);
@@ -194,7 +197,7 @@ function renderPacks(ctx: PanelCtx): void {
   }
   if (st.opened.length) {
     const fresh = st.opened.filter((o) => o.isNew).length;
-    ctx.body.appendChild(h('div', 'cat', `OPENED <small>${st.opened.length} cards · ${fresh} new · the rest level your cards up</small>`));
+    ctx.body.appendChild(h('div', 'cat', `OPENED <small>${st.opened.length} picks · ${fresh} new · the rest levelled cards you own</small>`));
     const res = h('div', 'coll-grid opened');
     const counts = new Map<string, { n: number; isNew: boolean }>();
     for (const o of st.opened) {
@@ -204,7 +207,7 @@ function renderPacks(ctx: PanelCtx): void {
     }
     for (const [id, c] of counts) {
       const el = cardEl(g, id, { mini: true });
-      el.appendChild(h('div', `mc-lv ${c.isNew ? 'ready' : ''}`, `${c.isNew ? 'NEW' : 'copy'}${c.n > 1 ? ` ×${c.n}` : ''}`));
+      el.appendChild(h('div', `mc-lv ${c.isNew ? 'ready' : ''}`, `${c.isNew ? 'NEW' : 'LEVEL UP'}${c.n > 1 ? ` ×${c.n}` : ''}`));
       res.appendChild(el);
     }
     ctx.body.appendChild(res);
@@ -219,7 +222,7 @@ function renderPacks(ctx: PanelCtx): void {
     const el = h('div', `pack ${k}`, `<div class="pk-box" style="--pc:${info.color}"><span>${esc(info.name.toUpperCase())}</span></div><div class="d">${esc(info.desc)}</div>`);
     el.appendChild(button('OPEN', () => {
       const res = openPack(g, i);
-      if (res) ctx.app.openChest(res.kind, res.rewards, false);
+      if (res) ctx.app.openChest(res.kind, res.rewards, true);
       ctx.rerender();
     }, 'primary'));
     row.appendChild(el);

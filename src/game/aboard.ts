@@ -43,6 +43,8 @@ export interface Person {
   t: number;
   /** The module they're at (for the side view's room mapping), or 0. */
   mod: number;
+  /** On a work order (its id): the interior views pick them out and draw their way through the ship. */
+  order?: number;
 }
 
 /** Walking pace (cells per second) and lift time per deck (s). Shared with the work orders' timing. */
@@ -145,6 +147,9 @@ interface Slot {
   color: string;
   carry: string | null;
   mod: number;
+  /** A work order's crew: who they are, and where they set out from (the Barracks), so you see the whole walk. */
+  order?: number;
+  from?: { deck: number; x: number; y: number };
 }
 
 let nextPerson = 1;
@@ -194,11 +199,13 @@ export class Aboard {
         out.push({ key: `t${t.id}_${i}`, deck: back ? home?.deck ?? 3 : t.deck, x: back ? hx : jx, y: back ? hy : jy, act: back ? 'idle' : act, color: DEPT_COL.team, carry: null, mod: 0 });
       }
     }
-    // Work crews.
+    // Work crews: they set out from the Barracks (or the Quarters) and walk every step of the job.
+    const home = barracks[0] ?? bunks.find((b) => b.m.key === 'quarters')?.m ?? bunks[0]?.m;
+    const from = home ? { deck: home.deck, x: home.cx + MODULES[home.key].w / 2, y: home.cy + MODULES[home.key].h / 2 } : { deck: 3, x: SPINE_X, y: rows / 2 };
     for (const o of g.orders) {
       for (let i = 0; i < o.n; i++) {
         const at = o.dest;
-        out.push({ key: `o${o.id}_${i}`, deck: at.deck, x: at.x + (i % 2) * 1.1 - 0.5, y: at.y + Math.floor(i / 2) * 1.1 - 0.5, act: o.carrying ? 'carry' : o.phase === 'work' ? 'build' : 'idle', color: DEPT_COL.order, carry: o.carrying, mod: o.destMod });
+        out.push({ key: `o${o.id}_${i}`, deck: at.deck, x: at.x + (i % 2) * 1.1 - 0.5, y: at.y + Math.floor(i / 2) * 1.1 - 0.5, act: o.carrying ? 'carry' : o.phase === 'work' ? 'build' : 'idle', color: DEPT_COL.order, carry: o.carrying, mod: o.destMod, order: o.id, from: { deck: from.deck, x: from.x + (i % 2) * 0.8, y: from.y + Math.floor(i / 2) * 0.8 } });
       }
     }
     // Off watch: most asleep in the bunks (quarters first), the rest in the mess or about the ship; the reserve in the Barracks.
@@ -252,6 +259,13 @@ export class Aboard {
       } else free.push(pr);
     }
     for (const s of byKey.values()) {
+      if (s.from && !instant) {
+        // A work crew sets out from home, so the whole walk through the ship is there to see.
+        const pr: Person = { id: nextPerson++, slot: s.key, deck: s.from.deck, x: s.from.x, y: s.from.y, path: [], act: s.act, color: s.color, carry: s.carry, ride: 0, dir: 1, t: Math.random() * 10, mod: s.mod, order: s.order };
+        this.assign(pr, s, false);
+        keep.push(pr);
+        continue;
+      }
       // The nearest spare person takes it (same deck first); otherwise someone new comes up a lift.
       let bi = -1, bd = Infinity;
       for (let i = 0; i < free.length; i++) {
@@ -282,6 +296,7 @@ export class Aboard {
     pr.color = s.color;
     pr.carry = s.carry;
     pr.mod = s.mod;
+    pr.order = s.order;
     const end = pr.path.length ? pr.path[pr.path.length - 1] : { deck: pr.deck, x: pr.x, y: pr.y };
     if (end.deck === s.deck && Math.abs(end.x - s.x) < 0.05 && Math.abs(end.y - s.y) < 0.05) return;
     if (instant) {
