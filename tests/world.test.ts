@@ -152,10 +152,20 @@ describe('motion', () => {
 });
 
 describe('buildings', () => {
-  it('registers every building in a settlement: roofed ones solid, the ones a highway cuts through left as ruins', () => {
+  it('registers every building in a town: roofed ones solid, the ones a highway cuts through left as ruins', () => {
     const g = game(777);
     const m = g.map;
-    const reg = g.gen.regions.find((r) => r.kind === 'settlement')!;
+    // A town a highway runs through (the minor places appear as you travel: look round the Crater for one).
+    const roadThrough = (r: { x: number; y: number; r: number }): boolean => {
+      for (let a = 0; a < Math.PI * 2; a += 0.3) for (let d = 0; d < r.r; d += 6) if (m.getTer(Math.floor(r.x + Math.cos(a) * d), Math.floor(r.y + Math.sin(a) * d)) === TER.ROAD) return true;
+      return false;
+    };
+    let reg = g.gen.regions.find((r) => r.kind === 'town' && roadThrough(r));
+    for (let k = 0; k < 400 && !reg; k++) {
+      g.gen.focus(MAP_SIZE * (0.15 + 0.7 * ((k * 0.618) % 1)), MAP_SIZE * (0.15 + 0.7 * ((k * 0.382) % 1)));
+      reg = g.gen.regions.find((r) => r.kind === 'town' && roadThrough(r));
+    }
+    if (!reg) throw new Error('no town found');
     const seen = new Map<string, { x0: number; y0: number; x1: number; y1: number; style: string }>();
     for (let cy = Math.floor((reg.y - 200) / CH); cy <= Math.floor((reg.y + 200) / CH); cy++) {
       for (let cx = Math.floor((reg.x - 200) / CH); cx <= Math.floor((reg.x + 200) / CH); cx++) {
@@ -163,7 +173,7 @@ describe('buildings', () => {
       }
     }
     const all = [...seen.values()];
-    const shops = all.filter((b) => b.style === 'shop');
+    const shops = all.filter((b) => b.style !== 'ruin');
     expect(shops.length).toBeGreaterThan(10);
     expect(all.some((k) => k.style === 'ruin')).toBe(true);
     // A roofed shop is solid right through (nothing walks about inside it) until something smashes it.
@@ -174,6 +184,26 @@ describe('buildings', () => {
     // Every building is registered in each chunk it covers, under the same key.
     for (const s of shops.slice(0, 5)) {
       for (const [tx, ty] of [[s.x0, s.y0], [s.x1 - 1, s.y1 - 1]]) expect(m.chunk(tx >> 5, ty >> 5).buildings.some((k) => k.key === [...seen].find(([, v]) => v === s)![0])).toBe(true);
+    }
+  });
+
+  it('the three settlements are forward bases: a ring wall with four gates, a docking yard, buildings round it', async () => {
+    const { OUTPOST, OUTPOST_BLOCKS } = await import('../src/shared/outpost');
+    const g = game(777);
+    const m = g.map;
+    const bases = g.gen.regions.filter((r) => r.kind === 'settlement');
+    expect(bases.length).toBe(3);
+    for (const b of bases) {
+      const at = (dx: number, dy: number): number => m.getObs(Math.floor(b.x + dx), Math.floor(b.y + dy));
+      // The yard is open, the wall is hard, the gates are open.
+      expect(at(0, 0)).toBe(OBS.NONE);
+      expect(at(OUTPOST.yardR - 20, 0)).toBe(OBS.NONE);
+      let wall = 0;
+      for (let a = 0.3; a < Math.PI * 2; a += 0.21) if (at(Math.cos(a) * OUTPOST.wallR, Math.sin(a) * OUTPOST.wallR) === OBS.BASTION) wall++;
+      expect(wall).toBeGreaterThan(20);
+      for (const [dx, dy] of [[OUTPOST.wallR, 0], [0, OUTPOST.wallR], [-OUTPOST.wallR, 0], [0, -OUTPOST.wallR]]) expect(at(dx, dy)).not.toBe(OBS.BASTION);
+      const bl = OUTPOST_BLOCKS[0];
+      expect(at((bl.x0 + bl.x1) / 2, (bl.y0 + bl.y1) / 2)).toBe(OBS.STRUCT);
     }
   });
 });

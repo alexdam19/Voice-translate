@@ -2,12 +2,13 @@ import { COMPOUND, FORWARD } from '../shared/compound';
 import { drawTitan3D, ship3DActive, SHIP_LEAN, shipRoofAt } from './ship3d';
 import { nozzleW } from './ship3d/model';
 import { beginCreatures3D, drawCreature3D } from './creature3d';
+import { FRIENDLY } from './creature3d/friendly';
 import { drawSwarm, swarmGlow, swarmShape } from './px/swarm';
 import { drawCompoundGround, drawCompoundOverhead, drawCompoundPeople, drawCompoundTags, type CompoundView } from './px/compound2d';
 import { CHEST_INFO } from '../game/chests';
 import { MODULES, TITAN_DECK_INFO, TITAN_LIFTS, TITAN_SPINE } from '../game/defs';
 import type { Enemy } from '../game/entities';
-import { ENEMIES, type EnemyDef } from '../game/enemyDefs';
+import { ENEMIES } from '../game/enemyDefs';
 import type { FxEvent, Game } from '../game/game';
 import { SITE_RADIUS } from '../game/systems/world';
 import { STORMS } from '../game/systems/weather';
@@ -40,11 +41,11 @@ import { quantizeSize } from './px/creaturesHD';
 import { speciesFor } from './px/monsters';
 import type { Aboard } from '../game/aboard';
 
-/** How the escorts are drawn: a model from the creature pipeline in the Hangar's colours, at a real size (m). */
-const ESCORT_LOOK: Record<'mantis' | 'raptor' | 'wasp', { kind: string; size: number; min: number; def: EnemyDef }> = {
-  mantis: { kind: 'escort_mantis', size: 9, min: 44, def: { name: 'Mantis Walker Mech', color: '#d8dee6', faction: 'cyborg' } as unknown as EnemyDef },
-  raptor: { kind: 'escort_raptor', size: 10, min: 42, def: { name: 'Raptor Hover Tank', color: '#c8d0da', faction: 'cyborg' } as unknown as EnemyDef },
-  wasp: { kind: 'escort_wasp', size: 8, min: 36, def: { name: 'Wasp Gunship', color: '#cfd6de', faction: 'cyborg' } as unknown as EnemyDef },
+/** How the escorts are drawn: the Hangar's machines from the creature pipeline (see friendly.ts), never smaller than this. */
+const ESCORT_LOOK = {
+  mantis: { ...FRIENDLY.mantis, min: 44 },
+  raptor: { ...FRIENDLY.raptor, min: 42 },
+  wasp: { ...FRIENDLY.wasp, min: 36 },
 };
 
 /**

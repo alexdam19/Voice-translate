@@ -1,5 +1,6 @@
 import { MAP_SIZE } from './constants';
 import { craterNoise, craterThreat, craterZone, DIVOT, inLake, LOCATIONS, locationById, RIVERS, ROAD_LINKS, ZONE_INFO } from './crater';
+import { outpostTile } from './outpost';
 import { CH, GameMap, OBS, TER, ZONE, type Building, type MapChunk } from './map';
 import { COMPOUND, compoundTile, FORWARD, inCompound, inFront } from './compound';
 import { Perlin } from './noise';
@@ -123,7 +124,7 @@ export interface Region {
 
 export const REGION_INFO: Record<RegionKind, { title: string; color: string; hostile: boolean; desc: string; names: string[] }> = {
   hangar: { title: 'Mega Hangar', color: '#40c4ff', hostile: false, desc: 'Your home base: refit, trade and hire.', names: ['Mega Hangar'] },
-  settlement: { title: 'Settlement', color: '#76ff03', hostile: false, desc: 'A safe zone: trade, refuel and hire.', names: ['Settlement'] },
+  settlement: { title: 'Forward Base', color: '#40e0ff', hostile: false, desc: 'One of the Hangar\'s outposts: a ring fortress with a docking yard. Refit, trade, swap hulls and work the scrap exchange.', names: ['Forward Base'] },
   raider: { title: 'Raider Stronghold', color: '#ff5252', hostile: true, desc: 'Raider territory. Its warlord guards a core for the Mega Hangar.', names: ['Raider Camp'] },
   divot: { title: 'The Divot', color: '#ffd740', hostile: true, desc: 'A lost city at the impact centre. Radiation, loot and unknowns.', names: ['The Divot'] },
   lake: { title: 'The Black Lake', color: '#1de9b6', hostile: true, desc: 'Contaminated water and industrial ruins.', names: ['The Black Lake'] },
@@ -959,6 +960,15 @@ export class OpenWorld implements WorldGen {
             const d = Math.hypot(x + 0.5 - reg.x, y + 0.5 - reg.y) + p.noise2(x / 18, y / 18) * 10;
             if (d > reg.r) continue;
             if (reg.kind === 'hangar') break;
+            if (reg.kind === 'settlement') {
+              // The forward bases: ring fortresses with a docking yard (see outpost.ts).
+              const ot = outpostTile(x + 0.5 - reg.x, y + 0.5 - reg.y);
+              if (!ot) continue;
+              t = ot.t === 'metal' ? TER.METAL : ot.t === 'road' ? TER.ROAD : TER.CONCRETE;
+              o = ot.o === 'bastion' ? OBS.BASTION : ot.o === 'struct' ? OBS.STRUCT : 0;
+              oh = ot.o ? ot.h : 0;
+              break;
+            }
             const res = paintRegion(reg, Math.floor(x / REGION_SCALE), Math.floor(y / REGION_SCALE), d / REGION_SCALE, reg.r / REGION_SCALE, seed, p2);
             if (res.keep) break;
             t = res.t;
@@ -1016,7 +1026,8 @@ export class OpenWorld implements WorldGen {
             if (d < best) best = d;
           }
           if (best <= ROAD_W * 1.8) {
-            if (o !== OBS.PILLAR) {
+            // (A highway cuts its own gap in an outpost's wall, but runs round the buildings inside.)
+            if (o !== OBS.PILLAR && o !== OBS.STRUCT) {
               o = 0;
               oh = 0;
             }

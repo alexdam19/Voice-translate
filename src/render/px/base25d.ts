@@ -1577,7 +1577,7 @@ function drawPine(p: P3, _g: Game, it: Item): void {
  * On the ground under it all: the sectors (a tint, painted borders, their letters and names stencilled big), the
  * forest floor round the walls, and every shadow, thrown south-east.
  */
-export function drawBaseGround(c: CanvasRenderingContext2D, g: Game, near: (x: number, y: number, r: number) => boolean, hx: number, hy: number, ppm: number): void {
+export function drawBaseGround(c: CanvasRenderingContext2D, g: Game, near: (x: number, y: number, r: number) => boolean, hx: number, hy: number, ppm: number, shadows = true): void {
   // The forest floor.
   c.fillStyle = 'rgba(46,64,36,0.55)';
   const C = COMPOUND;
@@ -1616,7 +1616,8 @@ export function drawBaseGround(c: CanvasRenderingContext2D, g: Game, near: (x: n
       pxMini(c, s.name, s.lx + bw + 9, s.ly + 5, 'rgba(240,232,200,0.8)', 'left', null, 2);
     }
   }
-  // Shadows: every box swept south-east by its height, as one shape so they don't stack.
+  // Shadows: every box swept south-east by its height, as one shape so they don't stack (the 3D base casts its own).
+  if (!shadows) return;
   if (!scene) scene = buildScene();
   c.fillStyle = 'rgba(6,10,18,0.3)';
   c.beginPath();

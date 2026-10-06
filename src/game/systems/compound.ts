@@ -93,6 +93,12 @@ function machineRoutes(): { kind: Machine['kind']; route: [number, number][] }[]
     out.push({ kind: 'mech', route: [[sx * 132, 320], [sx * 132, 940], [sx * 170, 940], [sx * 170, 320]] });
   }
   out.push({ kind: 'apc', route: [[470, 690], [300, 700], [150, 700], [150, 960], [300, 960], [300, 700]] });
+  // Walkers on patrol inside the walls: the docks, the garrison's streets, the Hangar's apron, the north yard.
+  out.push({ kind: 'mech', route: [[-620, -330], [-620, 720], [-600, 720], [-600, -330]] });
+  out.push({ kind: 'mech', route: [[376, -200], [376, 580], [388, 580], [388, -200]] });
+  out.push({ kind: 'walker', route: [[-300, 296], [300, 296], [300, 306], [-300, 306]] });
+  out.push({ kind: 'walker', route: [[-340, -240], [340, -240], [340, -232], [-340, -232]] });
+  out.push({ kind: 'mech', route: [[-730, 900], [-400, 900], [-400, 910], [-730, 910]] });
   return out;
 }
 
@@ -398,7 +404,8 @@ function init(g: Game): void {
   let id = 0;
   AREAS.forEach((a, ai) => {
     if (a.kind === 'parade') return;
-    for (let k = 0; k < a.n; k++) {
+    // Twice the head count the area's weight says: a busy base.
+    for (let k = 0; k < a.n * 2; k++) {
       const kind: PersonKind = a.kind === 'dock' || a.kind === 'motor' ? 'mech' : a.kind === 'apron' ? 'worker' : a.kind === 'pads' ? (k % 2 ? 'pilot' : 'mech') : k % 4 === 0 ? 'soldier' : 'civ';
       const x = h.x + a.x0 + Math.random() * (a.x1 - a.x0), y = h.y + a.y0 + Math.random() * (a.y1 - a.y0);
       cs.people.push(person(kind, x, y, ai, id++));

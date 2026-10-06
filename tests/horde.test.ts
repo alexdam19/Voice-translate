@@ -110,6 +110,8 @@ describe('horde waves', () => {
     onTestFinished(() => rnd.mockRestore());
     const g = game(6);
     const p = g.player;
+    // Well out of reach of the base's guns.
+    p.x += 2500;
     for (const m of p.modules) m.weapon = null;
     p.troops = 0;
     p.recalc();

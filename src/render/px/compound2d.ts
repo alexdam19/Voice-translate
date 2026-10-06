@@ -8,6 +8,10 @@ import { ART_PX, faceTiles, frontSprite, hasStructSprite, structSprite, towerSpr
 import { hero, heroFoot, type HeroPose, type HeroRole } from './heroes';
 import { gunshipSprite, machineSprite, turretSprite, vehicleSprite, type VehicleKind } from './militaryArt';
 import type { Gunship, Resident } from '../../game/systems/compound';
+import { base3DActive, drawBase3DGL } from '../base3d';
+import { drawCreature3D } from '../creature3d';
+import { FRIENDLY, type FriendlyKey } from '../creature3d/friendly';
+import type { Enemy } from '../../game/entities';
 
 /**
  * The Mega Hangar compound drawn over its ground: the wall, its towers and every building in pixel art (see
@@ -38,6 +42,8 @@ const MID_Y = (COMPOUND.y0 + FORWARD.y1) / 2;
 const REACH = Math.hypot(COMPOUND.x1 - COMPOUND.x0, FORWARD.y1 - COMPOUND.y0) / 2 + 40;
 
 const BAYS = [-HANGAR.w * 0.3, 0, HANGAR.w * 0.3];
+/** The old painted 2.5D base instead of the 3D one (?base2d in the address). */
+const NO_GL = typeof location !== 'undefined' && /[?&]base2d/.test(location.search);
 
 function toHangar(v: CompoundView, hx: number, hy: number): void {
   const ppm = v.ppm;
@@ -469,14 +475,19 @@ export function drawCompoundGround(v: CompoundView, g: Game): void {
   // Seen north-up, the base stands up in the overhead pass (base25d); here only its ground, sectors and shadows.
   const persp = v.th === 0;
   if (persp) {
-    drawBaseGround(c, g, v.near, h.x, h.y, ppm);
-    FRONT_GUNS.forEach((gn, i) => {
+    const gl = !NO_GL && base3DActive();
+    drawBaseGround(c, g, v.near, h.x, h.y, ppm, !gl);
+    if (!gl) FRONT_GUNS.forEach((gn, i) => {
       const st = cs.front[i];
       if (gn.kind === 'tank' && v.near(h.x + gn.x, h.y + gn.y, 30)) drawVehicle(c, 'tank', i, gn.x, gn.y, Math.PI / 2, st?.aim ?? Math.PI / 2, st?.flash ?? 0);
     });
     if (v.near(h.x + (MOTOR_POOL.x0 + MOTOR_POOL.x1) / 2, h.y + (MOTOR_POOL.y0 + MOTOR_POOL.y1) / 2, 140)) {
       for (const pk of PARKED) drawVehicle(c, pk.kind, pk.v, pk.x, pk.y, Math.PI / 2);
     }
+    // The fortress itself, in 3D over its ground (the parked gunships on their pads after it).
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    if (!NO_GL) drawBase3DGL(c, g, { ppm, ox: v.bx(h.x, h.y), oy: v.by(h.x, h.y), time: v.time }, h.x, h.y);
+    toHangar(v, h.x, h.y);
     for (const a of cs.air) if (a.state === 'parked' || (a.state === 'up' && a.z < 3) || (a.state === 'down' && a.z < 3)) drawGunship(c, a, h.x, h.y);
     c.imageSmoothingEnabled = smooth;
     c.setTransform(1, 0, 0, 1, 0, 0);
@@ -659,10 +670,39 @@ export function drawCompoundPeople(v: CompoundView, g: Game): void {
   });
   c.setTransform(1, 0, 0, 1, 0, 0);
   if (v.ppm >= 1.1) drawPeople(v, g);
-  // The walkers and mechs stand over everyone.
-  toHangar(v, h.x, h.y);
-  for (const m of cs.machines) if ((m.kind === 'walker' || m.kind === 'mech') && v.near(m.x, m.y, 10)) drawStrider(c, m, h.x, h.y);
+  // The walkers and mechs stand over everyone: the base's white walkers from the 3D models where there's WebGL.
+  for (const m of cs.machines) {
+    if ((m.kind !== 'walker' && m.kind !== 'mech') || !v.near(m.x, m.y, 12)) continue;
+    const f = FRIENDLY.mantis;
+    const size = Math.max(m.kind === 'walker' ? 40 : 30, f.size * (m.kind === 'walker' ? 1.3 : 1) * v.ppm * 1.6);
+    const fake = { kind: f.kind, atkT: m.flash > 0 ? 0.2 : 9, anim: m.anim * 0.3, hitFlash: 0 } as unknown as Enemy;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    if (drawCreature3D(c, fake, f.def, v.bx(m.x, m.y), v.by(m.x, m.y), size, m.rot + v.th, false)) continue;
+    toHangar(v, h.x, h.y);
+    drawStrider(c, m, h.x, h.y);
+  }
   c.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+/** Which suit a resident wears. */
+function suitOf(r: Resident): FriendlyKey {
+  switch (r.kind) {
+    case 'soldier':
+    case 'guard':
+    case 'rifle':
+    case 'sentry':
+    case 'signal':
+      return 'trooper';
+    case 'officer':
+      return 'officer';
+    case 'mech':
+    case 'worker':
+      return 'loader';
+    case 'pilot':
+      return 'pilot';
+    default:
+      return 'crew';
+  }
 }
 
 function drawPeople(v: CompoundView, g: Game): void {
@@ -677,6 +717,15 @@ function drawPeople(v: CompoundView, g: Game): void {
   const waving = cs.gate.target === 1 || (cs.gate.open > 0.02 && cs.gate.open < 0.98);
   cs.people.forEach((r, i) => {
     if (!v.near(r.x, r.y, 4)) return;
+    // Everyone on the base is in a powered suit (the 3D models), facing the way they're going.
+    if (!NO_GL) {
+      const f = FRIENDLY[suitOf(r)];
+      const hd = r.walking ? Math.atan2(r.ty - r.y, r.tx - r.x) : r.kind === 'sentry' || r.kind === 'guard' || r.kind === 'rifle' ? Math.PI / 2 : r.face < 0 ? Math.PI : 0;
+      const aiming = (r.aimT ?? 0) > 0 || (alarm && (r.kind === 'soldier' || r.kind === 'rifle' || r.kind === 'sentry' || r.kind === 'guard'));
+      const fake = { kind: f.kind, atkT: aiming ? 0.25 : 9, anim: r.walking ? r.anim * 0.55 : 0, hitFlash: 0 } as unknown as Enemy;
+      const size = Math.max(f.size > 3 ? 18 : 14, f.size * v.ppm * 1.7);
+      if (drawCreature3D(c, fake, f.def, v.bx(r.x, r.y), v.by(r.x, r.y), size, hd + v.th, false)) return;
+    }
     const { role, pose, frame } = look(r, i, alarm, drill, waving, v.time);
     // Seen from above, facing the way they walk; at a post, out toward the front; otherwise left or right.
     const hd = r.walking ? Math.atan2(r.ty - r.y, r.tx - r.x) : r.kind === 'sentry' || r.kind === 'guard' || r.kind === 'rifle' ? Math.PI / 2 : r.face < 0 ? Math.PI : 0;
@@ -732,7 +781,7 @@ export function drawCompoundOverhead(v: CompoundView, g: Game): void {
   if (v.th === 0) {
     const pl = g.player;
     const p = makeP3(c, v.ppm, v.cx, v.cy, v.bx(h.x, h.y), v.by(h.x, h.y), t, v.bx(pl.x, pl.y), v.by(pl.x, pl.y), (pl.stats.width / 2) * v.ppm);
-    drawBase3D(p, g, h.x, h.y);
+    if (NO_GL || !base3DActive()) drawBase3D(p, g, h.x, h.y);
     toHangar(v, h.x, h.y);
     for (const a of g.compound.air) if (!(a.state === 'parked' || (a.state === 'up' && a.z < 3) || (a.state === 'down' && a.z < 3))) drawGunshipHigh(p, c, a, h.x, h.y);
     searchlights(c, g, t);

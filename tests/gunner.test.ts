@@ -8,6 +8,8 @@ const DT = 1 / 30;
 function quiet(): ReturnType<typeof game> {
   const g = outside(game());
   g.compound.siegeT = g.compound.trafficT = g.wave.t = 1e9;
+  // Well out of reach of the base's own guns.
+  g.player.x += 2500;
   g.player.troops = Math.max(g.player.troops, g.player.stats.bunks);
   return g;
 }
@@ -86,9 +88,16 @@ describe('gunner', () => {
     const ax = p.x + Math.cos(p.rot) * 60, ay = p.y + Math.sin(p.rot) * 60;
     const e = g.spawnEnemy('raider', ax, ay, 1);
     e.hp = e.maxHp = 5;
+    e.stun = 99;
     gunAim(g, e.x, e.y);
-    gunTrigger(g, true);
-    for (let i = 0; i < 30 * 3 && e.hp > 0; i++) stepWorld(g, DT);
+    // Click away until it drops (a heavy gun fires a round a click).
+    for (let i = 0; i < 30 * 8 && e.hp > 0; i++) {
+      if (i % 30 === 0) {
+        gunTrigger(g, false);
+        gunTrigger(g, true);
+      }
+      stepWorld(g, DT);
+    }
     expect(e.hp).toBeLessThanOrEqual(0);
     expect(g.gunner!.kills).toBe(1);
     expect(g.gunner!.killT).toBeGreaterThan(0);

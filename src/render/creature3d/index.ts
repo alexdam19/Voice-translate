@@ -109,6 +109,12 @@ function makeSpec(kind: string, def: EnemyDef | undefined): Spec | null {
   };
   const set = (o: Partial<Spec>): Spec => Object.assign(s, o);
   const elem = has('storm') ? 'storm' : has('water', 'drowned', 'lake') ? 'water' : has('sand', 'dune') ? 'sand' : has('frost', 'ice', 'snow') ? 'frost' : 'fire';
+  // The Hangar's people in powered suits (see friendly.ts).
+  if (has('exosuit trooper')) return set({ build: 'normal', head: 'visor', armor: 'chrome', weapon: 'rifle', body: '#d6dce4', dark: '#3a424c', accent: '#7d8a99', glow: '#40e0ff', skin: '#c8ccd4' });
+  if (has('power loader')) return set({ build: 'hulk', head: 'visor', armor: 'heavy', weapon: 'claws', body: '#e0a020', dark: '#3a2a10', accent: '#5a6068', glow: '#ffd740', skin: '#c8ccd4' });
+  if (has('exosuit crew')) return set({ build: 'normal', head: 'helmet', armor: 'light', weapon: 'none', body: '#a8b4c2', dark: '#2e3640', accent: '#d8dee6', glow: '#40e0ff', skin: '#c8ccd4' });
+  if (has('exosuit officer')) return set({ build: 'normal', head: 'visor', armor: 'chrome', weapon: 'none', body: '#2c3644', dark: '#14181e', accent: '#c8a050', glow: '#40e0ff', skin: '#c8ccd4' });
+  if (has('exosuit pilot')) return set({ build: 'thin', head: 'helmet', armor: 'light', weapon: 'none', body: '#3c4c5e', dark: '#1a222c', accent: '#d8dee6', glow: '#40e0ff', skin: '#c8ccd4' });
   // Bosses first, by name.
   if (has('warlord')) return set({ build: 'hulk', head: 'horned', weapon: 'axe', armor: 'heavy', spikes: true, accent: '#6a6e78', skin: '#a07050' });
   if (has('goliath')) return set({ rig: 'mech', glow: '#ff3030' });
