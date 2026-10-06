@@ -58,8 +58,10 @@ function pick(g: Game, t: Tank, kind: NestKind, x: number, y: number, range: num
     const d = Math.hypot(e.x - x, e.y - y);
     if (d > range + e.r) continue;
     let score = d;
-    // Boarders first: nothing gets to chew on the hull while soldiers stand on it.
+    // Boarders first: nothing gets to chew on the hull while soldiers stand on it. A focus-fire mark beats even that.
     if (e.latch?.tank === t.id) score -= 30;
+    const ap = t.aimPoint;
+    if (ap && (ap.id === e.id || Math.hypot(e.x - ap.x, e.y - ap.y) < 25)) score -= 60;
     if (kind === 'rocket') score -= e.maxHp / 30 + (e.elite ? 10 : 0) + (e.titan ? 40 : 0);
     // Grenades want company, not something standing on your own deck.
     if (kind === 'grenade' && (e.latch || d < 3)) score += 20;

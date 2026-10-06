@@ -1330,6 +1330,51 @@ export class View2D {
   private drawMarkers(g: Game, dt: number): void {
     const c = this.ctx;
     const ppm = this.ppm;
+    // Focused fire: a red reticle on the mark (riding on the foe it's locked to), the area the guns rake, the time left.
+    const ap = g.player.aimPoint;
+    if (ap && g.mode === 'world') {
+      const foe = ap.id ? g.enemyById(ap.id) : null;
+      const lift = foe ? (foe.flying ? 1.6 : 0) + foe.r * 0.9 : 0;
+      const x = this.bx(ap.x, ap.y), y = this.by(ap.x, ap.y) - lift * SHIP_LEAN * ppm;
+      const r = Math.max(14, ((foe ? foe.r : 0) + 5) * ppm);
+      const spin = this.time * 1.6;
+      c.save();
+      c.lineWidth = 2;
+      c.strokeStyle = '#ff1744';
+      c.shadowColor = '#ff1744';
+      c.shadowBlur = 8;
+      for (let i = 0; i < 4; i++) {
+        const a = spin + (i * Math.PI) / 2;
+        c.beginPath();
+        c.arc(x, y, r, a - 0.42, a + 0.42);
+        c.stroke();
+        c.beginPath();
+        c.moveTo(x + Math.cos(a) * (r + 6), y + Math.sin(a) * (r + 6));
+        c.lineTo(x + Math.cos(a) * (r - 7), y + Math.sin(a) * (r - 7));
+        c.stroke();
+      }
+      c.shadowBlur = 0;
+      c.fillStyle = '#ff1744';
+      c.fillRect(Math.round(x) - 2, Math.round(y) - 2, 4, 4);
+      if (!ap.id) {
+        // The ground mark: the area every gun rakes.
+        c.globalAlpha = 0.35 + 0.15 * Math.sin(this.time * 5);
+        c.setLineDash([6, 6]);
+        c.lineWidth = 1;
+        c.beginPath();
+        c.arc(x, y, Math.max(r + 8, 25 * ppm), 0, Math.PI * 2);
+        c.stroke();
+        c.setLineDash([]);
+        c.globalAlpha = 1;
+      }
+      c.font = 'bold 11px "Silkscreen", monospace';
+      c.textAlign = 'center';
+      c.fillStyle = '#000';
+      c.fillText(`FOCUS ${Math.ceil(ap.t)}s`, x + 1, y - r - 9);
+      c.fillStyle = '#ff5252';
+      c.fillText(`FOCUS ${Math.ceil(ap.t)}s`, x, y - r - 10);
+      c.restore();
+    }
     if (this.marker) {
       this.marker.t -= dt;
       if (this.marker.t <= 0) this.marker = null;

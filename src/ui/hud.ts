@@ -1,4 +1,5 @@
 import { CHAPTERS } from '../game/story';
+import { STREAK_ORDER, STREAKS, type StreakKind } from '../game/systems/streaks';
 import { COLOSSI, colossusHealth } from '../game/systems/colossus';
 import { ENEMIES } from '../game/enemyDefs';
 import { ShipConsole } from './shipConsole';
@@ -32,7 +33,7 @@ import { itemIcon, moduleIcon, portrait } from '../render/icons';
 import { cardEl } from './cardView';
 import { button, esc, h, hideTip, isTouch, tooltip } from './dom';
 import { Tossable } from './tossable';
-import { buildRobot, ROBOT_REPAIR, ROBOT_TIME, robotBlocked, robotCap } from '../game/systems/robots';
+import { buildRobot, ROBOT_REPAIR, ROBOT_TIME, robotBlocked, robotCap, robotsComing } from '../game/systems/robots';
 import { agentFace } from './agents';
 import { AGENTS } from '../game/systems/comms';
 import { Joystick } from './joystick';
@@ -48,6 +49,10 @@ function builderWork(g: Game): boolean {
 }
 
 export interface HudActions {
+  /** Call in a banked killstreak. */
+  callStreak(kind: StreakKind): void;
+  /** Focus every gun on a foe (the boss bar's button). */
+  focusOn(id: number): void;
   openPanel(name: string, tab?: string): void;
   pickPerk(crewId: number, idx: number): void;
   useKit(): void;
@@ -68,7 +73,7 @@ export interface HudActions {
   /** Set up camp / pack up. */
   camp(): void;
   /** The helm: throttle lever steps, all stop, overdrive. */
-  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp' | 'jaws'): void;
+  helm(cmd: 'up' | 'down' | 'stop' | 'overdrive' | 'warp' | 'jaws' | 'focus'): void;
   /** Into the captain's cabin (first person). */
   cabin(): void;
   /** The all-decks interior cutaway. */
@@ -133,6 +138,11 @@ export class Hud {
   private res = h('div', 'resources');
   private menu = h('div', 'menu-buttons');
   private boss = h('div', 'bossbar');
+  private bossInfo = h('div', 'bossinfo');
+  private bossFocus = h('button', 'boss-focus');
+  private bossTarget = 0;
+  private streaks = h('div', 'streaks');
+  private streakKey = '';
   private waveBar = h('div', 'wave-bar');
   private buffs = h('div', 'buffbar');
   private toasts = h('div', 'toasts');
@@ -150,6 +160,9 @@ export class Hud {
   private odBtn: HTMLButtonElement | null = null;
   private warpBtn: HTMLButtonElement | null = null;
   private jawsBtn: HTMLButtonElement | null = null;
+  private focusBtn: HTMLButtonElement | null = null;
+  /** Whether the FOCUS button is armed (set by the app). */
+  focusArmed: () => boolean = () => false;
   /** Fires, flooding, lost crawlers and failing systems (tap for the bridge status display). */
   private alerts = h('div', 'titan-alerts');
   private kitBtn = h('div', 'kit-btn');
@@ -235,7 +248,8 @@ export class Hud {
       e.stopPropagation();
       if ((e.target as HTMLElement).closest('[data-robot]') && this.game) {
         const why = buildRobot(this.game);
-        this.toast(why ?? `The workshop is building a robot (${ROBOT_TIME}s).`, why ? '#ff8a80' : '#ffb040');
+        const q = this.game.robotBuild?.queue ?? 0;
+        this.toast(why ?? (q ? `Robot queued: ${q + 1} in the workshop.` : `The workshop is building a robot (${ROBOT_TIME}s).`), why ? '#ff8a80' : '#ffb040');
         return;
       }
       const t = (e.target as HTMLElement).closest('[data-open]') as HTMLElement | null;
@@ -246,6 +260,17 @@ export class Hud {
     tr.append(this.menu, this.res);
     const tc = h('div', 'hud-tc');
     tc.append(this.waveBar, this.stormBar, this.lvlBanner, this.boss, this.buffs, this.hazard, this.toasts);
+    this.boss.append(this.bossInfo, this.bossFocus);
+    this.root.appendChild(this.streaks);
+    this.streaks.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const b = (e.target as HTMLElement).closest('[data-ks]') as HTMLElement | null;
+      if (b?.classList.contains('ready')) act.callStreak(b.dataset.ks as StreakKind);
+    });
+    this.bossFocus.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (this.bossTarget) act.focusOn(this.bossTarget);
+    });
     this.lvlBanner.addEventListener('click', (e) => {
       e.stopPropagation();
       this.lvlT = 0;
@@ -278,7 +303,7 @@ export class Hud {
     tooltip(this.kitBtn, () => `<h4>Repair Kit <small>[5]</small></h4><div>Restore 25% hull over 3s.</div><div class="d">Make more in CARGO > Workshop.</div>`);
     this.hpBox.append(this.alerts, this.tankInfo, this.gauge, hp, this.kitBtn, this.driveChip, this.drivePop);
     this.gauge.append(this.gaugeRead, this.gaugeCtl);
-    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): a big burst of speed for a lot of fuel, until the engine overheats (Engine Workshop parts change all three)'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near'], ['jaws', 'JAWS', 'Compactor: open the bow\'s jaws and she eats whatever she drives into (buildings, walls, wrecks, small creatures), spitting it out of the stern as bales of scrap. 10% less top speed while open.']] as const) {
+    for (const [cmd, label, tip] of [['down', '−', 'Throttle down (S)'], ['stop', 'STOP', 'All stop (Space)'], ['up', '+', 'Throttle up (W)'], ['overdrive', 'OVERDRIVE', 'Overdrive (O): a big burst of speed for a lot of fuel, until the engine overheats (Engine Workshop parts change all three)'], ['warp', '⏩ ×1', 'Cruise warp (.): time runs 4x or 8x faster while nothing hostile is near'], ['jaws', 'JAWS', 'Compactor: open the bow\'s jaws and she eats whatever she drives into (buildings, walls, wrecks, small creatures), spitting it out of the stern as bales of scrap. 10% less top speed while open.'], ['focus', 'FOCUS', 'Focus fire: click a foe or a spot (on touch: press FOCUS, then tap) and every gun, battery and roof nest in reach turns on it for 12 s. Press again to lift it.']] as const) {
       const b = button(label, (e) => {
         e.stopPropagation();
         act.helm(cmd);
@@ -287,6 +312,7 @@ export class Hud {
       if (cmd === 'overdrive') this.odBtn = b;
       if (cmd === 'warp') this.warpBtn = b;
       if (cmd === 'jaws') this.jawsBtn = b;
+      if (cmd === 'focus') this.focusBtn = b;
       this.gaugeCtl.appendChild(b);
     }
     this.alerts.addEventListener('click', (e) => {
@@ -667,17 +693,46 @@ export class Hud {
       const total = d.weak.filter((w) => !w.core).length;
       this.boss.style.display = 'block';
       this.boss.classList.add('colossus');
-      setHTML(this.boss, `<div class="bn">☠ ${esc(d.name.toUpperCase())} <small>${esc(d.title)} · ${Math.round(Math.hypot(col.x - p.x, col.y - p.y))} m</small></div><div class="bb"><div style="width:${(h.hp / Math.max(1, h.max)) * 100}%"></div></div><div class="bw">WEAK POINTS ${standing}/${total} · CORE ${col.open ? '<b>OPEN: HIT IT</b>' : 'ARMOURED'}</div>`);
+      const core = col.parts.map((id) => g.enemies.find((e) => e.id === id)).find((e, i) => e && e.hp > 0 && (col.open ? d.weak[i].core : !d.weak[i].core));
+      this.bossTarget = core?.id ?? 0;
+      setHTML(this.bossInfo, `<div class="bn">☠ ${esc(d.name.toUpperCase())} <small>${esc(d.title)} · ${Math.round(Math.hypot(col.x - p.x, col.y - p.y))} m</small></div><div class="bb"><div style="width:${(h.hp / Math.max(1, h.max)) * 100}%"></div></div><div class="bw">WEAK POINTS ${standing}/${total} · CORE ${col.open ? '<b>OPEN: HIT IT</b>' : 'ARMOURED'}</div>`);
     } else if (rival) {
       this.boss.classList.remove('colossus');
       this.boss.style.display = 'block';
       const hp = (rival.hp + rival.shield) / (rival.stats.maxHp + rival.stats.shield);
-      setHTML(this.boss, `<div class="bn">${esc(rival.name)} <small>RIVAL ${esc(chassisForCC(rival.stats.cc).name.toUpperCase())} · ${Math.round(Math.hypot(rival.x - p.x, rival.y - p.y))}m</small></div><div class="bb"><div style="width:${hp * 100}%"></div></div>`);
+      this.bossTarget = rival.id;
+      setHTML(this.bossInfo, `<div class="bn">${esc(rival.name)} <small>RIVAL ${esc(chassisForCC(rival.stats.cc).name.toUpperCase())} · ${Math.round(Math.hypot(rival.x - p.x, rival.y - p.y))}m</small></div><div class="bb"><div style="width:${hp * 100}%"></div></div>`);
     } else if (titan) {
       this.boss.classList.remove('colossus');
       this.boss.style.display = 'block';
-      setHTML(this.boss, `<div class="bn">${esc(titan.name)} <small>${titan.boss ? 'BOSS' : 'GIANT'} · ${Math.round(ENEMIES[titan.kind]?.size ?? titan.r * 2)} m</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
-    } else this.boss.style.display = 'none';
+      this.bossTarget = titan.id;
+      setHTML(this.bossInfo, `<div class="bn">${esc(titan.name)} <small>${titan.boss ? 'BOSS' : 'GIANT'} · ${Math.round(ENEMIES[titan.kind]?.size ?? titan.r * 2)} m</small></div><div class="bb"><div style="width:${(titan.hp / titan.maxHp) * 100}%"></div></div>`);
+    } else {
+      this.boss.style.display = 'none';
+      this.bossTarget = 0;
+    }
+    if (this.bossTarget) {
+      const ap = p.aimPoint;
+      const on = !!ap && ap.id === this.bossTarget;
+      this.bossFocus.classList.toggle('on', on);
+      this.bossFocus.textContent = on ? `● ALL GUNS ON TARGET · ${Math.ceil(ap!.t)}s` : '◎ FOCUS ALL GUNS';
+      this.bossFocus.style.display = 'block';
+    } else this.bossFocus.style.display = 'none';
+    // Killstreaks: the streak, what each reward needs, the ones banked and ready to call in.
+    const st = g.streak;
+    const showKs = g.mode === 'world' && !village && !st.active && (st.pts > 0 || st.ready.length > 0);
+    this.streaks.style.display = showKs ? 'flex' : 'none';
+    if (showKs) {
+      const key = `${Math.floor(st.pts)}|${st.ready.join(',')}`;
+      if (key !== this.streakKey) {
+        this.streakKey = key;
+        setHTML(this.streaks, `<div class="pts">KILLSTREAK ${Math.floor(st.pts)}</div>` + STREAK_ORDER.map((k) => {
+          const d = STREAKS[k];
+          const ready = st.ready.includes(k);
+          return `<div class="ks ${ready ? 'ready' : ''}" data-ks="${k}" style="--kc:${d.color}" title="${esc(d.desc)}"><b>${esc(d.name.toUpperCase())}</b>${ready ? `READY · ${isTouch() ? 'TAP' : 'R / CLICK'}` : `${Math.floor(Math.min(st.pts, d.pts))}/${d.pts}`}<i style="width:${Math.min(1, st.pts / d.pts) * 100}%"></i></div>`;
+        }).join(''));
+      }
+    }
     // Level banner timer
     if (this.lvlT > 0) {
       this.lvlT -= dt;
@@ -717,6 +772,11 @@ export class Hud {
         setText(this.warpBtn, `⏩ ×${g.warp}`);
         this.warpBtn.classList.toggle('on', g.warp > 1);
         if (this.jawsBtn) this.jawsBtn.classList.toggle('on', g.helm.plow);
+        if (this.focusBtn) {
+          const ap = g.player.aimPoint;
+          this.focusBtn.classList.toggle('on', !!ap || this.focusArmed());
+          this.focusBtn.textContent = ap ? `FOCUS ${Math.ceil(ap.t)}` : 'FOCUS';
+        }
       }
       setHTML(this.gaugeRead, `<div class="dg-spd"><b>${Math.round(Math.abs(p.speed) * 3.6)}</b><small>km/h${p.speed < -0.05 ? ' R' : ''}</small></div>`
         + `<div class="dg-thr" title="Throttle"><i class="${thr < 0 ? 'rev' : ''}" style="height:${Math.round(Math.min(1, Math.abs(thr)) * 100)}%"></i></div>`
@@ -866,10 +926,11 @@ export class Hud {
     if (free > 0 && !this.village) lines.push(`<div class="rw idle" data-open="base"><small>🔨 ${free} builder${free > 1 ? 's' : ''} free</small> tap to build or upgrade</div>`);
     // Builder robots: how many, the one being made, or a button to make one.
     const rb = g.robotBuild;
-    if (rb) lines.push(`<div class="rw robot"><small>🤖 WORKSHOP</small> builder robot ${g.robots + 1}<div class="bar"><div style="width:${(rb.t / ROBOT_TIME) * 100}%"></div></div><small>${fmtTime(ROBOT_TIME - rb.t)}</small></div>`);
-    else if (!this.village && g.robots < robotCap(g)) {
+    const tip = `A robot: one more builder, and repair crews work ${Math.round(ROBOT_REPAIR * 100)}% faster. 20 scrap, ${ROBOT_TIME}s in the workshop. Tap again to queue more.`;
+    if (rb) lines.push(`<div class="rw robot" data-robot="1" title="${tip}"><small>🤖 WORKSHOP${rb.queue ? ` +${rb.queue} QUEUED` : ''}</small> robot ${g.robots + 1} · tap: +1<div class="bar"><div style="width:${(rb.t / ROBOT_TIME) * 100}%"></div></div><small>${fmtTime(ROBOT_TIME - rb.t)}</small></div>`);
+    else if (!this.village && robotsComing(g) < robotCap(g)) {
       const ok = !robotBlocked(g);
-      lines.push(`<div class="rw robot ${ok ? '' : 'idle'}" data-robot="1" title="A builder robot: one more builder, and repair crews work ${Math.round(ROBOT_REPAIR * 100)}% faster. 30 scrap, 4 iron plate, 2 circuits, ${ROBOT_TIME}s in the workshop."><small>🤖 ${g.robots}/${robotCap(g)} ROBOTS</small> ${ok ? 'tap to build one' : 'need 30 scrap · 4 plate · 2 circuits'}</div>`);
+      lines.push(`<div class="rw robot ${ok ? '' : 'idle'}" data-robot="1" title="${tip}"><small>🤖 ${g.robots}/${robotCap(g)} ROBOTS</small> ${ok ? 'tap: build one (20 scrap)' : 'need 20 scrap'}</div>`);
     } else if (g.robots) lines.push(`<div class="rw idle"><small>🤖 ${g.robots} ROBOTS</small> at work</div>`);
     const job = g.forgeJob;
     if (job) {

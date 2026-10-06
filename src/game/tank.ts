@@ -171,7 +171,8 @@ export class Tank {
   /** Entity id this tank is ordered to attack (focus fire). */
   focusId = 0;
   /** A spot marked from the cabin's gunsight: every gun in reach works the ground round it (seconds left). */
-  aimPoint: { x: number; y: number; t: number } | null = null;
+  /** Focused fire: a marked spot every gun turns on (following `id` when it's on something), and how long it lasts. */
+  aimPoint: { x: number; y: number; t: number; id?: number } | null = null;
   buffs = new Map<string, Buff>();
   anchored = false;
   dead = false;

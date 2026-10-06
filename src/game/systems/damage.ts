@@ -1,4 +1,5 @@
 import { troopCasualty } from './troops';
+import { streakKill } from './streaks';
 import { titanHit, type ArmorZone } from './titan';
 import { onBossKilled } from '../campaign';
 import { colossusShielded, onColossusPart } from './colossus';
@@ -152,6 +153,7 @@ export function killEnemy(g: Game, e: Enemy): void {
   }
   g.stats.kills++;
   g.objectiveCounters.kills = (g.objectiveCounters.kills ?? 0) + 1;
+  streakKill(g, e);
   const threat = e.threat;
   if (e.horde && !e.elite) {
     // Horde fodder: a splat, the odd scrap, a little XP.

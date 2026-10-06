@@ -121,3 +121,44 @@ export function markTarget(g: Game, x: number, y: number): number {
 export function clearMark(g: Game): void {
   g.player.aimPoint = null;
 }
+
+/** How long a focus-fire mark from the overhead view lasts (s). */
+export const FOCUS_TIME = 12;
+
+/**
+ * Focused fire from the overhead view: click something and every gun, battery and roof nest in reach turns on it
+ * (without the Titan driving anywhere); click the ground and they all rake that spot, heavy and lobbed guns shelling
+ * it even with nothing there. The main batteries fire at once if they're loaded. Clicking the same thing again
+ * clears it.
+ */
+export function focusFire(g: Game, x: number, y: number, id = 0): 'set' | 'cleared' {
+  const p = g.player;
+  const ap = p.aimPoint;
+  if (ap && ((id && ap.id === id) || (!id && !ap.id && Math.hypot(ap.x - x, ap.y - y) < 6))) {
+    p.aimPoint = null;
+    if (id && p.focusId === id) p.focusId = 0;
+    return 'cleared';
+  }
+  p.aimPoint = { x, y, t: FOCUS_TIME, id: id || undefined };
+  p.focusId = id;
+  for (const m of p.modules) if (m.key === 'main_gun' && m.weapon) m.cd = Math.min(m.cd, 0.05);
+  return 'set';
+}
+
+/** A mark on something follows it while it lives; once it's dead the guns keep raking where it fell. */
+export function updateMark(g: Game, dt: number): void {
+  const p = g.player;
+  const ap = p.aimPoint;
+  if (!ap) return;
+  if ((ap.t -= dt) <= 0) {
+    p.aimPoint = null;
+    return;
+  }
+  if (ap.id) {
+    const t = g.hostileTarget(ap.id);
+    if (t) {
+      ap.x = t.x;
+      ap.y = t.y;
+    } else ap.id = undefined;
+  }
+}

@@ -143,6 +143,11 @@ function pickTarget(g: Game, t: Tank, m: ModuleInst, d: WeaponDef, s: WeaponStat
   // A spot marked from the cabin's gunsight: the thing nearest it, or (heavy and lobbed guns) the spot itself.
   if (t.aimPoint) {
     const ap = t.aimPoint;
+    // Marked on something: that, if this gun reaches it.
+    if (ap.id) {
+      const f = lookup(g, t.team, ap.id);
+      if (f && Math.hypot(f.x - x, f.y - y) <= s.range + f.r) return f;
+    }
     if (Math.hypot(ap.x - x, ap.y - y) <= s.range + MARK_RADIUS) {
       let best: Target | null = null, bd = MARK_RADIUS;
       for (const c of cands) {

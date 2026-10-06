@@ -87,6 +87,9 @@ kbd { font-family: var(--px); font-size: 11px; background: #22242f; border: 1px 
 .hud-tc { position: absolute; left: 50%; top: 96px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; width: 520px; }
 .bossbar { display: none; width: 480px; background: rgba(13, 14, 20, 0.9); border: 2px solid #7a1f1f; padding: 4px 8px; }
 .bossbar .bn { font-family: var(--px); font-size: 13px; color: #ff8a80; text-align: center; }
+.bossbar .boss-focus { display: none; margin: 4px auto 0; pointer-events: auto; padding: 2px 12px; font-family: var(--px); font-size: 11px; letter-spacing: 1px; color: #ffcdd2; background: #3a0d10; border: 1px solid #ff1744; cursor: pointer; box-shadow: 0 0 8px rgba(255, 23, 68, 0.35); }
+.bossbar .boss-focus:hover { background: #551218; }
+.bossbar .boss-focus.on { color: #fff; background: #8a0f1e; animation: packpulse 0.8s infinite; }
 .bossbar .bb { height: 12px; background: #2a0d0d; border: 1px solid #000; }
 .bossbar .bb div { height: 100%; background: linear-gradient(#ff5252, #b71c1c); }
 .buffbar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; font-family: var(--px); font-size: 11px; }
@@ -1820,3 +1823,67 @@ html.touch .joy { display: block; }
 .sj-who p { margin: 3px 0 0; font-size: 12px; color: #b0bec5; }
 .sj-line { font-size: 13px; color: #cfd8dc; padding: 3px 0; border-bottom: 1px solid #1a2028; }
 .sj-line b { font-family: var(--px); font-size: 11px; }
+
+/* ---------------- Killstreak camera feed (VHS) ---------------- */
+body.on-feed #ui, body.on-feed #overlay, body.on-feed .tip { visibility: hidden; }
+.vhs { position: fixed; inset: 0; z-index: 60; display: none; pointer-events: auto; cursor: none; overflow: hidden; font-family: 'Silkscreen', 'VT323', 'Courier New', monospace; color: #f2f2e8; text-shadow: 1px 0 rgba(255, 40, 60, 0.55), -1px 0 rgba(40, 220, 255, 0.55), 0 0 6px rgba(255, 255, 255, 0.35); user-select: none; touch-action: none; }
+.vhs.on { display: block; }
+.vhs-noise { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; mix-blend-mode: screen; opacity: 0.9; pointer-events: none; }
+.vhs-scan { position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.28) 0 1px, transparent 1px 3px); }
+.vhs-vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 52%, rgba(0, 0, 0, 0.72) 100%); box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.6); }
+.vhs-band { position: absolute; left: 0; right: 0; height: 7%; pointer-events: none; background: repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.07) 0 2px, rgba(0, 0, 0, 0.12) 2px 4px); mix-blend-mode: screen; filter: blur(0.6px); transform: skewX(-8deg) translateX(-1%); box-shadow: 0 0 18px rgba(255, 255, 255, 0.12); }
+.vhs-t { position: absolute; font-size: 18px; line-height: 1.25; letter-spacing: 2px; pointer-events: none; }
+.vhs-tl { top: 22px; left: 30px; }
+.vhs-tl .rec { color: #ff3b3b; }
+.vhs-tr { top: 22px; right: 30px; text-align: right; }
+.vhs-tc { top: 22px; left: 50%; transform: translateX(-50%); text-align: center; font-size: 15px; }
+.vhs-tc b { font-size: 26px; }
+.vhs-bl { bottom: 26px; left: 30px; font-size: 14px; }
+.vhs-br { bottom: 26px; right: 30px; font-size: 18px; color: #fff59d; }
+.vhs-guns { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+.vhs-guns .g { position: relative; min-width: 120px; padding: 4px 10px 8px; border: 2px solid rgba(242, 242, 232, 0.45); background: rgba(0, 0, 0, 0.35); cursor: pointer; font-size: 13px; display: flex; justify-content: space-between; gap: 10px; }
+.vhs-guns .g b { font-size: 16px; }
+.vhs-guns .g i { position: absolute; left: 0; bottom: 0; height: 3px; background: #f2f2e8; }
+.vhs-guns .g.sel { border-color: #fff; background: rgba(255, 255, 255, 0.14); box-shadow: 0 0 10px rgba(255, 255, 255, 0.4); }
+.vhs-guns .g.dry { opacity: 0.4; text-decoration: line-through; }
+.vhs-exit { position: absolute; top: 92px; right: 30px; padding: 4px 10px; font-family: inherit; font-size: 11px; color: #f2f2e8; background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(242, 242, 232, 0.5); cursor: pointer; }
+.vhs-cross { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.vhs-cross::before, .vhs-cross::after { content: ''; position: absolute; border: 2px solid rgba(255, 255, 255, 0.9); box-shadow: 0 0 6px rgba(255, 255, 255, 0.6); }
+/* The gunship: a bracketed box (25 mm), a tighter box with ticks (40 mm), the big ring (105 mm). */
+.vhs-cross.gunship::before { left: -34px; top: -34px; width: 68px; height: 68px; border-style: solid; clip-path: polygon(0 0, 30% 0, 30% 6%, 6% 6%, 6% 30%, 0 30%, 0 70%, 6% 70%, 6% 94%, 30% 94%, 30% 100%, 70% 100%, 70% 94%, 94% 94%, 94% 70%, 100% 70%, 100% 30%, 94% 30%, 94% 6%, 70% 6%, 70% 0, 100% 0, 100% 100%, 0 100%); }
+.vhs-cross.gunship::after { left: -1px; top: -12px; width: 0; height: 24px; border-width: 0 0 0 2px; }
+.vhs-cross.gunship.w1::before { left: -22px; top: -22px; width: 44px; height: 44px; }
+.vhs-cross.gunship.w2::before { left: -60px; top: -60px; width: 120px; height: 120px; border-radius: 50%; clip-path: none; }
+/* The Hellfire: corner marks round the middle of the picture and a cross. */
+.vhs-cross.hellfire::before { left: -70px; top: -50px; width: 140px; height: 100px; clip-path: polygon(0 0, 18% 0, 18% 4%, 4% 4%, 4% 18%, 0 18%, 0 82%, 4% 82%, 4% 96%, 18% 96%, 18% 100%, 82% 100%, 82% 96%, 96% 96%, 96% 82%, 100% 82%, 100% 18%, 96% 18%, 96% 4%, 82% 4%, 82% 0, 100% 0, 100% 100%, 0 100%); }
+.vhs-cross.hellfire::after { left: -14px; top: -1px; width: 28px; height: 0; border-width: 2px 0 0 0; }
+/* The lance: a ring and a dot. */
+.vhs-cross.lance::before { left: -40px; top: -40px; width: 80px; height: 80px; border-radius: 50%; border-style: dashed; }
+.vhs-cross.lance::after { left: -3px; top: -3px; width: 2px; height: 2px; border-width: 2px; border-radius: 50%; }
+.vhs-mark { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; display: none; }
+.vhs-mark::before { content: ''; position: absolute; left: -9px; top: -9px; width: 14px; height: 14px; border: 2px solid #fff; transform: rotate(45deg); box-shadow: 0 0 6px #fff; }
+.vhs-flash { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%); font-size: 26px; letter-spacing: 3px; color: #fff; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.vhs.static .vhs-noise { opacity: 1; filter: contrast(3); }
+.vhs.static::after { content: 'NO SIGNAL'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 34px; letter-spacing: 6px; }
+@media (max-width: 760px) {
+  .vhs-t { font-size: 12px; }
+  .vhs-tc b { font-size: 18px; }
+  .vhs-guns .g { min-width: 78px; font-size: 10px; padding: 3px 6px 6px; }
+  .vhs-guns { bottom: 14px; gap: 5px; }
+  .vhs-bl { display: none; }
+}
+
+/* ---------------- Killstreak meter on the HUD ---------------- */
+.streaks { position: absolute; right: 10px; top: 42%; display: flex; flex-direction: column; gap: 5px; pointer-events: auto; z-index: 12; }
+.streaks .ks { position: relative; width: 132px; padding: 3px 7px 6px; font-family: var(--px); font-size: 10px; letter-spacing: 1px; color: #9aa4ae; background: rgba(10, 12, 16, 0.82); border: 1px solid #333a42; cursor: default; overflow: hidden; }
+.streaks .ks b { display: block; font-size: 11px; color: #cfd8dc; }
+.streaks .ks i { position: absolute; left: 0; bottom: 0; height: 3px; background: #546e7a; }
+.streaks .ks.ready { cursor: pointer; color: #fff; border-color: var(--kc); box-shadow: 0 0 10px var(--kc); animation: packpulse 0.9s infinite; }
+.streaks .ks.ready b { color: var(--kc); }
+.streaks .ks.ready i { background: var(--kc); width: 100% !important; }
+.streaks .pts { font-family: var(--px); font-size: 10px; color: #ffd740; text-align: right; text-shadow: 0 1px 0 #000; }
+@media (max-width: 760px) {
+  .streaks { top: 30%; right: 4px; }
+  .streaks .ks { width: 96px; font-size: 8px; padding: 2px 5px 5px; }
+  .streaks .ks b { font-size: 9px; }
+}

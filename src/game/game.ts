@@ -1,4 +1,5 @@
 import { DEV } from './devFlag';
+import { newStreak, type StreakState } from './systems/streaks';
 import { newCompound, type CompoundState } from './systems/compound';
 import { newComms, type Comms } from './systems/comms';
 import { newStory, type StoryState } from './story';
@@ -265,7 +266,9 @@ export class Game {
   story: StoryState = newStory();
   /** Builder robots aboard (each an extra builder), and the one the workshop is making (see systems/robots). */
   robots = 0;
-  robotBuild: { t: number } | null = null;
+  /** Killstreak: points, banked rewards, the one being flown (see systems/streaks). */
+  streak: StreakState = newStreak();
+  robotBuild: { t: number; queue?: number } | null = null;
   /** The satnav: the route to where she's headed and the next instruction (see systems/nav). */
   nav: Nav | null = null;
   /** The flight recorder (cabin trend screens). */

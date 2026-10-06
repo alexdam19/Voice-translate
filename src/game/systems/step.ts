@@ -4,6 +4,7 @@ import { updateComms } from './comms';
 import { updateNav } from './nav';
 import { updateCompactor } from './compactor';
 import { updateRobots } from './robots';
+import { streakReset, updateStreaks } from './streaks';
 import { recordTelemetry } from '../telemetry';
 import type { Game } from '../game';
 import { updateEnemies, updateEnemyTank, updateTelegraphs } from './ai';
@@ -17,7 +18,7 @@ import { updateSquads } from './squads';
 import { driveTank, manualDrive, separateTanks, updateCollapses, type ManualDrive } from './movement';
 import { driveSpec, odStage } from './engine';
 import { updateAirlift } from './airlift';
-import { updateFocus, updateInteract } from './orders';
+import { updateFocus, updateInteract, updateMark } from './orders';
 import { outriderDestroyed, updateOutrider } from './outrider';
 import { updateProjectiles } from './projectiles';
 import { updateSpawns } from './spawns';
@@ -96,6 +97,7 @@ export function helmDrive(g: Game, dt: number): ManualDrive | undefined {
 function respawn(g: Game): void {
   const p = g.player;
   p.dead = false;
+  streakReset(g);
   // Towed back to your last camp if you made one, else to where you started.
   const home = g.deploy.home ?? g.gen.spawn;
   p.x = home.x;
@@ -172,7 +174,7 @@ export function stepWorld(g: Game, dt: number): void {
       if (helm.overheat && helm.heat < ds.relight) helm.overheat = false;
     }
     updateHelmGear(g, dt, ds, od?.stage ?? 0);
-    if (p.aimPoint && (p.aimPoint.t -= dt) <= 0) p.aimPoint = null;
+    updateMark(g, dt);
     p.crushMul = ds.crush;
     // The drill string down: she's pinned to the spot. Opening the throttle has the crew raise it first.
     if (g.titan.drill > 0 || g.titan.drillWant) {
@@ -250,6 +252,7 @@ export function stepWorld(g: Game, dt: number): void {
       updateNav(g, dt);
       updateCompactor(g, dt);
       updateRobots(g, dt);
+      updateStreaks(g, dt);
       updateHelm(g, dt);
       recordTelemetry(g, dt);
       updateTeams(g, dt);

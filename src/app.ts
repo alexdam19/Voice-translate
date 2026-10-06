@@ -16,7 +16,9 @@ import { choosePerk, openPack, untrack } from './game/actions';
 import { featureLevel } from './game/progress';
 import { SQUADS, type SquadType } from './game/squads';
 import { castRange, cardBlock, clampCast, playCard } from './game/systems/cards';
-import { orderAttack, orderHarvest, orderInteract, orderMove } from './game/systems/orders';
+import { FOCUS_TIME, focusFire, orderAttack, orderHarvest, orderInteract, orderMove } from './game/systems/orders';
+import { endStreak, startStreak, STREAK_ORDER, streakAim, streakSwitch, streakTrigger, type StreakKind } from './game/systems/streaks';
+import { StreakCam } from './ui/streakCam';
 import { launchOutrider, OUTRIDER_COST, sendOutrider } from './game/systems/outrider';
 import { setSquadOrder } from './game/systems/squads';
 import { installHandlers, stepWorld, warpBlocked } from './game/systems/step';
@@ -97,6 +99,10 @@ export class App {
   /** Touch: how long the info line for the last tapped thing stays up. */
   private tapHintT = 0;
   sendMode = false;
+  /** The killstreak's camera feed (a VHS overlay over the battlefield view). */
+  streakCam!: StreakCam;
+  /** The FOCUS button is armed: the next tap marks a spot (or a foe) for every gun instead of driving there. */
+  focusArm = false;
   private objT = 0;
   private saveT = 30;
   running = false;
@@ -126,6 +132,17 @@ export class App {
       trackClick: () => this.trackClick(),
       untrack: () => this.game && untrack(this.game),
       camp: () => this.toggleCamp(),
+      callStreak: (kind) => this.callStreak(kind),
+      focusOn: (id) => {
+        const g = this.game;
+        const t = g.hostileTarget(id);
+        if (!t || g.player.dead) return;
+        if (focusFire(g, t.x, t.y, id) === 'set') {
+          this.view.moveMarker(t.x, t.y, '#ff1744');
+          this.hud.toast(`FOCUS FIRE: every gun on the target (${FOCUS_TIME} s). Keep her in range!`, '#ff5252');
+          this.sound('lockon');
+        }
+      },
       helm: (cmd) => {
         const h = this.game.helm;
         if (cmd === 'overdrive') this.toggleOverdrive();
@@ -135,7 +152,17 @@ export class App {
           this.hud.toast(h.plow ? 'COMPACTOR: the jaws open. She eats whatever she drives into and spits out bales of scrap.' : 'Compactor jaws shut.', h.plow ? '#ffd740' : '#b0bec5');
           this.sound('ui');
         }
-        else if (cmd === 'stop') this.allStop();
+        else if (cmd === 'focus') {
+          if (this.game.player.aimPoint) {
+            this.game.player.aimPoint = null;
+            this.focusArm = false;
+            this.hud.toast('Focus fire lifted: the guns pick their own targets again.', '#b0bec5');
+          } else {
+            this.focusArm = !this.focusArm;
+            if (this.focusArm) this.hud.toast(`FOCUS FIRE: ${this.touch ? 'tap' : 'click'} a foe or a spot and every gun in reach turns on it.`, '#ff8a80');
+          }
+          this.sound('ui');
+        } else if (cmd === 'stop') this.allStop();
         else {
           h.lever = Math.max(-0.5, Math.min(1, Math.round((h.lever + (cmd === 'up' ? 0.25 : -0.25)) * 4) / 4));
           this.game.player.path = [];
@@ -145,6 +172,21 @@ export class App {
       cabin: () => this.toggleCabin(),
       interior: () => this.toggleInterior(),
       gate: () => requestClearance(this.game, 'player'),
+    });
+    this.hud.focusArmed = () => this.focusArm;
+    this.streakCam = new StreakCam(document.body, this.canvas, {
+      aim: (sx, sy) => {
+        const w = this.view.screenToWorld(sx, sy);
+        streakAim(this.game, w.x, w.y);
+      },
+      trigger: (down) => streakTrigger(this.game, down),
+      weapon: (i) => {
+        const a = this.game.streak.active;
+        if (!a) return;
+        streakSwitch(this.game, i >= 100 ? i - 100 : a.w + i);
+        this.sound('ui');
+      },
+      leave: () => endStreak(this.game),
     });
     this.mapCtx = this.hud.minimap.getContext('2d')!;
     this.villageUI = new VillageUI(uiRoot, this);
@@ -536,8 +578,9 @@ export class App {
     if (this.cabin.isOpen && (g.player.dead || g.mode !== 'world' || !g.player.titan)) this.toggleCabin(false);
     if (this.interior.isOpen && (g.mode !== 'world' || !g.player.titan)) this.toggleInterior(false);
     const firstPerson = this.cabin.isOpen || this.interior.isOpen;
-    if (!this.uiBlocking && !firstPerson) this.handleMouse(dt);
-    if (!firstPerson) this.handleZoom();
+    const feed = !!g.streak.active;
+    if (!this.uiBlocking && !firstPerson && !feed) this.handleMouse(dt);
+    if (!firstPerson && !feed) this.handleZoom();
     const paused = this.paused || (this.panels.isOpen && this.panels.pauses) || this.chest.isOpen || storyPauses(g);
     if (!paused) {
       this.checkWarp();
@@ -594,6 +637,7 @@ export class App {
       return;
     }
     this.view.render(g, paused ? 0 : dt);
+    this.streakCam.update(g, dt, (x, y) => this.view.worldToScreen(x, y, 0));
     this.overlay.draw(g, this.hover?.kind === 'enemy' ? this.hover.id : 0);
     if (this.village) {
       this.vstate.selected = this.villageUI.selected;
@@ -650,6 +694,16 @@ export class App {
     const v = this.view;
     const p = g.player;
     const k = 1 - Math.pow(0.002, dt);
+    // A killstreak's feed: the camera looks where the drone, gunship or satellite looks.
+    const a = g.streak.active;
+    if (a && !this.village) {
+      const kc = 1 - Math.pow(0.02, dt);
+      v.cam.x += (a.cam.x - v.cam.x) * kc;
+      v.cam.y += (a.cam.y - v.cam.y) * kc;
+      v.cam.zoom += (a.cam.view - v.cam.zoom) * kc;
+      v.snap = false;
+      return;
+    }
     let tx = p.x, ty = p.y;
     // Look a little ahead of where you're driving, so you see what you're about to hit.
     const lead = p.fortress ? Math.max(-20, Math.min(40, p.speed * 5)) : Math.max(-2, Math.min(6, p.speed * 0.9));
@@ -673,6 +727,20 @@ export class App {
     const wantYaw = this.village ? p.rot : -Math.PI / 2;
     v.cam.yaw = wrapAngle(v.cam.yaw + wrapAngle(wantYaw - v.cam.yaw) * k);
     v.cam.pitch += ((this.village ? 64 : 56) - v.cam.pitch) * k;
+  }
+
+  /** Calls in a banked killstreak: out of the cab or the cutaway, onto the feed. */
+  callStreak(kind: StreakKind): void {
+    const g = this.game;
+    if (this.cabin.isOpen) this.toggleCabin(false);
+    if (this.interior.isOpen) this.toggleInterior(false);
+    if (this.village) this.setVillage(false);
+    if (this.panels.isOpen) this.panels.close();
+    const why = startStreak(g, kind);
+    if (why) {
+      this.hud.toast(why, '#ff8a80');
+      this.sound('error');
+    }
   }
 
   /** Back to the fortress after dragging the view away. */
@@ -813,6 +881,19 @@ export class App {
 
   private handleKeys(): void {
     const i = this.input;
+    // On a killstreak's feed: its guns and the way out, nothing else.
+    if (this.game?.streak.active) {
+      if (i.consume('Escape')) endStreak(this.game);
+      for (let k = 0; k < 3; k++) if (i.consume(`Digit${k + 1}`)) {
+        streakSwitch(this.game, k);
+        this.sound('ui');
+      }
+      return;
+    }
+    if (i.consume('KeyR') && this.game) {
+      const ready = [...STREAK_ORDER].reverse().find((k) => this.game.streak.ready.includes(k));
+      if (ready) this.callStreak(ready);
+    }
     if (i.consume('Escape')) {
       if (this.sendMode) this.sendMode = false;
       else if (this.cabin.isOpen && !this.panels.isOpen && !this.chest.isOpen) this.toggleCabin(false);
@@ -994,6 +1075,19 @@ export class App {
     }
     const hv = this.pick(w.x, w.y);
     this.hover = hv;
+    // Focused fire: click a foe or the ground (or tap with FOCUS armed) and every gun in reach turns on it.
+    const focusClick = (this.touch ? m.rightPressed && this.focusArm : m.leftReleased && !m.panned) && this.hud.armed < 0 && !this.sendMode && !g.player.dead && g.mode === 'world';
+    if (focusClick && (hv.kind === 'enemy' || hv.kind === 'tank' || hv.kind === 'ground')) {
+      const foe = hv.kind !== 'ground';
+      const r = focusFire(g, hv.x, hv.y, foe ? hv.id : 0);
+      this.focusArm = false;
+      if (r === 'set') {
+        this.view.moveMarker(hv.x, hv.y, '#ff1744');
+        this.hud.toast(foe ? `FOCUS FIRE: every gun on ${hv.label} (${FOCUS_TIME} s).` : `FOCUS FIRE: every gun on the mark (${FOCUS_TIME} s).`, '#ff5252');
+        this.sound('lockon');
+      } else this.hud.toast('Focus fire lifted.', '#b0bec5');
+      return;
+    }
     const own = g.mode === 'world' && g.player.hits(w.x, w.y, 0.5);
     this.canvas.style.cursor = this.hud.armed >= 0 ? CURSORS.attack : this.sendMode ? CURSORS.send : hv.kind === 'enemy' || hv.kind === 'tank' ? CURSORS.attack : hv.kind === 'node' ? CURSORS.harvest : own ? CURSORS.interact : hv.kind === 'ground' ? CURSORS.default : CURSORS.interact;
     // Touch has no hover: the line describes what you just tapped, for a moment.
@@ -1057,7 +1151,7 @@ export class App {
     switch (hv.kind) {
       case 'enemy':
       case 'tank':
-        return `<b class="bad">${hv.label}</b> · ${rc}: focus fire`;
+        return `<b class="bad">${hv.label}</b> · ${this.touch ? 'FOCUS then tap' : 'click'}: every gun on it · ${rc}: hunt it down`;
       case 'node': {
         const n = g.gen.nodes.find((k) => k.id === hv.id)!;
         const info = NODE_INFO[n.type];
@@ -1076,6 +1170,8 @@ export class App {
         return `<b class="bad">Dead Zone Gate</b> · ${rc} to enter the multiplayer warzone`;
       case 'pickup':
         return `<b>${hv.label}</b> · drive over it to collect`;
+      case 'ground':
+        return this.touch ? (this.focusArm ? '<b class="bad">FOCUS FIRE armed</b> · tap a spot or a foe' : '') : 'click: focus every gun here · right-click: drive here';
       default:
         return '';
     }
