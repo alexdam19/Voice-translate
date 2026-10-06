@@ -155,10 +155,11 @@ describe('chests', () => {
 });
 
 describe('chest packs', () => {
-  it('card pack chests roll cards', () => {
+  it('card pack chests offer a pick of two cards', () => {
     const g = game();
+    // A pack is a this-or-that pick off the card road: two different cards.
     const r = rollChest(g, 'rare_pack', 2);
-    expect(r.length).toBe(4);
+    expect(r.length).toBe(2);
     expect(r.every((k) => k.type === 'card')).toBe(true);
   });
 });
